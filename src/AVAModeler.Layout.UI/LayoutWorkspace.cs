@@ -295,7 +295,8 @@ public sealed class LayoutWorkspace : DockPanel
             ItemsSource = new[]
             {
                 Group("_Scene", Item("_New Scene", NewScene), Item("_Load Scene…", () => _ = LoadScene()), Item("_Save Scene…", () => _ = SaveScene(".avascene")),
-                    Item("Save as _LWS…", () => _ = SaveScene(".lws")), Item("Scene _Settings…", () => _ = SceneSettings())),
+                    Item("Save as _LWS…", () => _ = SaveScene(".lws")), Item("Scene _Settings…", () => _ = SceneSettings()),
+                    Item("_Quit", () => Owner?.Close())),
                 Group("_Add", Item("The _Modeler's Object", () => Session.ShowModelerObject(_modelerDocument())), Item("_Object from a File…", () => _ = LoadObject()),
                     Item("_Null", () => Session.Select(Session.Scene.AddNull("Null"))),
                     Item("_Distant Light", () => Session.Select(Session.Scene.AddLight("Distant Light"))),

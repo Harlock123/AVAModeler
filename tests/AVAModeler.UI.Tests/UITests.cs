@@ -162,6 +162,20 @@ public class WindowTests
     }
 
     [AvaloniaFact]
+    public void File_quit_closes_the_window()
+    {
+        var w = Ui.Open();
+        var file = w.Modeler.Menu.Items.OfType<MenuItem>().First();
+        Assert.Contains(file.Items.OfType<MenuItem>(), i => i.Header as string == "_Quit");
+        bool closed = false;
+        w.Closed += (_, _) => closed = true;
+        // Only the press: the window is gone before a release could reach it.
+        w.KeyPress(Key.Q, RawInputModifiers.Control, PhysicalKey.None, null);
+        Ui.Pump();
+        Assert.True(closed);
+    }
+
+    [AvaloniaFact]
     public void The_wheel_zooms_and_a_double_click_maximizes()
     {
         var w = Ui.Open();

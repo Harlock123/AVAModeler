@@ -103,6 +103,8 @@ public sealed class ModelerWorkspace : DockPanel
             ["Export OBJ"] = () => _ = Export(".obj"),
             ["Export GEO"] = () => _ = Export(".geo"),
             ["Export Plugin Format"] = () => _ = ExportPlugin(),
+            // Closing the window asks about unsaved changes first.
+            ["Quit"] = () => Owner?.Close(),
             ["Undo"] = () => { s.CancelTool(); D().UndoLast(); },
             ["Redo"] = () => { s.CancelTool(); D().RedoLast(); },
             ["Cut"] = () => { s.CommitTool(); LayerOps.Cut(D()); },
@@ -430,7 +432,7 @@ public sealed class ModelerWorkspace : DockPanel
             ItemsSource = new[]
             {
                 Group("_File", Item("_New", "New"), Item("_Open…", "Open"), _recent, "-", Item("_Save", "Save"), Item("Save _As…", "Save As"),
-                    Item("Export _OBJ…", "Export OBJ"), Item("Export _GEO…", "Export GEO"), Item("Export with a _Plugin…", "Export Plugin Format")),
+                    Item("Export _OBJ…", "Export OBJ"), Item("Export _GEO…", "Export GEO"), Item("Export with a _Plugin…", "Export Plugin Format"), "-", Item("_Quit", "Quit")),
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",
                     Item("Select _All", "Select All"), Item("_Deselect", "Deselect"), Item("_Invert", "Invert Selection"), Item("Select C_onnected", "Select Connected"),
                     Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),

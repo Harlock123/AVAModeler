@@ -81,7 +81,7 @@ public sealed class Keymap
         ["Cycle Selection Mode"] = "Space", ["Commit"] = "Enter", ["Cancel"] = "Escape", ["Deselect"] = "OemQuestion",
         ["Invert Selection"] = "OemQuotes", ["Select Connected"] = "OemCloseBrackets", ["Fit All"] = "A", ["Fit Selected"] = "Shift+A",
         ["Maximize View"] = "D0", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
-        ["New"] = "Ctrl+N", ["Open"] = "Ctrl+O", ["Save"] = "Ctrl+S",
+        ["New"] = "Ctrl+N", ["Open"] = "Ctrl+O", ["Save"] = "Ctrl+S", ["Quit"] = "Ctrl+Q",
     };
 
     private readonly Dictionary<string, string> _byKey = new(StringComparer.OrdinalIgnoreCase);

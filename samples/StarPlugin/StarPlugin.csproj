@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A sample plugin: build it and put StarPlugin.dll in the plugins folder (Help shows where). -->
+  <PropertyGroup>
+    <RootNamespace>StarPlugin</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The host provides these at run time: don't copy them beside the plugin. -->
+    <ProjectReference Include="..\..\src\AVAModeler.Tools\AVAModeler.Tools.csproj" Private="false" />
+  </ItemGroup>
+</Project>

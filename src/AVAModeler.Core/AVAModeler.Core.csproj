@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Math, the mesh, layers, surfaces, selection, undo and the document: no UI, no file formats. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Layout: the scene graph, TCB envelopes, cameras, lights, bones, LWS scenes, and the CPU ray tracer. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Scene</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
+  </ItemGroup>
+</Project>

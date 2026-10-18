@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- IRenderer, the software (Skia) renderer and the OpenGL renderer; the views' cameras and picking. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Rendering</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
+    <ProjectReference Include="..\AVAModeler.Geometry\AVAModeler.Geometry.csproj" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
+  </ItemGroup>
+</Project>

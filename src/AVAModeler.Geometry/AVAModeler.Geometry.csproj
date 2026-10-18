@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Triangulation, booleans and drills, subdivision, and the extrude, lathe, bevel family of algorithms. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Geometry</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
+    <PackageReference Include="LibTessDotNet" Version="1.1.15" />
+  </ItemGroup>
+</Project>

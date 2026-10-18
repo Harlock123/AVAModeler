@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AVAModeler.Core/AVAModeler.Core.csproj" />
+    <Project Path="src/AVAModeler.Formats/AVAModeler.Formats.csproj" />
+    <Project Path="src/AVAModeler.Geometry/AVAModeler.Geometry.csproj" />
+    <Project Path="src/AVAModeler.Tools/AVAModeler.Tools.csproj" />
+    <Project Path="src/AVAModeler.Rendering/AVAModeler.Rendering.csproj" />
+    <Project Path="src/AVAModeler.Scene/AVAModeler.Scene.csproj" />
+    <Project Path="src/AVAModeler.Modeler.UI/AVAModeler.Modeler.UI.csproj" />
+    <Project Path="src/AVAModeler.Layout.UI/AVAModeler.Layout.UI.csproj" />
+    <Project Path="src/AVAModeler/AVAModeler.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/StarPlugin/StarPlugin.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AVAModeler.Core.Tests/AVAModeler.Core.Tests.csproj" />
+    <Project Path="tests/AVAModeler.Formats.Tests/AVAModeler.Formats.Tests.csproj" />
+    <Project Path="tests/AVAModeler.Geometry.Tests/AVAModeler.Geometry.Tests.csproj" />
+    <Project Path="tests/AVAModeler.Scene.Tests/AVAModeler.Scene.Tests.csproj" />
+    <Project Path="tests/AVAModeler.Rendering.Tests/AVAModeler.Rendering.Tests.csproj" />
+    <Project Path="tests/AVAModeler.Tools.Tests/AVAModeler.Tools.Tests.csproj" />
+    <Project Path="tests/AVAModeler.UI.Tests/AVAModeler.UI.Tests.csproj" />
+  </Folder>
+</Solution>

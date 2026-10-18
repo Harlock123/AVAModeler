@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The tool framework, every Modeler tool, the command API, Lua macros and plugins: no UI. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Tools</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
+    <ProjectReference Include="..\AVAModeler.Formats\AVAModeler.Formats.csproj" />
+    <ProjectReference Include="..\AVAModeler.Geometry\AVAModeler.Geometry.csproj" />
+    <PackageReference Include="MoonSharp" Version="2.0.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <!-- Text outlines: Avalonia brings the same native Skia library in the app; scripts and tests need it too. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
+  </ItemGroup>
+</Project>

@@ -338,3 +338,32 @@ public class PickingTests
         Assert.Equal(-1, v.Min.Y, 9);
     }
 }
+
+public class ViewSceneTests
+{
+    [Fact]
+    public void A_document_becomes_what_the_views_draw()
+    {
+        var d = new Document();
+        d.Layers[0].Mesh.AddFace(0, new Vec3(0, 0, 0), new Vec3(0, 1, 0), new Vec3(1, 1, 0));
+        d.Layers[1].Mesh.AddFace(0, new Vec3(0, 0, 1), new Vec3(0, 1, 1), new Vec3(1, 1, 1));
+        d.Layers[2].Mesh.AddFace(0, new Vec3(0, 0, 2), new Vec3(0, 1, 2), new Vec3(1, 1, 2));
+        d.SetLayers([0, 3], [1]);
+        d.Selection.Mode = SelectionMode.Polygons;
+        d.Selection.PolygonsIn(0).Add(0);
+        var scene = ViewScene.FromDocument(d, DisplayStyle.Shaded, backfaceTint: false, smoothed: l => l == 0 ? d.Layers[0].Mesh : null);
+        // Layer 2 is off and layer 3 empty, so neither is drawn; layer 1 is drawn as background.
+        Assert.Equal(2, scene.Layers.Count);
+        Assert.Same(d.Layers[0].Mesh, scene.Layers[0].Mesh);
+        Assert.False(scene.Layers[0].Background);
+        Assert.Equal([0], scene.Layers[0].SelectedPolygons!);
+        Assert.Null(scene.Layers[0].SelectedPoints);
+        Assert.NotNull(scene.Layers[0].Subdivided);
+        Assert.True(scene.Layers[1].Background);
+        Assert.Null(scene.Layers[1].SelectedPolygons);
+        Assert.Equal(DisplayStyle.Shaded, scene.Style);
+        Assert.False(scene.BackfaceTint);
+        Assert.False(scene.ShowPoints);
+        Assert.Same(d.Surfaces, scene.Surfaces);
+    }
+}

@@ -60,6 +60,31 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void A_table_an_ai_agent_built_live()
+    {
+        var w = Ui.Open(1400, 860);
+        w.AgentPipe = Agent.Pipe();
+        w.Session.Preferences.AllowAgents = true;
+        w.SyncAgents();
+        try
+        {
+            var client = Agent.Connect(w.AgentPipe, Path.GetTempPath());
+            Agent.BuildATable(client);
+            Agent.Json(client, "set_selection_mode", new { mode = "polygons" });
+            Agent.Json(client, "select_box", new { min = new[] { -1.0, 0.7, -1 }, max = new[] { 1.0, 0.8, 1 } });
+            Agent.Wait(client.DisposeAsync().AsTask().ContinueWith(_ => 0, TaskScheduler.Default));
+            Assert.Equal(4 * 80 + 6, w.Session.Document.Current.Mesh.Polygons.Count);
+            Ui.Fit(w);
+            Persp(w, 35, 24, 1.25);
+            Shot(w, "mcp");
+        }
+        finally
+        {
+            Agent.Wait(w.Agents.StopAsync().ContinueWith(_ => 0, TaskScheduler.Default));
+        }
+    }
+
+    [AvaloniaFact]
     public void MetaNURBS_smooths_a_cage()
     {
         var w = Ui.Open(1400, 860);

@@ -21,6 +21,7 @@ public sealed class MoveTool : Tool
 {
     public override string Name => "Move";
     public override string Tab => "Modify";
+    public override string Summary => "Moves the selected points (or, with nothing selected, everything in the foreground layers) by Offset, in metres.";
     public override string Help => "Drag to move; Shift keeps to one axis.";
 
     [Param("Offset", Distance = true)] public Vec3 Offset { get; set; }
@@ -39,11 +40,12 @@ public sealed class RotateTool : Tool
 {
     public override string Name => "Rotate";
     public override string Tab => "Modify";
+    public override string Summary => "Turns the selection about Axis through Center by Angle degrees. Right-handed: a positive angle about Z turns +X toward +Y, about Y turns +Z toward +X, about X turns +Y toward +Z.";
     public override string Help => "Drag left and right to turn about the axis the view looks down; Shift turns in 15° steps.";
 
     [Param("Angle", Angle = true, Step = 1)] public double Angle { get; set; }
-    [Param("Axis")] public Axis Axis { get; set; } = Axis.Z;
-    [Param("Center", Distance = true)] public Vec3 Center { get; set; }
+    [Param("Axis", Description = "The axis it turns about.")] public Axis Axis { get; set; } = Axis.Z;
+    [Param("Center", Distance = true, Description = "The point it turns about.")] public Vec3 Center { get; set; }
 
     protected override void OnDrag(DragInfo d)
     {
@@ -65,10 +67,11 @@ public sealed class SizeTool : Tool
 {
     public override string Name => "Size";
     public override string Tab => "Modify";
+    public override string Summary => "Scales the selection evenly about Center by Factor percent (100 leaves it as it is, 200 doubles it).";
     public override string Help => "Drag right to grow, left to shrink.";
 
-    [Param("Factor %", Step = 1)] public double Factor { get; set; } = 100;
-    [Param("Center", Distance = true)] public Vec3 Center { get; set; }
+    [Param("Factor %", Step = 1, Description = "Percent: 100 leaves it, 50 halves it.")] public double Factor { get; set; } = 100;
+    [Param("Center", Distance = true, Description = "The point it scales about.")] public Vec3 Center { get; set; }
 
     protected override void OnDrag(DragInfo d)
     {
@@ -83,10 +86,11 @@ public sealed class StretchTool : Tool
 {
     public override string Name => "Stretch";
     public override string Tab => "Modify";
+    public override string Summary => "Scales the selection about Center by a different percentage along each axis (Factor is [x, y, z] percent; 100 leaves an axis as it is, -100 mirrors it).";
     public override string Help => "Drag across to stretch along the view's horizontal axis, up and down for its vertical; Shift for both alike.";
 
-    [Param("Factor %", Step = 1)] public Vec3 Factor { get; set; } = new(100, 100, 100);
-    [Param("Center", Distance = true)] public Vec3 Center { get; set; }
+    [Param("Factor %", Step = 1, Description = "Percent along X, Y and Z: 100 leaves an axis, -100 mirrors it.")] public Vec3 Factor { get; set; } = new(100, 100, 100);
+    [Param("Center", Distance = true, Description = "The point it scales about.")] public Vec3 Center { get; set; }
 
     protected override void OnDrag(DragInfo d)
     {
@@ -105,11 +109,12 @@ public sealed class ShearTool : Tool
 {
     public override string Name => "Shear";
     public override string Tab => "Modify";
+    public override string Summary => "Slides the selection by Offset in proportion to how far each point lies along the Along axis: none at the selection's low end, all of it at its high end (Smooth falloff eases in and out).";
     public override string Help => "Drag to slide the top of the selection (as the view shows it) against its bottom.";
 
     [Param("Offset", Distance = true)] public Vec3 Offset { get; set; }
     /// <summary>The axis along which the shear grows.</summary>
-    [Param("Along")] public Axis Along { get; set; } = Axis.Y;
+    [Param("Along", Description = "The axis along which the shear grows from none to all of Offset.")] public Axis Along { get; set; } = Axis.Y;
     [Param("Smooth falloff")] public bool SmoothFalloff { get; set; }
 
     private double _low, _high;
@@ -146,11 +151,12 @@ public sealed class TwistTool : Tool
 {
     public override string Name => "Twist";
     public override string Tab => "Modify";
+    public override string Summary => "Turns the selection about Axis through Center, by nothing at the selection's low end along the axis and the whole Angle (degrees, right-handed) at its high end.";
     public override string Help => "Drag left and right to twist about the view's vertical axis.";
 
     [Param("Angle", Angle = true, Step = 1)] public double Angle { get; set; }
-    [Param("Axis")] public Axis Axis { get; set; } = Axis.Y;
-    [Param("Center", Distance = true)] public Vec3 Center { get; set; }
+    [Param("Axis", Description = "The axis it twists about (and along which the twist grows).")] public Axis Axis { get; set; } = Axis.Y;
+    [Param("Center", Distance = true, Description = "A point the twist axis passes through.")] public Vec3 Center { get; set; }
 
     protected override void OnDrag(DragInfo d)
     {
@@ -173,11 +179,12 @@ public sealed class TaperTool : Tool
 {
     public override string Name => "Taper";
     public override string Tab => "Modify";
+    public override string Summary => "Scales the selection across Axis about Center: not at all at its low end along the axis, by Factor percent at its high end (Smooth falloff eases in and out).";
     public override string Help => "Drag left and right to narrow or widen the top of the selection (as the view shows it).";
 
-    [Param("Factor %", Step = 1)] public double Factor { get; set; } = 100;
-    [Param("Axis")] public Axis Axis { get; set; } = Axis.Y;
-    [Param("Center", Distance = true)] public Vec3 Center { get; set; }
+    [Param("Factor %", Step = 1, Description = "Percent at the high end of the axis: 0 brings it to a point.")] public double Factor { get; set; } = 100;
+    [Param("Axis", Description = "The axis along which the taper grows; scaling is across it.")] public Axis Axis { get; set; } = Axis.Y;
+    [Param("Center", Distance = true, Description = "The point it scales toward.")] public Vec3 Center { get; set; }
     [Param("Smooth falloff")] public bool SmoothFalloff { get; set; }
 
     protected override void OnDrag(DragInfo d)
@@ -216,13 +223,14 @@ public sealed class BendTool : Tool
 {
     public override string Name => "Bend";
     public override string Tab => "Modify";
+    public override string Summary => "Curves the selection, which lies along Axis, into an arc toward the Toward axis: the low end stays put and the high end is turned by Angle degrees (positive bends toward +Toward). Center sets where across the arc is measured from.";
     public override string Help => "Drag left and right to bend the selection over (as the view shows it).";
 
     [Param("Angle", Angle = true, Step = 1)] public double Angle { get; set; }
     /// <summary>The axis the selection lies along.</summary>
-    [Param("Axis")] public Axis Axis { get; set; } = Axis.Y;
+    [Param("Axis", Description = "The axis the selection lies along.")] public Axis Axis { get; set; } = Axis.Y;
     /// <summary>The axis it bends toward (positive angles toward its positive end).</summary>
-    [Param("Toward")] public Axis Toward { get; set; } = Axis.X;
+    [Param("Toward", Description = "The axis it bends toward (positive angles toward its + end).")] public Axis Toward { get; set; } = Axis.X;
     [Param("Center", Distance = true)] public Vec3 Center { get; set; }
 
     protected override void OnDrag(DragInfo d)
@@ -261,11 +269,12 @@ public sealed class MagnetTool : Tool
 {
     public override string Name => "Magnet";
     public override string Tab => "Modify";
+    public override string Summary => "Pulls the points within Radius (per axis, an ellipsoid) of Center by Offset, fully at the centre and fading smoothly to nothing at the radius.";
     public override string Help => "Drag from where the pull should be strongest.";
 
     [Param("Offset", Distance = true)] public Vec3 Offset { get; set; }
     [Param("Center", Distance = true)] public Vec3 Center { get; set; }
-    [Param("Radius", Distance = true, Min = 0)] public Vec3 Radius { get; set; }
+    [Param("Radius", Distance = true, Min = 0, Description = "How far the pull reaches along X, Y and Z.")] public Vec3 Radius { get; set; }
 
     protected override void OnBegin()
     {
@@ -298,6 +307,8 @@ public sealed class DragTool : Tool
 {
     public override string Name => "Drag";
     public override string Tab => "Modify";
+    public override string Summary => "Moves the single point nearest where a mouse drag starts. Only works with the mouse: from a script select the point and use Move.";
+    public override bool Scriptable => false;
     public override string Help => "Drag a point to move just that point.";
 
     [Param("Offset", Distance = true)] public Vec3 Offset { get; set; }
@@ -341,9 +352,10 @@ public sealed class JitterTool : Tool
 {
     public override string Name => "Jitter";
     public override string Tab => "Modify";
+    public override string Summary => "Moves each selected point by a random amount up to Amount along each axis. The same Seed always gives the same result.";
     public override ToolKind Kind => ToolKind.Requester;
 
-    [Param("Amount", Distance = true, Min = 0)] public Vec3 Amount { get; set; } = new(0.05, 0.05, 0.05);
+    [Param("Amount", Distance = true, Min = 0, Description = "The most a point can move along X, Y and Z.")] public Vec3 Amount { get; set; } = new(0.05, 0.05, 0.05);
     [Param("Seed", Step = 1)] public int Seed { get; set; } = 1;
 
     protected override void Apply()
@@ -370,9 +382,10 @@ public sealed class SmoothTool : Tool
 {
     public override string Name => "Smooth";
     public override string Tab => "Modify";
+    public override string Summary => "Eases each selected point toward the average of its neighbours, Iterations times at Strength (0 to 1). Keep volume uses Taubin smoothing, which shrinks the shape less.";
     public override ToolKind Kind => ToolKind.Requester;
 
-    [Param("Strength", Min = 0, Max = 1, Step = 0.05)] public double Strength { get; set; } = 0.5;
+    [Param("Strength", Min = 0, Max = 1, Step = 0.05, Description = "How far each step moves a point toward its neighbours' average.")] public double Strength { get; set; } = 0.5;
     [Param("Iterations", Min = 1, Max = 1000, Step = 1)] public int Iterations { get; set; } = 3;
     /// <summary>Taubin smoothing: smooths without shrinking the shape as much.</summary>
     [Param("Keep volume")] public bool KeepVolume { get; set; }
@@ -389,6 +402,7 @@ public sealed class CenterTool : Tool
 {
     public override string Name => "Center";
     public override string Tab => "Modify";
+    public override string Summary => "Moves the selection so the middle of its bounding box is at the origin, on the axes that are on.";
     public override ToolKind Kind => ToolKind.Immediate;
 
     [Param("X")] public bool X { get; set; } = true;
@@ -408,9 +422,10 @@ public sealed class QuantizeTool : Tool
 {
     public override string Name => "Quantize";
     public override string Tab => "Modify";
+    public override string Summary => "Snaps every selected point to a grid with Step spacing per axis (0: leave that axis).";
     public override ToolKind Kind => ToolKind.Requester;
 
-    [Param("Step", Distance = true, Min = 0)] public Vec3 Step { get; set; } = new(0.1, 0.1, 0.1);
+    [Param("Step", Distance = true, Min = 0, Description = "Grid spacing along X, Y and Z (0: leave that axis).")] public Vec3 Step { get; set; } = new(0.1, 0.1, 0.1);
 
     protected override void Apply()
     {

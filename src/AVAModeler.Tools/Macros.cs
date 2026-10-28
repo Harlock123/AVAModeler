@@ -42,8 +42,12 @@ public static class Macros
         ("print(...)", "writes to the macro's output"),
     ];
 
-    /// <summary>Runs a macro against the command API. Errors come back as <see cref="MacroException"/> with the Lua message.</summary>
-    public static void Run(string code, Commands commands)
+    /// <summary>
+    /// Runs a macro against the command API. Errors come back as <see cref="MacroException"/> with the Lua message.
+    /// With a <paramref name="timeLimit"/>, a macro still running after that long is stopped (with a
+    /// <see cref="MacroException"/>), so a script that never ends can't hang its caller.
+    /// </summary>
+    public static void Run(string code, Commands commands, TimeSpan? timeLimit = null)
     {
         var lua = new Script(CoreModules.Preset_SoftSandbox);
         var g = lua.Globals;
@@ -98,7 +102,8 @@ public static class Macros
         lua.Options.DebugPrint = commands.Print;
         try
         {
-            lua.DoString(code);
+            if (timeLimit is { } limit) RunLimited(lua, code, limit);
+            else lua.DoString(code);
         }
         catch (InterpreterException e)
         {
@@ -107,6 +112,21 @@ public static class Macros
         catch (Exception e) when (e is ArgumentException or InvalidOperationException or FormatException or IndexOutOfRangeException or ArgumentOutOfRangeException)
         {
             throw new MacroException(e.Message, e);
+        }
+    }
+
+    /// <summary>Runs the code as a coroutine that yields every so many instructions, so the clock can be checked between.</summary>
+    private static void RunLimited(Script lua, string code, TimeSpan limit)
+    {
+        var co = lua.CreateCoroutine(lua.LoadString(code)).Coroutine;
+        co.AutoYieldCounter = 1000;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        co.Resume();
+        while (co.State == CoroutineState.ForceSuspended)
+        {
+            if (clock.Elapsed > limit)
+                throw new MacroException($"The macro was stopped after running for {limit.TotalSeconds:0.#} seconds.", new TimeoutException());
+            co.Resume();
         }
     }
 

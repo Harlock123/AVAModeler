@@ -27,6 +27,11 @@ public sealed class ModelerWorkspace : DockPanel
     /// <summary>Raised to switch to the Layout workspace.</summary>
     public event Action? ShowLayout;
 
+    /// <summary>Raised when <see cref="Preferences.AllowAgents"/> may have changed (the app opens or closes its door to AI agents).</summary>
+    public event Action? AgentsChanged;
+
+    private readonly MenuItem _agents = new() { Header = "Allow AI _Agents (MCP)", ToggleType = MenuItemToggleType.CheckBox };
+
     public ModelerWorkspace(ModelerSession session)
     {
         Session = session;
@@ -56,6 +61,8 @@ public sealed class ModelerWorkspace : DockPanel
         Numeric.ApplyRequested += tool => session.Run(tool);
         session.DocumentReplaced += () => { Numeric.Show(null); Views.FitAll(); };
         session.Changed += () => { if (session.ActiveTool != null && Numeric.Tool != session.ActiveTool) Numeric.Show(session.ActiveTool); };
+        _agents.IsChecked = session.Preferences.AllowAgents;
+        _agents.Click += (_, _) => Execute("AI Agents");
         Focusable = true;
         AttachedToVisualTree += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(Views.FitAll, Avalonia.Threading.DispatcherPriority.Background);
         RefreshRecent();
@@ -137,7 +144,8 @@ public sealed class ModelerWorkspace : DockPanel
             ["Center Mouse"] = () => SetCenter(ActionCenter.Mouse),
             ["Center Origin"] = () => SetCenter(ActionCenter.Origin),
             ["Surface Editor"] = () => { var w = new SurfaceEditor(s); if (Owner != null) w.Show(Owner); else w.Show(); },
-            ["Preferences"] = () => { var w = new PreferencesWindow(s, ApplyPreferences); if (Owner != null) w.ShowDialog(Owner); else w.Show(); },
+            ["Preferences"] = () => { var w = new PreferencesWindow(s, ApplyPreferences); if (Owner != null) _ = Dialogs.ShowModal(w, Owner); else w.Show(); },
+            ["AI Agents"] = ToggleAgents,
             ["Run Macro"] = () => _ = RunMacro(),
             ["Macro Reference"] = () => _ = Dialogs.Message(Owner, "Macros", MacroReference()),
             ["Load Plugin"] = () => _ = LoadPlugin(),
@@ -205,7 +213,17 @@ public sealed class ModelerWorkspace : DockPanel
     {
         Views.UseRenderer(Session.Preferences.Renderer == "OpenGL");
         Tabs.ShowTab("Objects");
+        _agents.IsChecked = Session.Preferences.AllowAgents;
+        AgentsChanged?.Invoke();
         Session.Document.Notify();
+    }
+
+    /// <summary>Turns AI agents' access (MCP) on or off (kept with the preferences when the app closes).</summary>
+    private void ToggleAgents()
+    {
+        Session.Preferences.AllowAgents = !Session.Preferences.AllowAgents;
+        _agents.IsChecked = Session.Preferences.AllowAgents;
+        AgentsChanged?.Invoke();
     }
 
     // ───────────────────────────── the keyboard ─────────────────────────────
@@ -467,7 +485,7 @@ public sealed class ModelerWorkspace : DockPanel
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
                     Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",
                     Item("Meta_NURBS", "MetaNURBS"), Item("_Backface Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-", Item("_Layout", "Show Layout")),
-                Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin")),
+                Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin"), "-", _agents),
                 Group("_Help", Item("_Keyboard", "Keyboard"), Item("_About", "About")),
             },
         };

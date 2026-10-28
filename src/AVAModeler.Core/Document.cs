@@ -350,13 +350,67 @@ public sealed class Document
         Notify();
     }
 
-    /// <summary>Records a finished edit in the history, from the snapshot taken before it.</summary>
+    /// <summary>Records a finished edit in the history, from the snapshot taken before it (inside a <see cref="Group"/>, the group's one step holds it).</summary>
     public void Commit(UndoStack.Snapshot before)
     {
-        Undo.Push(before);
+        if (_group > 0) _groupEdits++;
+        else Undo.Push(before);
         foreach (int i in before.Layers.Keys) Selection.Prune(i, Layers[i].Mesh);
         Modified = true;
         Notify();
+    }
+
+    private int _group, _groupEdits;
+
+    /// <summary>Whether a <see cref="Group"/> is under way.</summary>
+    public bool InGroup => _group > 0;
+
+    /// <summary>
+    /// Runs several edits as one: whatever edits <paramref name="work"/> makes become a single undo step (none if it
+    /// made none). If it throws, every layer, the selection and the surfaces are put back as they were before it began,
+    /// the history is left as it was, and the exception goes on. Undo and redo can't be used inside a group. A group
+    /// inside another is part of the outer one.
+    /// </summary>
+    public T Group<T>(string label, Func<T> work)
+    {
+        if (_group > 0) return work();
+        var before = Snapshot(label, Enumerable.Range(0, Layers.Count));
+        _group = 1;
+        _groupEdits = 0;
+        T result;
+        try
+        {
+            result = work();
+        }
+        catch
+        {
+            _group = 0;
+            Revert(before);
+            throw;
+        }
+        _group = 0;
+        if (_groupEdits > 0)
+        {
+            Undo.Push(before);
+            Modified = true;
+            Notify();
+        }
+        return result;
+    }
+
+    /// <inheritdoc cref="Group{T}(string, Func{T})"/>
+    public void Group(string label, Action work) => Group(label, () => { work(); return 0; });
+
+    /// <summary>
+    /// A copy of the object to read from elsewhere (another thread, a renderer): its layers, surfaces, selection and
+    /// file path, but no history.
+    /// </summary>
+    public Document Copy()
+    {
+        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, Selection = Selection.Clone() };
+        d.Layers = Layers.Select(l => l.Clone()).ToList();
+        d.Surfaces = Surfaces.Select(s => s.Clone()).ToList();
+        return d;
     }
 
     /// <summary>An edit in one go: a snapshot, the change, then the history.</summary>
@@ -369,6 +423,7 @@ public sealed class Document
 
     public bool UndoLast()
     {
+        if (_group > 0) throw new InvalidOperationException("Undo can't be used in the middle of a grouped edit: the whole group is one undo step.");
         if (!Undo.Undo(this)) return false;
         Modified = true;
         Notify();
@@ -377,6 +432,7 @@ public sealed class Document
 
     public bool RedoLast()
     {
+        if (_group > 0) throw new InvalidOperationException("Redo can't be used in the middle of a grouped edit: the whole group is one undo step.");
         if (!Undo.Redo(this)) return false;
         Modified = true;
         Notify();

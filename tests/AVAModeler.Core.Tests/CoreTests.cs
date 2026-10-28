@@ -220,6 +220,82 @@ public class DocumentTests
     }
 
     [Fact]
+    public void A_group_of_edits_is_one_undo_step()
+    {
+        var d = new Document();
+        d.Edit("Box", () => d.Current.Mesh = MeshTests.Cube());
+        d.SetLayers([0, 1]);
+        int n = d.Group("Build", () =>
+        {
+            d.Edit("Move", () => d.Current.Mesh.Transform(Mat4.Translation(new Vec3(1, 0, 0))));
+            d.Edit("Second", () => d.Layers[1].Mesh = MeshTests.Cube(), [1]);
+            d.Surfaces[0].Color = new Rgb(1, 2, 3);
+            d.Edit("Remove", () => d.Current.Mesh.RemovePolygons([0]));
+            return d.Current.Mesh.Polygons.Count;
+        });
+        Assert.Equal(5, n);
+        Assert.Equal(2, d.Undo.Count);
+        Assert.Equal("Build", d.Undo.UndoLabel);
+        Assert.False(d.InGroup);
+        Assert.True(d.UndoLast());
+        Assert.Equal(6, d.Current.Mesh.Polygons.Count);
+        Assert.Equal(-0.5, d.Current.Mesh.Points[0].X);
+        Assert.True(d.Layers[1].Mesh.IsEmpty);
+        Assert.Equal(Rgb.Grey, d.Surfaces[0].Color);
+        Assert.True(d.RedoLast());
+        Assert.Equal(5, d.Current.Mesh.Polygons.Count);
+        // A group that edits nothing adds no step; one inside another is part of it.
+        d.Group("Nothing", () => { });
+        Assert.Equal(2, d.Undo.Count);
+        d.Group("Outer", () => d.Group("Inner", () => d.Edit("Move", () => d.Current.Mesh.Transform(Mat4.Translation(Vec3.UnitY)))));
+        Assert.Equal(3, d.Undo.Count);
+        Assert.Equal("Outer", d.Undo.UndoLabel);
+    }
+
+    [Fact]
+    public void A_group_that_fails_puts_everything_back_and_leaves_the_history_alone()
+    {
+        var d = new Document();
+        d.Edit("Box", () => d.Current.Mesh = MeshTests.Cube());
+        d.Selection.Mode = SelectionMode.Polygons;
+        d.Selection.PolygonsIn(0).Add(3);
+        Assert.Throws<InvalidOperationException>(() => d.Group("Doomed", () =>
+        {
+            d.Edit("Remove", () => d.Current.Mesh.RemovePolygons([0, 1, 2, 3]));
+            d.Selection.Clear(allModes: true);
+            d.SurfaceIndex("New");
+            throw new InvalidOperationException("no");
+        }));
+        Assert.Equal(6, d.Current.Mesh.Polygons.Count);
+        Assert.Equal([3], d.Selection.PolygonsIn(0));
+        Assert.Single(d.Surfaces);
+        Assert.Equal(1, d.Undo.Count);
+        Assert.False(d.InGroup);
+        // Undo and redo can't run in the middle of a group (the group would lose its footing).
+        Assert.Throws<InvalidOperationException>(() => d.Group("Undoing", () => d.UndoLast()));
+        Assert.Equal(6, d.Current.Mesh.Polygons.Count);
+        Assert.Equal(1, d.Undo.Count);
+    }
+
+    [Fact]
+    public void A_copy_stands_apart_from_its_document()
+    {
+        var d = new Document { FilePath = "/x/cube.lwo" };
+        d.Edit("Box", () => d.Current.Mesh = MeshTests.Cube());
+        d.Selection.SelectPoint(0, 4);
+        var c = d.Copy();
+        Assert.Equal("/x/cube.lwo", c.FilePath);
+        Assert.Equal(0, c.Undo.Count);
+        Assert.Equal([4], c.Selection.PointsIn(0));
+        c.Current.Mesh.Points[0] = new Vec3(9, 9, 9);
+        c.Surfaces[0].Color = new Rgb(9, 9, 9);
+        c.SetLayers([3]);
+        Assert.Equal(-0.5, d.Current.Mesh.Points[0].X);
+        Assert.Equal(Rgb.Grey, d.Surfaces[0].Color);
+        Assert.Equal([0], d.ForegroundLayers);
+    }
+
+    [Fact]
     public void A_cancelled_edit_reverts_without_history()
     {
         var d = new Document();

@@ -148,7 +148,11 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
     /// <summary>The folder a running macro's file is in: relative image paths it gives are looked for from there first.</summary>
     public string? BaseDirectory { get; set; }
 
-    /// <summary>Runs a tool with parameters by name (unnamed ones keep their defaults).</summary>
+    /// <summary>
+    /// Runs a tool with parameters by name (unnamed ones keep their defaults), as one undo step. Each value is checked
+    /// (<see cref="ToolParameter.Assign"/>): a bad name or value throws an <see cref="ArgumentException"/> before
+    /// anything changes. If the tool itself fails, its work is undone before the exception goes on.
+    /// </summary>
     public Tool Run(string toolName, IReadOnlyDictionary<string, object?>? args = null)
     {
         var tool = Registry.Create(toolName);
@@ -156,11 +160,25 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
             foreach (var (k, v) in args)
             {
                 var p = tool.Parameter(k) ?? throw new ArgumentException($"{tool.Name} has no parameter \"{k}\". It has: {string.Join(", ", tool.Parameters.Select(x => x.Name))}.");
-                p.Value = v;
+                p.Assign(v);
             }
-        tool.Run(Context);
+        try
+        {
+            tool.Run(Context);
+        }
+        catch
+        {
+            tool.Cancel();
+            throw;
+        }
         return tool;
     }
+
+    /// <summary>
+    /// Runs several commands as one undo step (see <see cref="Core.Document.Group{T}"/>): if one fails, everything they
+    /// did is put back.
+    /// </summary>
+    public T Group<T>(string label, Func<T> work) => Document.Group(label, work);
 
     public int AddPoint(Vec3 p)
     {
@@ -169,15 +187,46 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
         return i;
     }
 
-    public int AddPolygon(IEnumerable<int> points, string? surface = null)
+    /// <summary>Adds points to the current layer in one undo step; returns their indices.</summary>
+    public IReadOnlyList<int> AddPoints(IEnumerable<Vec3> points)
     {
-        var pts = points.ToList();
+        var list = points.ToList();
+        if (list.Any(p => !double.IsFinite(p.X) || !double.IsFinite(p.Y) || !double.IsFinite(p.Z))) throw new ArgumentException("Points need finite coordinates.");
+        var added = new List<int>();
+        if (list.Count == 0) return added;
+        Document.Edit("Add points", () => { foreach (var p in list) added.Add(Document.Current.Mesh.AddPoint(p)); }, [Document.CurrentLayer]);
+        return added;
+    }
+
+    public int AddPolygon(IEnumerable<int> points, string? surface = null) => AddPolygons([points.ToList()], surface)[0];
+
+    /// <summary>
+    /// Adds polygons through existing points of the current layer, in one undo step, all with one surface (made if
+    /// new); returns their indices. Every polygon is checked before any is added.
+    /// </summary>
+    public IReadOnlyList<int> AddPolygons(IEnumerable<IReadOnlyList<int>> polygons, string? surface = null)
+    {
+        var list = polygons.Select(p => p.ToList()).ToList();
         var mesh = Document.Current.Mesh;
-        if (pts.Count == 0 || pts.Any(i => i < 0 || i >= mesh.Points.Count)) throw new ArgumentException("A polygon needs points that exist.");
-        int index = -1;
-        int s = surface == null ? 0 : Document.SurfaceIndex(surface);
-        Document.Edit("Add polygon", () => index = mesh.AddPolygon(pts, s), [Document.CurrentLayer]);
-        return index;
+        for (int k = 0; k < list.Count; k++)
+        {
+            var pts = list[k];
+            if (pts.Count == 0) throw new ArgumentException($"Polygon {k} has no points: a polygon needs one or more.");
+            foreach (int i in pts)
+                if (i < 0 || i >= mesh.Points.Count)
+                    throw new ArgumentException(mesh.Points.Count == 0
+                        ? $"Polygon {k} uses point {i}, but the current layer has no points."
+                        : $"Polygon {k} uses point {i}, but the current layer's points are numbered 0 to {mesh.Points.Count - 1}.");
+            if (pts.Distinct().Count() != pts.Count) throw new ArgumentException($"Polygon {k} uses the same point twice.");
+        }
+        var added = new List<int>();
+        if (list.Count == 0) return added;
+        Document.Edit(list.Count == 1 ? "Add polygon" : "Add polygons", () =>
+        {
+            int s = surface == null ? 0 : Document.SurfaceIndex(surface);
+            foreach (var pts in list) added.Add(mesh.AddPolygon(pts, s));
+        }, [Document.CurrentLayer]);
+        return added;
     }
 
     public int PointCount => Document.Current.Mesh.Points.Count;
@@ -191,18 +240,33 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
         Document.Notify();
     }
 
+    /// <summary>Adds points of the current layer to the selection (in Points mode); an index that doesn't exist throws, selecting nothing.</summary>
     public void SelectPoints(IEnumerable<int> points)
     {
+        var list = points.ToList();
+        Check(list, Document.Current.Mesh.Points.Count, "point");
         Document.Selection.Mode = SelectionMode.Points;
-        foreach (int p in points) Document.Selection.SelectPoint(Document.CurrentLayer, p);
+        foreach (int p in list) Document.Selection.SelectPoint(Document.CurrentLayer, p);
         Document.Notify();
     }
 
+    /// <summary>Adds polygons of the current layer to the selection (in Polygons mode); an index that doesn't exist throws, selecting nothing.</summary>
     public void SelectPolygons(IEnumerable<int> polygons)
     {
+        var list = polygons.ToList();
+        Check(list, Document.Current.Mesh.Polygons.Count, "polygon");
         Document.Selection.Mode = SelectionMode.Polygons;
-        Document.Selection.PolygonsIn(Document.CurrentLayer).UnionWith(polygons);
+        Document.Selection.PolygonsIn(Document.CurrentLayer).UnionWith(list);
         Document.Notify();
+    }
+
+    private static void Check(List<int> indices, int count, string what)
+    {
+        foreach (int i in indices)
+            if (i < 0 || i >= count)
+                throw new ArgumentException(count == 0
+                    ? $"There's no {what} {i}: the current layer has no {what}s."
+                    : $"There's no {what} {i}: the current layer's {what}s are numbered 0 to {count - 1}.");
     }
 
     /// <summary>Selects, in the current mode, the points inside a box, or the polygons wholly inside it.</summary>
@@ -232,8 +296,20 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
     public bool Undo() => Document.UndoLast();
     public bool Redo() => Document.RedoLast();
 
+    /// <summary>
+    /// Asked before New or Load replaces the document: a reason not to (unsaved work an agent mustn't throw away), or
+    /// null to go ahead. A reason makes New and Load throw an <see cref="InvalidOperationException"/> with it.
+    /// </summary>
+    public Func<string?>? ReplaceGuard { get; set; }
+
+    private void CheckReplace()
+    {
+        if (ReplaceGuard?.Invoke() is { } reason) throw new InvalidOperationException(reason);
+    }
+
     public void New()
     {
+        CheckReplace();
         Document = new Document();
         Context = new ToolContext(Document);
         DocumentReplaced?.Invoke(Document);
@@ -241,6 +317,7 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
 
     public void Load(string path)
     {
+        CheckReplace();
         Document = (Loader ?? throw new InvalidOperationException("No file loader is set up."))(path);
         Context = new ToolContext(Document);
         DocumentReplaced?.Invoke(Document);

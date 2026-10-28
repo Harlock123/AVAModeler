@@ -5,6 +5,7 @@ using AVAModeler.Core;
 using AVAModeler.Formats;
 using AVAModeler.Geometry;
 using AVAModeler.Layout.UI;
+using AVAModeler.Mcp;
 using AVAModeler.Modeler.UI;
 using AVAModeler.Tools;
 
@@ -22,6 +23,12 @@ public sealed class MainWindow : Window
     private readonly LayoutSession _layoutSession = new();
     private readonly DispatcherTimer _autosave = new();
 
+    /// <summary>AI agents' live access (MCP), open while the preference allows it.</summary>
+    internal LiveAgents Agents { get; }
+
+    /// <summary>The pipe agents reach the app on (tests give it one of their own).</summary>
+    internal string AgentPipe { get; set; } = LiveProtocol.PipeName;
+
     /// <summary>Marks a running session; left behind if the app doesn't close cleanly.</summary>
     private static string LockPath => Path.Combine(Preferences.Folder, "running.lock");
     private static string AutosavePath => Path.Combine(Preferences.AutosaveFolder, "autosave.lwo");
@@ -37,6 +44,8 @@ public sealed class MainWindow : Window
         Session = new ModelerSession(prefs, registry);
         Modeler = new ModelerWorkspace(Session);
         Modeler.ShowLayout += ShowLayout;
+        Agents = new LiveAgents(Session);
+        Modeler.AgentsChanged += SyncAgents;
         Width = 1400;
         Height = 900;
         MinWidth = 800;
@@ -53,6 +62,24 @@ public sealed class MainWindow : Window
             if (prefs.AutosaveMinutes > 0) _autosave.Start();
             Opened += async (_, _) => await Started(args);
             Closing += Closing_;
+            SyncAgents();
+        }
+        Closed += (_, _) => _ = Agents.StopAsync();
+    }
+
+    /// <summary>Opens or closes the door to AI agents to match the preference.</summary>
+    internal void SyncAgents()
+    {
+        if (Session.Preferences.AllowAgents && !Agents.Running)
+        {
+            Session.SetStatus(Agents.Start(AgentPipe) is { } problem
+                ? $"AI agents can't connect: {problem} (Is another AVA Modeler already taking them?)"
+                : "AI agents may connect (MCP): configure them with \"AVAModeler --mcp --attach\".");
+        }
+        else if (!Session.Preferences.AllowAgents && Agents.Running)
+        {
+            _ = Agents.StopAsync();
+            Session.SetStatus("AI agents can no longer connect.");
         }
     }
 

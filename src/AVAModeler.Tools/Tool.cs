@@ -19,6 +19,8 @@ public sealed class ParamAttribute(string label) : Attribute
     /// <summary>An angle in degrees.</summary>
     public bool Angle { get; init; }
     public int Order { get; init; }
+    /// <summary>What the parameter does, for the command reference and AI agents, where the label alone doesn't say.</summary>
+    public string Description { get; init; } = "";
 }
 
 /// <summary>One of a tool's parameters, read through reflection from its <see cref="ParamAttribute"/>.</summary>
@@ -33,6 +35,79 @@ public sealed class ToolParameter(Tool tool, PropertyInfo property, ParamAttribu
     {
         get => property.GetValue(tool);
         set => property.SetValue(tool, Convert(value, property.PropertyType));
+    }
+
+    /// <summary>
+    /// Sets the value from a script or an agent, checking it first: a whole number for a whole-number parameter, one
+    /// of the names for a choice, three numbers for a vector, and within the parameter's limits. A value that doesn't
+    /// fit throws an <see cref="ArgumentException"/> saying what was wanted, and the tool is left as it was.
+    /// </summary>
+    public void Assign(object? value)
+    {
+        string what = $"{tool.Name}'s {Name}";
+        if (value == null) throw new ArgumentException($"{what} needs a value.");
+        object converted;
+        var type = property.PropertyType;
+        try
+        {
+            if (type.IsEnum)
+            {
+                if (type.IsInstanceOfType(value))
+                    converted = Enum.IsDefined(type, value) ? value : throw new ArgumentException($"{what} must be one of {string.Join(", ", Enum.GetNames(type))}.");
+                else if (value is string s)
+                {
+                    if (!Enum.TryParse(type, s, ignoreCase: true, out var e) || !Enum.IsDefined(type, e!) || int.TryParse(s, out _))
+                        throw new ArgumentException($"{what} must be one of {string.Join(", ", Enum.GetNames(type))}, not \"{s}\".");
+                    converted = e!;
+                }
+                else throw new ArgumentException($"{what} must be one of {string.Join(", ", Enum.GetNames(type))} (as a name).");
+            }
+            else if (type == typeof(Vec3))
+            {
+                double[] a = value switch
+                {
+                    Vec3 v => [v.X, v.Y, v.Z],
+                    IEnumerable<double> list => list.ToArray(),
+                    _ => throw new ArgumentException($"{what} must be a vector of three numbers [x, y, z]."),
+                };
+                if (a.Length != 3) throw new ArgumentException($"{what} must be a vector of three numbers [x, y, z], not {a.Length}.");
+                converted = new Vec3(a[0], a[1], a[2]);
+            }
+            else if (type == typeof(bool))
+                converted = value as bool? ?? throw new ArgumentException($"{what} must be true or false.");
+            else if (type == typeof(string))
+                converted = value as string ?? throw new ArgumentException($"{what} must be text.");
+            else if (type == typeof(int))
+            {
+                double d = value is string or bool ? throw new ArgumentException($"{what} must be a whole number.") : System.Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
+                if (d != Math.Floor(d) || double.IsInfinity(d) || d < int.MinValue || d > int.MaxValue) throw new ArgumentException($"{what} must be a whole number, not {d}.");
+                converted = (int)d;
+            }
+            else if (type == typeof(double))
+                converted = value is string or bool ? throw new ArgumentException($"{what} must be a number.") : System.Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
+            else
+                converted = Convert(value, type) ?? throw new ArgumentException($"{what} needs a value.");
+        }
+        catch (Exception e) when (e is FormatException or InvalidCastException or OverflowException)
+        {
+            throw new ArgumentException($"{what} can't take {value}: {e.Message}", e);
+        }
+        double[] numbers = converted switch { double d => [d], int i => [i], Vec3 v => [v.X, v.Y, v.Z], _ => [] };
+        foreach (double n in numbers)
+        {
+            if (double.IsNaN(n) || double.IsInfinity(n)) throw new ArgumentException($"{what} must be a finite number.");
+            if (n < attribute.Min || n > attribute.Max)
+                throw new ArgumentException($"{what} must be {Limits()}, not {n.ToString(System.Globalization.CultureInfo.InvariantCulture)}.");
+        }
+        property.SetValue(tool, converted);
+    }
+
+    /// <summary>The parameter's limits in words ("at least 1", "from 0 to 1"), or "" if it has none.</summary>
+    public string Limits()
+    {
+        static string N(double v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        bool low = !double.IsNegativeInfinity(attribute.Min), high = !double.IsPositiveInfinity(attribute.Max);
+        return low && high ? $"from {N(attribute.Min)} to {N(attribute.Max)}" : low ? $"at least {N(attribute.Min)}" : high ? $"at most {N(attribute.Max)}" : "";
     }
 
     private static object? Convert(object? value, Type type)
@@ -128,6 +203,16 @@ public abstract class Tool
     public abstract string Tab { get; }
     public virtual ToolKind Kind => ToolKind.Interactive;
     public virtual string Help => "";
+    /// <summary>
+    /// What the tool does, in a sentence or two, for the command reference and AI agents: what it works on and makes,
+    /// rather than how to drag it (<see cref="Help"/> says that). Defaults to <see cref="Help"/>.
+    /// </summary>
+    public virtual string Summary => Help;
+    /// <summary>
+    /// Whether the tool does anything when run by name with its parameters (from a script or an agent). A tool that
+    /// only works from mouse clicks in a view (Points, Drag) says no.
+    /// </summary>
+    public virtual bool Scriptable => true;
 
     protected ToolContext Context { get; private set; } = null!;
     protected Document Doc => Context.Document;

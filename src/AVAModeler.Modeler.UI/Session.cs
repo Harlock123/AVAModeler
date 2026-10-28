@@ -18,6 +18,11 @@ public sealed class Preferences
     public DisplayStyle PerspectiveStyle { get; set; } = DisplayStyle.ShadedWireframe;
     public ActionCenter ActionCenter { get; set; } = ActionCenter.Selection;
     public int SubdivisionLevel { get; set; } = 2;
+    /// <summary>
+    /// Whether AI agents may drive the open document through MCP (<c>AVAModeler --mcp --attach</c>), over a local
+    /// pipe only this user can open. Off unless turned on.
+    /// </summary>
+    public bool AllowAgents { get; set; }
     public List<string> RecentFiles { get; set; } = [];
     /// <summary>Key overrides: command name → key gesture text (e.g. "Move": "T").</summary>
     public Dictionary<string, string> Keys { get; set; } = [];
@@ -390,31 +395,8 @@ public sealed class ModelerSession
     /// <summary>What the views draw: the foreground and background layers, the selection, and the display settings.</summary>
     public ViewScene BuildScene(bool perspective)
     {
-        var scene = new ViewScene
-        {
-            Surfaces = Document.Surfaces,
-            Style = perspective ? Preferences.PerspectiveStyle : DisplayStyle.Wireframe,
-            ShowPoints = ShowPoints,
-            BackfaceTint = Preferences.BackfaceTint,
-            ImageBase = Document.ImageBase,
-            Version = Document.Version,
-        };
+        var scene = ViewScene.FromDocument(Document, perspective ? Preferences.PerspectiveStyle : DisplayStyle.Wireframe, Preferences.BackfaceTint, Smoothed);
         var sel = Document.Selection;
-        for (int i = 0; i < Document.Layers.Count; i++)
-        {
-            var layer = Document.Layers[i];
-            if (layer.State == LayerState.Off || layer.Mesh.IsEmpty) continue;
-            bool fg = layer.State == LayerState.Foreground;
-            scene.Layers.Add(new ViewLayer
-            {
-                Mesh = layer.Mesh,
-                Background = !fg,
-                SelectedPoints = fg && sel.Mode == SelectionMode.Points && sel.Points.TryGetValue(i, out var p) ? p : null,
-                SelectedPolygons = fg && sel.Mode == SelectionMode.Polygons && sel.Polygons.TryGetValue(i, out var q) ? q : null,
-                SelectedEdges = fg && sel.Mode == SelectionMode.Edges && sel.Edges.TryGetValue(i, out var e) ? e : null,
-                Subdivided = fg ? Smoothed(i) : null,
-            });
-        }
         if (sel.Mode == SelectionMode.Volume && !sel.Volume.IsEmpty) scene.Overlay.AddRange(BoxLines(Clamp(sel.Volume), Palette.Volume));
         return scene;
     }

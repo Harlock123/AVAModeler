@@ -20,13 +20,26 @@ public static class Dialogs
         Content = new Border { Padding = new Thickness(16), Child = content },
     };
 
+    private static int _modals;
+
+    /// <summary>How many modal dialog boxes are open (an AI agent's calls wait while there are any).</summary>
+    public static int ModalsOpen => _modals;
+
+    /// <summary>Shows a window as a modal dialog box over its owner, counted in <see cref="ModalsOpen"/>.</summary>
+    public static async Task ShowModal(Window window, Window owner)
+    {
+        _modals++;
+        try { await window.ShowDialog(owner); }
+        finally { _modals--; }
+    }
+
     public static async Task Message(Window? owner, string title, string text)
     {
         var ok = new Button { Content = "OK", HorizontalAlignment = HorizontalAlignment.Right, Width = 80 };
         var panel = new StackPanel { Spacing = 12, Children = { new SelectableTextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, MaxHeight = 520 }, ok } };
         var w = Frame(title, new ScrollViewer { Content = panel, MaxHeight = 600 });
         ok.Click += (_, _) => w.Close();
-        if (owner != null) await w.ShowDialog(owner); else w.Show();
+        if (owner != null) await ShowModal(w, owner); else w.Show();
     }
 
     public static async Task<bool> Ask(Window? owner, string title, string text, string yes = "Yes", string no = "No")
@@ -39,7 +52,7 @@ public static class Dialogs
         y.Click += (_, _) => { answer = true; w.Close(); };
         n.Click += (_, _) => w.Close();
         if (owner == null) return false;
-        await w.ShowDialog(owner);
+        await ShowModal(w, owner);
         return answer;
     }
 
@@ -217,6 +230,11 @@ public sealed class PreferencesWindow : Window
         var autosave = new TextBox { Text = p.AutosaveMinutes.ToString(CultureInfo.InvariantCulture) };
         var level = new ComboBox { ItemsSource = new[] { "1", "2", "3", "4" }, SelectedItem = p.SubdivisionLevel.ToString(CultureInfo.InvariantCulture) };
         var style = new ComboBox { ItemsSource = Enum.GetNames<DisplayStyle>(), SelectedItem = p.PerspectiveStyle.ToString() };
+        var agents = new CheckBox
+        {
+            Content = "Allow AI agents to drive AVA Modeler (MCP, from this user's programs only)", IsChecked = p.AllowAgents, Foreground = Look.Text,
+        };
+        ToolTip.SetTip(agents, "An agent configured with \"AVAModeler --mcp --attach\" can then build in the open object: you see its work in the views, and Ctrl+Z undoes it.");
         var keys = new StackPanel { Spacing = 2 };
         var keyBoxes = new Dictionary<string, TextBox>();
         foreach (var (command, key) in session.Keymap.Bindings.OrderBy(kv => kv.Key))
@@ -236,6 +254,7 @@ public sealed class PreferencesWindow : Window
             if (int.TryParse(autosave.Text, out int a)) p.AutosaveMinutes = Math.Clamp(a, 0, 600);
             if (int.TryParse(level.SelectedItem as string, out int l)) p.SubdivisionLevel = l;
             if (Enum.TryParse<DisplayStyle>(style.SelectedItem as string, out var st)) p.PerspectiveStyle = st;
+            p.AllowAgents = agents.IsChecked == true;
             p.Keys = keyBoxes.Where(kv => kv.Value.Text != Keymap.Defaults.GetValueOrDefault(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value.Text ?? "");
             p.Save();
@@ -259,6 +278,7 @@ public sealed class PreferencesWindow : Window
                         {
                             Label("Viewports"), renderer, Label("Perspective view"), style, Label("Undo levels"), undo,
                             Label("Auto-save every (minutes, 0 for never)"), autosave, Label("MetaNURBS smoothing level"), level,
+                            Label("AI agents"), agents,
                             Label("Keys (e.g. T, Shift+X, Ctrl+Z)"), keys,
                         },
                     },

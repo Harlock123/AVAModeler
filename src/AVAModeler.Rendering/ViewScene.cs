@@ -47,6 +47,41 @@ public sealed class ViewScene
     public List<OverlayLine> Overlay = [];
 
     public int Version;
+
+    /// <summary>
+    /// A document as the Modeler's views draw it: its foreground and background layers (layers that are off or empty
+    /// are left out), with the foreground's selection in the current mode. <paramref name="smoothed"/> gives a layer's
+    /// MetaNURBS surface, if any.
+    /// </summary>
+    public static ViewScene FromDocument(Document document, DisplayStyle style, bool backfaceTint = true, Func<int, Mesh?>? smoothed = null)
+    {
+        var sel = document.Selection;
+        var scene = new ViewScene
+        {
+            Surfaces = document.Surfaces,
+            Style = style,
+            ShowPoints = sel.Mode == SelectionMode.Points,
+            BackfaceTint = backfaceTint,
+            ImageBase = document.ImageBase,
+            Version = document.Version,
+        };
+        for (int i = 0; i < document.Layers.Count; i++)
+        {
+            var layer = document.Layers[i];
+            if (layer.State == LayerState.Off || layer.Mesh.IsEmpty) continue;
+            bool fg = layer.State == LayerState.Foreground;
+            scene.Layers.Add(new ViewLayer
+            {
+                Mesh = layer.Mesh,
+                Background = !fg,
+                SelectedPoints = fg && sel.Mode == SelectionMode.Points && sel.Points.TryGetValue(i, out var p) ? p : null,
+                SelectedPolygons = fg && sel.Mode == SelectionMode.Polygons && sel.Polygons.TryGetValue(i, out var q) ? q : null,
+                SelectedEdges = fg && sel.Mode == SelectionMode.Edges && sel.Edges.TryGetValue(i, out var e) ? e : null,
+                Subdivided = fg ? smoothed?.Invoke(i) : null,
+            });
+        }
+        return scene;
+    }
 }
 
 /// <summary>The classic Modeler colours (as 0xAARRGGBB), with a few for the modern touches.</summary>

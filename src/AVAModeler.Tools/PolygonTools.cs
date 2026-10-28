@@ -7,6 +7,7 @@ public sealed class FlipTool : Tool
 {
     public override string Name => "Flip";
     public override string Tab => "Polygon";
+    public override string Summary => "Reverses the selected polygons so they face the other way.";
     public override ToolKind Kind => ToolKind.Immediate;
 
     protected override void Apply()
@@ -21,10 +22,11 @@ public sealed class MergePointsTool : Tool
 {
     public override string Name => "Merge Points";
     public override string Tab => "Polygon";
+    public override string Summary => "Welds points that lie within Distance of each other (0: only points in exactly the same place) into one, among the selected points (or all). Clears the selection.";
     public override ToolKind Kind => ToolKind.Requester;
 
     /// <summary>How close points must be to merge (0: exactly the same place).</summary>
-    [Param("Distance", Distance = true, Min = 0)] public double Distance { get; set; }
+    [Param("Distance", Distance = true, Min = 0, Description = "Points closer than this merge (0: only coincident points).")] public double Distance { get; set; }
 
     /// <summary>How many points the last run merged.</summary>
     public int Merged { get; private set; }
@@ -46,6 +48,7 @@ public sealed class RemoveTool : Tool
 {
     public override string Name => "Remove";
     public override string Tab => "Polygon";
+    public override string Summary => "Deletes: in Points mode with points selected, those points and every polygon that uses them; otherwise the selected polygons (every polygon in the foreground if none are selected), and with Remove loose points, the points they leave unused.";
     public override ToolKind Kind => ToolKind.Immediate;
 
     /// <summary>Also delete points no polygon uses any more.</summary>
@@ -80,14 +83,15 @@ public sealed class SurfaceTool : Tool
 {
     public override string Name => "Surface";
     public override string Tab => "Polygon";
+    public override string Summary => "Gives the selected polygons (all of them if none are selected) the named surface, made if new. A new surface takes Color (0-255 each), Smoothing and Double sided; an existing one keeps its look unless Set look is on. The surface editor sets the rest (diffuse, specular and so on).";
     public override ToolKind Kind => ToolKind.Requester;
 
     [Param("Name")] public string SurfaceName { get; set; } = "Default";
     /// <summary>The colour, 0 to 255 per channel; set only when the surface is new or "Set look" is on.</summary>
-    [Param("Color", Step = 1, Min = 0, Max = 255)] public Vec3 Color { get; set; } = new(200, 200, 200);
+    [Param("Color", Step = 1, Min = 0, Max = 255, Description = "Red, green, blue, 0 to 255 each.")] public Vec3 Color { get; set; } = new(200, 200, 200);
     [Param("Smoothing")] public bool Smoothing { get; set; }
     [Param("Double sided")] public bool DoubleSided { get; set; }
-    [Param("Set look")] public bool SetLook { get; set; }
+    [Param("Set look", Description = "Also set Color, Smoothing and Double sided on a surface that already exists.")] public bool SetLook { get; set; }
 
     protected override void Apply()
     {

@@ -6,6 +6,7 @@
     <Project Path="src/AVAModeler.Tools/AVAModeler.Tools.csproj" />
     <Project Path="src/AVAModeler.Rendering/AVAModeler.Rendering.csproj" />
     <Project Path="src/AVAModeler.Scene/AVAModeler.Scene.csproj" />
+    <Project Path="src/AVAModeler.Mcp/AVAModeler.Mcp.csproj" />
     <Project Path="src/AVAModeler.Modeler.UI/AVAModeler.Modeler.UI.csproj" />
     <Project Path="src/AVAModeler.Layout.UI/AVAModeler.Layout.UI.csproj" />
     <Project Path="src/AVAModeler/AVAModeler.csproj" />
@@ -20,6 +21,7 @@
     <Project Path="tests/AVAModeler.Scene.Tests/AVAModeler.Scene.Tests.csproj" />
     <Project Path="tests/AVAModeler.Rendering.Tests/AVAModeler.Rendering.Tests.csproj" />
     <Project Path="tests/AVAModeler.Tools.Tests/AVAModeler.Tools.Tests.csproj" />
+    <Project Path="tests/AVAModeler.Mcp.Tests/AVAModeler.Mcp.Tests.csproj" />
     <Project Path="tests/AVAModeler.UI.Tests/AVAModeler.UI.Tests.csproj" />
   </Folder>
 </Solution>

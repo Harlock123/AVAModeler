@@ -40,11 +40,12 @@ public sealed class BoxTool : Tool
 {
     public override string Name => "Box";
     public override string Tab => "Objects";
+    public override string Summary => "Adds a box (a cuboid of quads, outward-facing) to the current layer, centred on Center with Size along X, Y and Z, each side cut into Segments. A size of 0 on one axis makes a flat grid.";
     public override string Help => "Drag to set the box in a view; drag in another view for its depth. Enter makes it.";
 
     [Param("Center", Distance = true)] public Vec3 Center { get; set; }
-    [Param("Size", Distance = true, Min = 0)] public Vec3 Size { get; set; } = new(1, 1, 1);
-    [Param("Segments X", Min = 1, Max = 1000, Step = 1)] public int SegmentsX { get; set; } = 1;
+    [Param("Size", Distance = true, Min = 0, Description = "Edge lengths along X, Y and Z.")] public Vec3 Size { get; set; } = new(1, 1, 1);
+    [Param("Segments X", Min = 1, Max = 1000, Step = 1, Description = "How many pieces each side is cut into along X.")] public int SegmentsX { get; set; } = 1;
     [Param("Segments Y", Min = 1, Max = 1000, Step = 1)] public int SegmentsY { get; set; } = 1;
     [Param("Segments Z", Min = 1, Max = 1000, Step = 1)] public int SegmentsZ { get; set; } = 1;
     [Param("Surface")] public string Surface { get; set; } = "Default";
@@ -75,15 +76,16 @@ public sealed class BallTool : Tool
 {
     public override string Name => "Ball";
     public override string Tab => "Objects";
+    public override string Summary => "Adds a ball to the current layer: a Globe (rings of quads with triangles at the poles, its poles along Axis; Sides round, Segments pole to pole) or a Tessellated geodesic ball (subdivided Level times). Radius can differ per axis for an ellipsoid.";
     public override string Help => "Drag out from the centre; Shift keeps it round.";
 
     [Param("Kind")] public BallKind Style { get; set; } = BallKind.Globe;
     [Param("Center", Distance = true)] public Vec3 Center { get; set; }
-    [Param("Radius", Distance = true, Min = 0)] public Vec3 Radius { get; set; } = new(0.5, 0.5, 0.5);
-    [Param("Sides", Min = 3, Max = 1000, Step = 1)] public int Sides { get; set; } = 24;
-    [Param("Segments", Min = 2, Max = 1000, Step = 1)] public int Segments { get; set; } = 12;
-    [Param("Level", Min = 0, Max = 6, Step = 1)] public int Level { get; set; } = 2;
-    [Param("Axis")] public Axis Axis { get; set; } = Axis.Y;
+    [Param("Radius", Distance = true, Min = 0, Description = "Radius along X, Y and Z (equal for a sphere).")] public Vec3 Radius { get; set; } = new(0.5, 0.5, 0.5);
+    [Param("Sides", Min = 3, Max = 1000, Step = 1, Description = "Globe: divisions round the axis.")] public int Sides { get; set; } = 24;
+    [Param("Segments", Min = 2, Max = 1000, Step = 1, Description = "Globe: divisions from pole to pole.")] public int Segments { get; set; } = 12;
+    [Param("Level", Min = 0, Max = 6, Step = 1, Description = "Tessellated: how many times the starting solid is subdivided.")] public int Level { get; set; } = 2;
+    [Param("Axis", Description = "Globe: the axis through its poles.")] public Axis Axis { get; set; } = Axis.Y;
     [Param("Surface")] public string Surface { get; set; } = "Default";
 
     protected override void OnDrag(DragInfo d)
@@ -114,15 +116,16 @@ public class DiscTool : Tool
 {
     public override string Name => "Disc";
     public override string Tab => "Objects";
+    public override string Summary => "Adds a cylinder to the current layer along Axis, centred on Center: Height along the axis (half each way), Radius across it (the component along the axis is ignored), Sides round, Segments along, with flat n-gon end caps if Caps is on. Height 0 makes a single flat disc.";
     public override string Help => "Drag out the radius in the view along whose axis it lies; set the height numerically or by dragging in another view.";
 
     [Param("Center", Distance = true)] public Vec3 Center { get; set; }
-    [Param("Radius", Distance = true, Min = 0)] public Vec3 Radius { get; set; } = new(0.5, 0.5, 0.5);
-    [Param("Height", Distance = true)] public double Height { get; set; } = 1;
+    [Param("Radius", Distance = true, Min = 0, Description = "Radius along X, Y and Z; the component along Axis is ignored.")] public Vec3 Radius { get; set; } = new(0.5, 0.5, 0.5);
+    [Param("Height", Distance = true, Description = "Length along Axis, centred on Center (0: a flat disc).")] public double Height { get; set; } = 1;
     [Param("Sides", Min = 3, Max = 1000, Step = 1)] public int Sides { get; set; } = 24;
     [Param("Segments", Min = 1, Max = 1000, Step = 1)] public int Segments { get; set; } = 1;
-    [Param("Axis")] public Axis Axis { get; set; } = Axis.Y;
-    [Param("Caps")] public bool Caps { get; set; } = true;
+    [Param("Axis", Description = "The axis it runs along.")] public Axis Axis { get; set; } = Axis.Y;
+    [Param("Caps", Description = "Close the ends with flat n-gons.")] public bool Caps { get; set; } = true;
     [Param("Surface")] public string Surface { get; set; } = "Default";
 
     protected virtual double TopScale => 1;
@@ -153,6 +156,7 @@ public class DiscTool : Tool
 public sealed class ConeTool : DiscTool
 {
     public override string Name => "Cone";
+    public override string Summary => "Adds a cone to the current layer: like Disc, but narrowing to a point at the positive end of Axis (Center + Height/2 along it).";
     protected override double TopScale => 0;
 }
 
@@ -161,6 +165,8 @@ public sealed class PointsTool : Tool
 {
     public override string Name => "Points";
     public override string Tab => "Objects";
+    public override string Summary => "Adds lone points where the mouse clicks in a view. Only works with the mouse: from a script use add_points instead.";
+    public override bool Scriptable => false;
     public override string Help => "Click to add points; drag to place each one. Enter keeps them.";
 
     private readonly List<Vec3> _points = [];
@@ -194,6 +200,7 @@ public sealed class MakePolygonTool : Tool
 {
     public override string Name => "Make Polygon";
     public override string Tab => "Objects";
+    public override string Summary => "Makes one polygon through the selected points (Points mode), in the order they were selected, on the named surface: one point makes a dot, two a line, three or more a face. Faces are seen from the side where their points run clockwise. Selects the new polygon.";
     public override ToolKind Kind => ToolKind.Immediate;
     public override string Help => "Select points in order (one, two, or three or more), then make a polygon through them.";
 

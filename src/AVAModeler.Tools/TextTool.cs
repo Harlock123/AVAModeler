@@ -11,15 +11,16 @@ public sealed class TextTool : Tool
 {
     public override string Name => "Text";
     public override string Tab => "Objects";
+    public override string Summary => "Adds a line of text as flat polygons, one per letter (holes joined to the outline), in the current layer: Height is the font size in metres, the baseline starts at Position, facing along Axis (Z: readable in the Front view). Font is a font family name (blank: the default).";
     public override string Help => "Click where the text starts; type it in the numeric panel.";
 
     [Param("Text")] public string Text { get; set; } = "AVA";
     [Param("Font")] public string Font { get; set; } = "";
-    [Param("Height", Distance = true, Min = 0)] public double Height { get; set; } = 1;
-    [Param("Position", Distance = true)] public Vec3 Position { get; set; }
+    [Param("Height", Distance = true, Min = 0, Description = "The font size.")] public double Height { get; set; } = 1;
+    [Param("Position", Distance = true, Description = "Where the baseline starts.")] public Vec3 Position { get; set; }
     /// <summary>The axis the text faces along: Z puts it in the Front view.</summary>
-    [Param("Axis")] public Axis Axis { get; set; } = Axis.Z;
-    [Param("Curve steps", Min = 1, Max = 32, Step = 1)] public int CurveSteps { get; set; } = 6;
+    [Param("Axis", Description = "The axis the text faces along: Z reads in the Front view, Y in the Top view, X in the Side view.")] public Axis Axis { get; set; } = Axis.Z;
+    [Param("Curve steps", Min = 1, Max = 32, Step = 1, Description = "Straight pieces per curve of a letter.")] public int CurveSteps { get; set; } = 6;
     [Param("Surface")] public string Surface { get; set; } = "Default";
 
     protected override void OnDrag(DragInfo d)

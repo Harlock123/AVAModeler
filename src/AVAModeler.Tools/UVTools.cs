@@ -28,18 +28,19 @@ public sealed class MakeUVsTool : Tool
 {
     public override string Name => "Make UVs";
     public override string Tab => "Polygon";
+    public override string Summary => "Gives the selected polygons (or all) coordinates in a UV map (made if new) by a projection along Axis: planar, cylindrical, spherical, cubic or atlas. With Fit on, the layout fills the 0-1 square; otherwise Center and Size place the projection as an image map with the same settings would. Makes that map the current one.";
     public override ToolKind Kind => ToolKind.Requester;
     public override string Help => "Lays the selected polygons (or all) out in a UV map by a projection. The UV view shows the result.";
 
-    [Param("UV map")] public string MapName { get; set; } = "UV";
+    [Param("UV map", Description = "The map's name (made if new).")] public string MapName { get; set; } = "UV";
     [Param("Projection")] public UVProjection Projection { get; set; } = UVProjection.Planar;
-    [Param("Axis")] public Axis Axis { get; set; } = Axis.Z;
+    [Param("Axis", Description = "The axis it projects along (planar), or wraps round (cylindrical, spherical).")] public Axis Axis { get; set; } = Axis.Z;
     /// <summary>Size the projection to the selection (filling the 0–1 square) rather than by Center and Size.</summary>
     [Param("Fit to the selection")] public bool Fit { get; set; } = true;
-    [Param("Center", Distance = true)] public Vec3 Center { get; set; }
-    [Param("Size", Distance = true)] public Vec3 Size { get; set; } = Vec3.One;
+    [Param("Center", Distance = true, Description = "Used when Fit is off.")] public Vec3 Center { get; set; }
+    [Param("Size", Distance = true, Description = "Used when Fit is off.")] public Vec3 Size { get; set; } = Vec3.One;
     /// <summary>How many times a cylindrical or spherical layout goes round.</summary>
-    [Param("Width wrap", Min = 0.01, Step = 0.5)] public double WidthWrap { get; set; } = 1;
+    [Param("Width wrap", Min = 0.01, Step = 0.5, Description = "How many times a cylindrical or spherical layout goes round.")] public double WidthWrap { get; set; } = 1;
 
     protected override void Apply()
     {

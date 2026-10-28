@@ -402,7 +402,7 @@ public sealed class LayoutWorkspace : DockPanel
             s.Notify();
             w.Close();
         };
-        if (Owner != null) await w.ShowDialog(Owner);
+        if (Owner != null) await Dialogs.ShowModal(w, Owner);
     }
 
     /// <summary>The dope sheet's strip: a mark at every frame the chosen item has a key.</summary>

@@ -120,6 +120,15 @@ phases 0 to 7 and Layout phases L1 to L6.
 
 ![The logo and the numeric panel](Images/AVAModeler-logo.png)
 
+### AI agents
+
+- **An MCP server**: AI agents such as Claude Code drive AVA Modeler through the Model Context Protocol, with the
+  same tools and settings a person uses, each step one undo step. `AVAModeler --mcp` works headless on a model of its
+  own; with Macros › Allow AI Agents on, an agent can also build in the open window while you watch. See
+  [Driving AVA Modeler from an AI agent](#driving-ava-modeler-from-an-ai-agent).
+
+![A table an AI agent built through MCP, live in the open window](Images/AVAModeler-mcp.png)
+
 ### Layout
 
 Layout (F2, or View › Layout) is the second workspace. It shares the object you're modeling live: change it in the
@@ -188,6 +197,86 @@ The default tool keys follow the classic layout: T Move, Y Rotate, H Size, Shift
 Ball, Shift+C Disc, P Make Polygon, F Flip, M Merge Points, E Extrude, L Lathe, V Mirror, B Bevel, Tab MetaNURBS.
 Help › Keyboard lists them all, and Edit › Preferences changes any of them.
 
+## Driving AVA Modeler from an AI agent
+
+AVA Modeler is an [MCP](https://modelcontextprotocol.io) server, so an AI agent (Claude Code, or any MCP client) can
+model with it the way a person does: it runs the same tools with the same parameters, through the same command layer
+the menus and Lua macros use, and every step is one undo step. It doesn't move the mouse or click: it calls the tools.
+It sees its work by asking for pictures of the views, or a ray-traced still.
+
+There are two ways to run it, both from the same program:
+
+- **Headless**: `AVAModeler --mcp` serves MCP on stdin and stdout with no window. The agent's client starts it as a
+  command; it has an object of its own and saves files in its working folder.
+- **Live**: `AVAModeler --mcp --attach` connects the agent to the AVA Modeler open on your desktop. Everything it
+  does happens in the open object: you watch it appear in the four views, your edits and its edits share one undo
+  history, and Ctrl+Z undoes its steps. Turn it on with **Macros › Allow AI Agents (MCP)** (or in Edit › Preferences;
+  it's off until you do). The app then listens on a local pipe (a Unix domain socket on Linux and macOS, a named pipe
+  on Windows) that only your own user account can open, so nothing on the network or from another account can
+  connect. If the app isn't open, or agents aren't allowed, the agent's calls say so and say how to turn it on; the
+  bridge reconnects by itself once the app is there. While you have a tool armed or a dialog box open, an agent's call
+  waits (up to 20 seconds) for you to finish rather than change things under you.
+
+Options: `--root FOLDER` sets the working folder (the current folder by default), which `open`, `save` and texture
+paths start from; `open` and `save` stay inside it, only read and write object formats AVA Modeler knows, and never
+write over a file unless asked to. `--no-plugins` skips the plugins folder.
+
+### Setting up Claude Code
+
+Use the downloaded program (or a build: `dotnet build -c Release`, then `src/AVAModeler/bin/Release/net10.0/AVAModeler`).
+Don't use `dotnet run` for an MCP server: it prints build messages to the same stream.
+
+```bash
+claude mcp add avamodeler -- /path/to/AVAModeler --mcp                  # headless
+claude mcp add avamodeler-live -- /path/to/AVAModeler --mcp --attach    # the open app
+```
+
+Or, for everyone working in a folder, in its `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "avamodeler": { "type": "stdio", "command": "/path/to/AVAModeler", "args": ["--mcp"] },
+    "avamodeler-live": { "type": "stdio", "command": "/path/to/AVAModeler", "args": ["--mcp", "--attach"] }
+  }
+}
+```
+
+### The tools an agent gets
+
+| Tool | What it does |
+|---|---|
+| `list_tools`, `describe_tool` | Every modeling tool (built in and from plugins) by tab, and one tool's parameters: type, default, unit, limits, choices. Both come from the tools themselves. |
+| `run_tool` | Runs a modeling tool with parameters by name, on the selection (or everything in the foreground), as one undo step; returns the point and polygon counts before and after, and the selection. |
+| `add_points`, `add_polygons` | Builds geometry point by point in the current layer. |
+| `set_selection_mode`, `select_points`, `select_polygons`, `select_box`, `select_all`, `select_none`, `select_invert`, `select_connected` | The selection. |
+| `set_layers` | The foreground and background layers. |
+| `undo`, `redo`, `new`, `open`, `save` | The history and files. |
+| `set_surface`, `set_texture`, `remove_textures`, `make_uvs`, `set_uv_map` | Surfaces, image textures and UV maps. |
+| `run_lua` | Runs a Lua macro as one undo step, returning what it printed. |
+| `get_document`, `get_points`, `get_polygons` | Reads the object: layers, bounds, surfaces, UV maps, selection, history; points and polygons a page at a time. |
+| `render_view` | A PNG of the top, front, side or perspective view, as the app draws it (wireframe, shaded or textured). |
+| `render` | A ray-traced PNG of the object, lit and framed. |
+
+The agent is told the conventions when it connects: metres; LightWave's left-handed space with +X right, +Y up and +Z
+away from you in the Front view; faces seen from the side where their points run clockwise; layers, points and
+polygons counted from 0. A mistake (an unknown tool, a bad value, an index that isn't there) comes back as an error
+that says what was wrong, and changes nothing.
+
+A short session, as an agent might run it (the table in the picture above):
+
+```text
+add_points    {"points": [[0.03,0,0], [0.045,0.05,0], [0.03,0.2,0], [0.025,0.6,0], [0.04,0.68,0], [0.04,0.7,0]]}
+add_polygons  {"polygons": [[0,1], [1,2], [2,3], [3,4], [4,5]], "surface": "Wood"}      # a leg's profile, as lines
+run_tool      {"name": "Lathe", "params": {"Axis": "Y", "Center": [0,0,0], "Sides": 16}}
+run_tool      {"name": "Array", "params": {"CountX": 2, "CountZ": 2, "Spacing": [1.5,1,0.8]}}
+run_tool      {"name": "Move",  "params": {"Offset": [-0.75,0,-0.4]}}
+run_tool      {"name": "Box",   "params": {"Center": [0,0.725,0], "Size": [1.8,0.05,1], "Surface": "Top"}}
+set_surface   {"name": "Wood", "color": [125,78,42], "smoothing": true, "assign": false}
+render_view   {"view": "perspective"}                                                  # look at it
+save          {"path": "table.lwo"}
+```
+
 ## Building and testing
 
 ```bash
@@ -196,17 +285,18 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 439 tests cover every layer:
+It needs the .NET 10 SDK. 478 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
-| Core | 38 | Math, the mesh and its edge maps, layers, selection modes, undo; UV maps through edits and undo, every projection's maths, image sampling and tiling, PNG and BMP reading, finding images |
+| Core | 41 | Math, the mesh and its edge maps, layers, selection modes, undo and grouped edits; UV maps through edits and undo, every projection's maths, image sampling and tiling, PNG and BMP reading, finding images |
 | Formats | 68 | LWOB byte-identical round trips (textures included), LWLO layers, detail polygons, LWO2 (UV maps, seams and image blocks), GEO, OBJ (`vt` and .mtl maps), image paths, malformed files |
 | Geometry | 79 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation |
-| Rendering | 30 | The four views' projections; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
-| Tools | 54 | Every tool, the numeric parameters, the command API, Lua macros, a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
+| Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
+| Tools | 62 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
 | Scene | 134 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps |
-| UI | 36 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, and the screenshots |
+| Mcp | 24 | Every MCP tool group with its errors and undo; a whole agent session building a table; the live mode through a pipe and the bridge, its UI-thread marshalling and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
+| UI | 39 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, an AI agent working in the open window, and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -216,7 +306,8 @@ AVAMODELER_SHOTS=$PWD/Images dotnet test tests/AVAModeler.UI.Tests --filter Scre
 
 ## How it's built
 
-Core, Geometry and Tools carry no UI, so tools are tested without a window, scripts drive them, and Layout reuses them.
+Core, Geometry and Tools carry no UI, so tools are tested without a window, scripts and AI agents drive them, and
+Layout reuses them.
 
 | Project | What's in it |
 |---|---|
@@ -228,6 +319,7 @@ Core, Geometry and Tools carry no UI, so tools are tested without a window, scri
 | `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones, LWS and JSON scenes, the ray tracer |
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render window |
+| `AVAModeler.Mcp` | The MCP server for AI agents: the tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
 | `AVAModeler` | The application: one window hosting both workspaces |
 
 ## Known limits
@@ -249,6 +341,13 @@ Core, Geometry and Tools carry no UI, so tools are tested without a window, scri
   procedural, gradient and front-projection layers are skipped. LWOB has nowhere for a layer's blending mode, so it
   isn't saved there (the native .avascene keeps it). Tools that make new geometry from nothing (Box, Text and so on)
   leave it without UVs, and a swept wall takes its edge's UVs at both ends rather than new ones.
+
+- **AI agents (MCP)** can model, but not animate: Layout's scenes and keys aren't offered to them yet. Points and
+  Drag work only with the mouse, so agents use `add_points` and Move instead. `render` uses a fixed camera rig and
+  lights round the object. Only one AVA Modeler per user takes agents at a time. Inside `run_lua`, `undo()` and
+  `redo()` aren't allowed (the macro is one undo step) and a macro stops after 30 seconds unless given longer. Texture
+  image paths may point outside the working folder (they're only read). The live pipe is tested on Linux; Windows and
+  macOS use the same .NET pipe code but haven't been tried.
 
 ## About and licence
 

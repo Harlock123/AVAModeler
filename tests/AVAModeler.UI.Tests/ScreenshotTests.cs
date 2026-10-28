@@ -94,6 +94,91 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Textures_in_the_perspective_view_and_the_uv_view()
+    {
+        var w = WithMacro("still-life.lua");
+        var side = Ui.View(w, ViewKind.Side);
+        w.Modeler.Views.ToggleUV(side);
+        Ui.Pump();
+        side.FitAll();
+        // Shaded without the wireframe, so the textures show plainly.
+        w.Modeler.Execute("Style Shaded");
+        Persp(w, 20, 20, 2.3);
+        Shot(w, "textures");
+    }
+
+    [AvaloniaFact]
+    public void The_uv_view_with_part_of_the_map_chosen()
+    {
+        var w = WithMacro("still-life.lua");
+        var doc = w.Session.Document;
+        var mesh = doc.Current.Mesh;
+        int planet = doc.SurfaceIndex("Planet");
+        // The planet's northern faces on the near side, as if about to be worked on.
+        w.Session.SetSelectionMode(SelectionMode.Polygons);
+        doc.Selection.PolygonsIn(0).UnionWith(Enumerable.Range(0, mesh.Polygons.Count).Where(i =>
+            mesh.Polygons[i].Surface == planet && mesh.Centroid(mesh.Polygons[i]).Y > 0.75 && mesh.Centroid(mesh.Polygons[i]).Z < 0.1));
+        doc.Notify();
+        var side = Ui.View(w, ViewKind.Side);
+        w.Modeler.Views.ToggleUV(side);
+        w.Modeler.Views.ToggleMaximize(side);
+        Ui.Pump();
+        side.FitAll();
+        w.Modeler.Tabs.ShowTab("Modify");
+        w.Modeler.PickTool("Rotate");
+        Shot(w, "uv");
+        w.Session.CancelTool();
+    }
+
+    [AvaloniaFact]
+    public void The_surface_editor_and_its_texture_panel()
+    {
+        var w = WithMacro("still-life.lua");
+        var doc = w.Session.Document;
+        var editor = new SurfaceEditor(w.Session) { Width = 520, Height = 640 };
+        editor.Show(w);
+        editor.Choose(doc.SurfaceIndex("Crate"));
+        Ui.Pump();
+        var panel = editor.OpenTexture(doc.Surfaces[doc.SurfaceIndex("Crate")], TextureChannel.Color);
+        panel.Height = 900;
+        Ui.Pump();
+        // Drawn, with the crate's picture in the panel (not saved: the README doesn't show them).
+        Assert.NotNull(editor.CaptureRenderedFrame());
+        Assert.NotNull(panel.CaptureRenderedFrame());
+        Assert.Equal("crate.png", Path.GetFileName(Assert.Single(panel.Layers).Image));
+        panel.Close();
+        editor.Close();
+    }
+
+    [AvaloniaFact]
+    public void A_textured_ray_traced_frame()
+    {
+        var w = WithMacro("still-life.lua");
+        var doc = w.Session.Document;
+        doc.Surfaces[doc.SurfaceIndex("Planet")].Specular = 0.35;
+        doc.Surfaces[doc.SurfaceIndex("Planet")].Glossiness = 64;
+        doc.Surfaces[doc.SurfaceIndex("Floor")].Reflection = 0.15;
+        var s = new LayoutSession();
+        s.ShowModelerObject(doc);
+        s.Scene.GradientBackground = true;
+        s.Scene.GradientTop = new Vec3(0.12, 0.16, 0.3);
+        s.Scene.GradientBottom = new Vec3(0.4, 0.36, 0.42);
+        s.Scene.AmbientIntensity = 0.3;
+        var cam = s.Scene.CurrentCamera!;
+        cam.SetPosition(1, new Vec3(-0.6, 1.9, -4.4));
+        cam.SetRotation(1, new Vec3(8, 18, 0));
+        var light = s.Scene.Lights.First();
+        light.SetRotation(1, new Vec3(35, 40, 0));
+        var img = RayTracer.Render(s.Scene, 1, new RenderSettings { Width = 640, Height = 400, SamplesPerPixel = 4 }, null, TestContext.Current.CancellationToken);
+        Assert.Equal(640 * 400 * 4, img.Rgba.Length);
+        if (Folder is { } dir)
+        {
+            Directory.CreateDirectory(dir);
+            img.SavePng(Path.Combine(dir, "AVAModeler-textured-render.png"), alpha: false);
+        }
+    }
+
+    [AvaloniaFact]
     public void Layout_with_the_ship_animated()
     {
         var w = WithMacro("spaceship.lua");

@@ -153,6 +153,7 @@ public sealed class Scene
             objects.Add(new ObjectFrame(o, world[o], mesh));
             warnings.AddRange(o.MorphProblems());
             if (o.IsPlaceholder) warnings.Add($"{o.Name} has no geometry (its file wasn't loaded).");
+            else warnings.AddRange(TextureImages.Problems(o.Surfaces, TextureImages.BaseOf(o.SourcePath ?? o.Document?.FilePath)).Select(p => $"{o.Name}, {p}"));
         }
         return new SceneFrame(frame, world, objects, warnings);
     }
@@ -184,5 +185,5 @@ public sealed class ObjectFrame(ObjectItem item, Mat4 world, Mesh mesh)
     public IReadOnlyList<Surface> Surfaces => Item.Surfaces;
 
     /// <summary>The deformed mesh placed in the world (made on first use).</summary>
-    public Mesh WorldMesh => _worldMesh ??= new Mesh { Points = Mesh.Points.Select(World.TransformPoint).ToList(), Polygons = Mesh.Polygons };
+    public Mesh WorldMesh => _worldMesh ??= new Mesh { Points = Mesh.Points.Select(World.TransformPoint).ToList(), Polygons = Mesh.Polygons, UVMaps = Mesh.UVMaps };
 }

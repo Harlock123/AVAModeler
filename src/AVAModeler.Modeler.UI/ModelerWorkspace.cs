@@ -123,6 +123,8 @@ public sealed class ModelerWorkspace : DockPanel
             ["Fit All"] = Views.FitAll,
             ["Fit Selected"] = Views.FitSelected,
             ["Maximize View"] = () => Views.ToggleMaximize(Views.Focused),
+            ["UV View"] = () => Views.ToggleUV(),
+            ["Next UV Map"] = NextUVMap,
             ["Zoom In"] = () => Zoom(1.5),
             ["Zoom Out"] = () => Zoom(1 / 1.5),
             ["MetaNURBS"] = s.ToggleMetaNurbs,
@@ -153,6 +155,22 @@ public sealed class ModelerWorkspace : DockPanel
         affiliated with or endorsed by it. It reads and writes the classic object formats for compatibility.
         """;
 
+    /// <summary>Chooses the next UV map to work on (and show in the UV view).</summary>
+    private void NextUVMap()
+    {
+        var doc = Session.Document;
+        var names = doc.UVMapNames();
+        if (names.Count == 0)
+        {
+            Session.SetStatus("There are no UV maps yet: make one with Make UVs (Polygon tab).");
+            return;
+        }
+        int at = doc.ActiveUVMap is { } current ? names.IndexOf(current) : -1;
+        doc.CurrentUVMap = names[(at + 1) % names.Count];
+        doc.Notify();
+        Session.SetStatus($"UV map: {doc.CurrentUVMap} ({names.Count} in all).");
+    }
+
     private void Zoom(double factor)
     {
         var v = Views.Focused;
@@ -174,7 +192,7 @@ public sealed class ModelerWorkspace : DockPanel
     }
 
     /// <summary>Snaps to the grid step of the front view (the views share their zoom closely enough).</summary>
-    public void UpdateSnap() => Session.Context.Snap = Session.Preferences.SnapToGrid ? Views.Views[1].Camera.GridStep() : 0;
+    public void UpdateSnap() => Session.Context.Snap = Session.Preferences.SnapToGrid ? Views.Views[1].ModelCamera.GridStep() : 0;
 
     private void SetCenter(ActionCenter mode)
     {
@@ -228,6 +246,7 @@ public sealed class ModelerWorkspace : DockPanel
         var lines = Session.Keymap.Bindings.OrderBy(kv => kv.Key).Select(kv => $"{kv.Value,-16} {kv.Key}");
         return "Mouse: click to select (Shift adds, Ctrl removes); drag a box, or right-drag a lasso. With a tool, drag in a view.\n" +
                "Wheel zooms; middle-drag or Alt-drag pans; drag (or Alt-drag) in the perspective view turns it. Double-click maximizes a view.\n" +
+               "U switches the view under the mouse to the UV map (and back): pick and move UVs there as you would points.\n" +
                "1–9 put a layer in the foreground (Shift adds; Alt puts it in the background).\n\n" + string.Join("\n", lines) +
                "\n\nChange any key in Edit › Preferences.";
     }
@@ -268,7 +287,8 @@ public sealed class ModelerWorkspace : DockPanel
             Session.Preferences.AddRecent(path);
             Session.Preferences.Save();
             RefreshRecent();
-            Session.SetStatus($"Opened {Path.GetFileName(path)}.");
+            var missing = Session.ImageProblems();
+            Session.SetStatus($"Opened {Path.GetFileName(path)}." + (missing.Count > 0 ? " " + string.Join(" ", missing) : ""));
         }
         catch (Exception e) when (e is IOException or FormatException or NotSupportedException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -298,6 +318,8 @@ public sealed class ModelerWorkspace : DockPanel
         try
         {
             ObjectFiles.Save(doc, path);
+            // The object's image paths now start from where it was saved.
+            ObjectFiles.RebaseImages(doc, path);
             doc.FilePath = path;
             doc.Modified = false;
             Session.Preferences.AddRecent(path);
@@ -379,6 +401,7 @@ public sealed class ModelerWorkspace : DockPanel
     {
         var cmd = Session.Commands;
         cmd.Output.Clear();
+        cmd.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
         try
         {
             Macros.Run(await File.ReadAllTextAsync(path), cmd);
@@ -388,6 +411,10 @@ public sealed class ModelerWorkspace : DockPanel
         catch (Exception e) when (e is MacroException or IOException)
         {
             await Dialogs.Message(Owner, "The macro stopped", e.Message);
+        }
+        finally
+        {
+            cmd.BaseDirectory = null;
         }
     }
 
@@ -438,6 +465,7 @@ public sealed class ModelerWorkspace : DockPanel
                     Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),
                 Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), "-",
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
+                    Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",
                     Item("Meta_NURBS", "MetaNURBS"), Item("_Backface Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-", Item("_Layout", "Show Layout")),
                 Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin")),
                 Group("_Help", Item("_Keyboard", "Keyboard"), Item("_About", "About")),

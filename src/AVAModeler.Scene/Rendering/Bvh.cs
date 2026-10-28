@@ -2,13 +2,17 @@ using AVAModeler.Core;
 
 namespace AVAModeler.Scene;
 
-/// <summary>A world-space triangle ready to trace: its corners, face normal, corner shading normals and material.</summary>
-internal readonly struct Triangle(Vec3 a, Vec3 b, Vec3 c, Vec3 normal, Vec3 na, Vec3 nb, Vec3 nc, int material, bool doubleSided)
+/// <summary>
+/// A world-space triangle ready to trace: its corners, face normal, corner shading normals and material, and (for a
+/// textured one) where its texturing is kept, or -1.
+/// </summary>
+internal readonly struct Triangle(Vec3 a, Vec3 b, Vec3 c, Vec3 normal, Vec3 na, Vec3 nb, Vec3 nc, int material, bool doubleSided, int texture = -1)
 {
     public readonly Vec3 A = a, E1 = b - a, E2 = c - a;
     public readonly Vec3 Normal = normal, NA = na, NB = nb, NC = nc;
     public readonly int Material = material;
     public readonly bool DoubleSided = doubleSided;
+    public readonly int Texture = texture;
     public Vec3 B => A + E1;
     public Vec3 C => A + E2;
 }

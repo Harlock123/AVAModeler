@@ -49,6 +49,7 @@ public static class Dialogs
     public static readonly FilePickerFileType Geo = new("VideoScape GEO") { Patterns = ["*.geo"] };
     public static readonly FilePickerFileType Lua = new("Lua macro") { Patterns = ["*.lua"] };
     public static readonly FilePickerFileType Dll = new("Plugin") { Patterns = ["*.dll"] };
+    public static readonly FilePickerFileType Images = new("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp"] };
 
     public static async Task<string?> Open(TopLevel top, string title, params FilePickerFileType[] types)
     {
@@ -65,8 +66,9 @@ public static class Dialogs
 
 /// <summary>
 /// The surface editor: every surface in the object, and how the chosen one looks (colour, diffuse, specular,
-/// glossiness, luminosity, transparency, reflection, smoothing). Changes show in the shaded view as they're made, and
-/// the whole visit is one undo step.
+/// glossiness, luminosity, transparency, reflection, smoothing). As in LightWave 5, a "T" button beside a setting
+/// opens its texture panel (<see cref="TextureEditor"/>), and lights up when the setting has textures. Changes show in
+/// the shaded view as they're made, and the whole visit is one undo step.
 /// </summary>
 public sealed class SurfaceEditor : Window
 {
@@ -106,6 +108,9 @@ public sealed class SurfaceEditor : Window
         _list.SelectedIndex = 0;
     }
 
+    /// <summary>Shows one of the surfaces, by its place in the list.</summary>
+    public void Choose(int surface) => _list.SelectedIndex = surface;
+
     private Surface? Current => _list.SelectedIndex >= 0 && _list.SelectedIndex < _session.Document.Surfaces.Count ? _session.Document.Surfaces[_list.SelectedIndex] : null;
 
     private void Changed()
@@ -133,18 +138,19 @@ public sealed class SurfaceEditor : Window
         _fields.Children.Add(Label("Name"));
         _fields.Children.Add(name);
         var swatch = new Border { Height = 24, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(Color.FromRgb(s.Color.R, s.Color.G, s.Color.B)) };
-        _fields.Children.Add(Label("Colour"));
+        _fields.Children.Add(WithTexture(Label("Colour"), s, TextureChannel.Color));
         _fields.Children.Add(swatch);
         void Swatch() => swatch.Background = new SolidColorBrush(Color.FromRgb(s.Color.R, s.Color.G, s.Color.B));
         _fields.Children.Add(Slider("Red", s.Color.R, 0, 255, v => { s.Color = s.Color with { R = (byte)v }; Swatch(); }));
         _fields.Children.Add(Slider("Green", s.Color.G, 0, 255, v => { s.Color = s.Color with { G = (byte)v }; Swatch(); }));
         _fields.Children.Add(Slider("Blue", s.Color.B, 0, 255, v => { s.Color = s.Color with { B = (byte)v }; Swatch(); }));
-        _fields.Children.Add(Slider("Diffuse %", s.Diffuse * 100, 0, 100, v => s.Diffuse = v / 100));
-        _fields.Children.Add(Slider("Specular %", s.Specular * 100, 0, 100, v => s.Specular = v / 100));
+        _fields.Children.Add(Slider("Diffuse %", s.Diffuse * 100, 0, 100, v => s.Diffuse = v / 100, s, TextureChannel.Diffuse));
+        _fields.Children.Add(Slider("Specular %", s.Specular * 100, 0, 100, v => s.Specular = v / 100, s, TextureChannel.Specular));
         _fields.Children.Add(Slider("Glossiness", s.Glossiness, 4, 1024, v => s.Glossiness = v));
-        _fields.Children.Add(Slider("Luminosity %", s.Luminosity * 100, 0, 100, v => s.Luminosity = v / 100));
-        _fields.Children.Add(Slider("Transparency %", s.Transparency * 100, 0, 100, v => s.Transparency = v / 100));
-        _fields.Children.Add(Slider("Reflection %", s.Reflection * 100, 0, 100, v => s.Reflection = v / 100));
+        _fields.Children.Add(Slider("Luminosity %", s.Luminosity * 100, 0, 100, v => s.Luminosity = v / 100, s, TextureChannel.Luminosity));
+        _fields.Children.Add(Slider("Transparency %", s.Transparency * 100, 0, 100, v => s.Transparency = v / 100, s, TextureChannel.Transparency));
+        _fields.Children.Add(Slider("Reflection %", s.Reflection * 100, 0, 100, v => s.Reflection = v / 100, s, TextureChannel.Reflection));
+        _fields.Children.Add(WithTexture(Label("Bump"), s, TextureChannel.Bump));
         _fields.Children.Add(Slider("Smoothing angle °", s.SmoothingAngle, 0, 180, v => s.SmoothingAngle = v));
         var smooth = new CheckBox { Content = "Smoothing", IsChecked = s.Smoothing, Foreground = Look.Text };
         smooth.IsCheckedChanged += (_, _) => { s.Smoothing = smooth.IsChecked == true; Changed(); };
@@ -157,7 +163,7 @@ public sealed class SurfaceEditor : Window
 
     private static TextBlock Label(string text) => new() { Text = text, Foreground = Look.Text, FontSize = 11, Margin = new Thickness(0, 4, 0, 0) };
 
-    private Control Slider(string label, double value, double min, double max, Action<double> set)
+    private Control Slider(string label, double value, double min, double max, Action<double> set, Surface? surface = null, TextureChannel channel = default)
     {
         var text = new TextBlock { Foreground = Look.Text, FontSize = 11, Width = 50, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         var slider = new Slider { Minimum = min, Maximum = max, Value = value, VerticalAlignment = VerticalAlignment.Center };
@@ -165,7 +171,34 @@ public sealed class SurfaceEditor : Window
         Show();
         slider.ValueChanged += (_, _) => { set(slider.Value); Show(); Changed(); };
         var row = new DockPanel { Children = { Docked(text, Dock.Right), slider } };
-        return new StackPanel { Children = { Label(label), row } };
+        Control head = surface == null ? Label(label) : WithTexture(Label(label), surface, channel);
+        return new StackPanel { Children = { head, row } };
+    }
+
+    /// <summary>The "T" buttons beside the settings, by channel, so tests can press them.</summary>
+    public Dictionary<TextureChannel, Button> TextureButtons { get; } = [];
+
+    /// <summary>A setting's label with its "T" button, lit when the setting has textures.</summary>
+    private Control WithTexture(Control label, Surface s, TextureChannel channel)
+    {
+        Button? button = null;
+        button = Look.MakeButton("T", () => OpenTexture(s, channel, button!), $"{TextureEditor.Describe(channel)} texture", 26);
+        button.Padding = new Thickness(0);
+        Look.SetOn(button, s.TexturesOf(channel).Any());
+        TextureButtons[channel] = button;
+        return new DockPanel { Children = { Docked(button, Dock.Right), label } };
+    }
+
+    /// <summary>Opens the texture panel for one of a surface's channels; returns it.</summary>
+    public TextureEditor OpenTexture(Surface s, TextureChannel channel, Button? button = null)
+    {
+        var editor = new TextureEditor(_session, s, channel, () =>
+        {
+            if (button != null) Look.SetOn(button, s.TexturesOf(channel).Any());
+            Changed();
+        });
+        editor.Show(this);
+        return editor;
     }
 }
 

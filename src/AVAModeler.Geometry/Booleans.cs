@@ -34,7 +34,7 @@ public sealed record BooleanOptions
 /// result is a new mesh: faces keep the surface of the side they came from, coincident points are merged, slivers
 /// dropped, T-junctions closed (so closed inputs give a watertight result) and the pieces of each cut face rejoined
 /// where they make a simple polygon. The foreground's points and lines pass through unchanged; the operand's are
-/// ignored. Points no polygon uses are not kept.
+/// ignored. Points no polygon uses are not kept. Faces keep the UVs of the faces they were cut from.
 /// </summary>
 public static class Booleans
 {
@@ -75,6 +75,7 @@ public static class Booleans
 
         var result = new Mesh();
         var groups = new Dictionary<Polygon, int>();
+        var sources = new Dictionary<Polygon, (Mesh, Polygon)>();
         foreach (var p in pieces)
         {
             int first = result.Points.Count;
@@ -83,9 +84,11 @@ public static class Booleans
             var poly = new Polygon(Enumerable.Range(first, p.Vertices.Count), surface);
             result.Polygons.Add(poly);
             if (options.Rejoin) groups[poly] = p.Group;
+            sources[poly] = p.Group < fgCount ? (foreground, foreground.Polygons[p.Group]) : (operand, operand.Polygons[p.Group - fgCount]);
         }
         var originals = foreground.Points.Concat(operand.Points).ToHashSet();
         MeshCleanup.AfterCut(result, tol, groups, originals);
+        UVTransfer.FromSources(result, sources, foreground, operand);
 
         MeshCleanup.AppendPointsAndLines(result, foreground);
         return result;

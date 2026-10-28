@@ -61,12 +61,39 @@ public sealed class RenderImage(int width, int height, byte[] rgba)
 /// Single-sided faces can't be hit from behind, by any ray. There's no gamma: values map linearly to 0–255, as in
 /// LightWave 5. Alpha is the share of a pixel's samples that hit something.
 /// </para>
+/// <para>
+/// Image textures change the colour and the other settings where a ray hits, layer over layer, each sampled with
+/// bilinear filtering between the two mipmap levels nearest the size of the pixel's footprint on the image (trilinear),
+/// so distant textures don't shimmer. Projections work from the object's own coordinates (moving with it), or the
+/// world's for a layer that says so. A bump layer tilts the shading normal by the slope of its image's brightness.
+/// </para>
 /// Rendering is deterministic: the antialiasing jitter comes from a hash of the pixel and sample number.
 /// </summary>
 public static class RayTracer
 {
     private sealed record Material(Vec3 Color, double Diffuse, double Specular, double Glossiness, double Luminosity,
-        double Reflection, double Transparency, double Ior, bool CastShadows, bool ReceiveShadows);
+        double Reflection, double Transparency, double Ior, bool CastShadows, bool ReceiveShadows)
+    {
+        /// <summary>The image texture layers, in order, with their images.</summary>
+        public IReadOnlyList<(TextureLayer Layer, TextureImage Image)> Layers { get; init; } = [];
+        public bool Textured => Layers.Count > 0;
+        public bool TexturedTransparency => Layers.Any(l => l.Layer.Channel == TextureChannel.Transparency);
+    }
+
+    /// <summary>
+    /// A textured triangle's texturing: its corners in object coordinates and its face normal there (for projections),
+    /// and each layer's image coordinates at its corners (for UV layers, and for every layer's bump tangents), and
+    /// whether each layer reaches it.
+    /// </summary>
+    private sealed class TriangleTexture
+    {
+        public required Vec3 A, B, C, Normal;
+        public required Vec2[][] Corners;
+        public required bool[] Mapped;
+    }
+
+    /// <summary>What a surface is like where a ray hit it, after its textures: the settings shading uses, and the normal.</summary>
+    private readonly record struct Look(Vec3 Color, double Diffuse, double Specular, double Luminosity, double Reflection, double Transparency, Vec3 Normal);
 
     private sealed record LightInfo(LightType Type, Vec3 Position, Vec3 Direction, Vec3 Color, LightItem Item);
 
@@ -83,14 +110,16 @@ public static class RayTracer
         int height = Math.Max(1, settings.Height ?? camera.Height);
         cancel.ThrowIfCancellationRequested();
 
-        var tracer = new Tracer(scene, scene.Evaluate(frame), frame, settings);
-        var toWorld = camera.CameraToWorld(frame);
-        var eye = toWorld.TransformPoint(Vec3.Zero);
         double tanV = 1 / camera.Zoom.Evaluate(frame);
         double tanH = tanV * width * camera.PixelAspect / height;
         int samples = Math.Max(1, settings.SamplesPerPixel);
         int cols = (int)Math.Ceiling(Math.Sqrt(samples));
         int rows = (samples + cols - 1) / cols;
+        // How wide a sample's footprint is per unit of distance along its ray, for texture filtering.
+        double spread = 2 * tanV / height / cols;
+        var tracer = new Tracer(scene, scene.Evaluate(frame), frame, settings, spread);
+        var toWorld = camera.CameraToWorld(frame);
+        var eye = toWorld.TransformPoint(Vec3.Zero);
 
         var rgba = new byte[width * height * 4];
         int done = 0;
@@ -152,12 +181,14 @@ public static class RayTracer
         private readonly List<Material> _materials = [];
         private readonly List<LightInfo> _lights = [];
         private readonly Vec3 _ambient;
-        private readonly double _bias;
+        private readonly double _bias, _spread;
+        private readonly List<TriangleTexture> _textures = [];
 
-        public Tracer(Scene scene, SceneFrame sf, double frame, RenderSettings settings)
+        public Tracer(Scene scene, SceneFrame sf, double frame, RenderSettings settings, double spread)
         {
             _scene = scene;
             _settings = settings;
+            _spread = spread;
             _ambient = scene.AmbientColor * scene.AmbientIntensity;
             var tris = new List<Triangle>();
             var bounds = Box3.Empty;
@@ -165,10 +196,11 @@ public static class RayTracer
             {
                 if (!of.Item.Visible || of.Item.IsPlaceholder) continue;
                 int firstMaterial = _materials.Count;
-                foreach (var s in of.Surfaces.DefaultIfEmpty(new Surface("Default"))) _materials.Add(MaterialOf(s, of.Item, settings));
+                string? images = TextureImages.BaseOf(of.Item.SourcePath ?? of.Item.Document?.FilePath);
+                foreach (var s in of.Surfaces.DefaultIfEmpty(new Surface("Default"))) _materials.Add(MaterialOf(s, of.Item, settings, images));
                 var mesh = of.WorldMesh;
                 bounds = bounds.Include(mesh.Bounds());
-                AddTriangles(mesh, of.Surfaces, firstMaterial, of.World.Determinant() < 0, tris);
+                AddTriangles(mesh, of.Mesh, of.Surfaces, firstMaterial, of.World.Determinant() < 0, tris);
             }
             _bvh = new Bvh([.. tris]);
             // Offsets that keep secondary rays off the surface they leave, scaled to the scene's size.
@@ -183,12 +215,18 @@ public static class RayTracer
             }
         }
 
-        private static Material MaterialOf(Surface s, ObjectItem o, RenderSettings settings) => new(
+        private static Material MaterialOf(Surface s, ObjectItem o, RenderSettings settings, string? images) => new(
             s.Color.ToVec(), s.Diffuse, s.Specular, Math.Max(1, s.Glossiness), s.Luminosity, Math.Clamp(s.Reflection, 0, 1),
-            Math.Clamp(s.Transparency, 0, 1), settings.RefractionIndices.GetValueOrDefault(s.Name, 1), o.CastShadows, o.ReceiveShadows);
+            Math.Clamp(s.Transparency, 0, 1), settings.RefractionIndices.GetValueOrDefault(s.Name, 1), o.CastShadows, o.ReceiveShadows)
+        {
+            Layers = s.Textures.Where(t => t.IsImage && t.Opacity > 0).Select(t => (t, TextureImages.Load(t.Image, images))).ToList(),
+        };
 
-        /// <summary>Triangulates a world-space mesh, with corner normals smoothed per surface where it asks.</summary>
-        private static void AddTriangles(Mesh mesh, IReadOnlyList<Surface> surfaces, int firstMaterial, bool mirrored, List<Triangle> tris)
+        /// <summary>
+        /// Triangulates a world-space mesh, with corner normals smoothed per surface where it asks, and the texturing of
+        /// those with textured surfaces (from <paramref name="local"/>, the mesh in object coordinates, point for point).
+        /// </summary>
+        private void AddTriangles(Mesh mesh, Mesh local, IReadOnlyList<Surface> surfaces, int firstMaterial, bool mirrored, List<Triangle> tris)
         {
             int count = mesh.Polygons.Count;
             var normals = new Vec3[count];
@@ -207,10 +245,12 @@ public static class RayTracer
                 var corner = new Dictionary<int, Vec3>();
                 foreach (int p in poly.Points)
                     corner[p] = surface is { Smoothing: true } ? SmoothNormal(mesh, normals, pi, p, surface.SmoothingAngle) : normals[pi];
+                var material = _materials[firstMaterial + si];
                 foreach (var (a, b, c) in Triangulator.Triangulate(mesh, poly))
                 {
+                    int texture = material.Textured ? AddTexture(material, mesh, local, pi, a, b, c) : -1;
                     tris.Add(new Triangle(mesh.Points[a], mesh.Points[b], mesh.Points[c], normals[pi], corner[a], corner[b], corner[c],
-                        firstMaterial + si, doubleSided));
+                        firstMaterial + si, doubleSided, texture));
                 }
             }
         }
@@ -228,6 +268,117 @@ public static class RayTracer
             return s.LengthSquared == 0 ? n : s;
         }
 
+        /// <summary>A textured triangle's texturing, kept for when rays hit it; returns its index.</summary>
+        private int AddTexture(Material m, Mesh mesh, Mesh local, int polygon, int a, int b, int c)
+        {
+            var poly = mesh.Polygons[polygon];
+            Vec3 P(int i) => i < local.Points.Count ? local.Points[i] : mesh.Points[i];
+            var normal = local.Normal(poly);
+            var corners = new Vec2[m.Layers.Count][];
+            var mapped = new bool[m.Layers.Count];
+            for (int k = 0; k < m.Layers.Count; k++)
+            {
+                var t = m.Layers[k].Layer;
+                var uv = new Vec2[3];
+                mapped[k] = true;
+                int[] pts = [a, b, c];
+                if (t.Projection != TextureProjection.UV)
+                    TextureMapping.ProjectFace(t, pts.Select(p => t.WorldCoordinates ? mesh.Points[p] : P(p)).ToArray(), t.WorldCoordinates ? mesh.Normal(poly) : normal, uv);
+                else
+                    for (int j = 0; j < 3; j++)
+                        if (mesh.TryGetUV(t.UVMap, poly, pts[j], out var u)) uv[j] = u;
+                        else mapped[k] = false;
+                corners[k] = uv;
+            }
+            _textures.Add(new TriangleTexture { A = P(a), B = P(b), C = P(c), Normal = normal, Corners = corners, Mapped = mapped });
+            return _textures.Count - 1;
+        }
+
+        /// <summary>
+        /// The surface where a ray hit it: the material's settings with its texture layers applied, and the shading
+        /// normal tilted by any bump layers. <paramref name="distance"/> is how far the ray has come from the eye, which
+        /// sets how big a patch of the image a sample covers.
+        /// </summary>
+        private Look LookAt(Material m, in Triangle tri, in Hit hit, Vec3 p, Vec3 normal, double distance)
+        {
+            var look = new Look(m.Color, m.Diffuse, m.Specular, m.Luminosity, m.Reflection, m.Transparency, normal);
+            if (tri.Texture < 0) return look;
+            var tex = _textures[tri.Texture];
+            double w0 = 1 - hit.U - hit.V;
+            var local = tex.A * w0 + tex.B * hit.U + tex.C * hit.V;
+            double footprint = distance * _spread;
+            var (color, diffuse, specular, luminosity, reflection, transparency, n) = look;
+            for (int k = 0; k < m.Layers.Count; k++)
+            {
+                var (t, img) = m.Layers[k];
+                if (!tex.Mapped[k]) continue;
+                var c = tex.Corners[k];
+                var uv = t.Projection == TextureProjection.UV
+                    ? c[0] * w0 + c[1] * hit.U + c[2] * hit.V
+                    : TextureMapping.Project(t, t.WorldCoordinates ? p : local, tex.Normal);
+                // The image's directions across the triangle in the world, from its corners' coordinates.
+                var (du, dv) = Tangents(tri, c);
+                double texels = Math.Max(du.Length > 0 ? footprint * img.Width / du.Length : 0, dv.Length > 0 ? footprint * img.Height / dv.Length : 0);
+                if (t.Channel == TextureChannel.Bump)
+                {
+                    n = Bump(t, img, uv, n, du, dv, texels);
+                    continue;
+                }
+                var (col, alpha) = img.SampleFiltered(uv.X, uv.Y, t.WidthTiling, t.HeightTiling, t.PixelBlending, texels);
+                if (t.Negative) col = Vec3.One - col;
+                double weight = Math.Clamp(t.Opacity, 0, 1) * alpha;
+                double value = TextureImage.Brightness(col);
+                switch (t.Channel)
+                {
+                    case TextureChannel.Color: color = TextureMapping.Blend(color, col, weight, t.Blend); break;
+                    case TextureChannel.Diffuse: diffuse = TextureMapping.Blend(diffuse, value, weight, t.Blend); break;
+                    case TextureChannel.Specular: specular = TextureMapping.Blend(specular, value, weight, t.Blend); break;
+                    case TextureChannel.Luminosity: luminosity = TextureMapping.Blend(luminosity, value, weight, t.Blend); break;
+                    case TextureChannel.Reflection: reflection = TextureMapping.Blend(reflection, value, weight, t.Blend); break;
+                    case TextureChannel.Transparency: transparency = TextureMapping.Blend(transparency, value, weight, t.Blend); break;
+                }
+            }
+            return new Look(color, diffuse, specular, luminosity, Math.Clamp(reflection, 0, 1), Math.Clamp(transparency, 0, 1), n);
+        }
+
+        /// <summary>
+        /// How the world moves for a step of 1 in u and in v across a triangle, given its corners' image coordinates (zero
+        /// when they don't span the image).
+        /// </summary>
+        private static (Vec3 U, Vec3 V) Tangents(in Triangle tri, Vec2[] c)
+        {
+            var d1 = c[1] - c[0];
+            var d2 = c[2] - c[0];
+            double det = d1.X * d2.Y - d2.X * d1.Y;
+            if (Math.Abs(det) < 1e-18) return (Vec3.Zero, Vec3.Zero);
+            double r = 1 / det;
+            return ((tri.E1 * d2.Y - tri.E2 * d1.Y) * r, (tri.E2 * d1.X - tri.E1 * d2.X) * r);
+        }
+
+        /// <summary>
+        /// A normal tilted by a bump layer: the image's brightness is the height, and the normal leans away from the way
+        /// it rises, by the rise over one pixel times the amplitude (one pixel from black to white at 1 leans it 45°).
+        /// </summary>
+        private static Vec3 Bump(TextureLayer t, TextureImage img, Vec2 uv, Vec3 n, Vec3 du, Vec3 dv, double texels)
+        {
+            if (du.LengthSquared == 0 || dv.LengthSquared == 0) return n;
+            double step = Math.Max(1, texels);
+            double ex = step / img.Width, ey = step / img.Height;
+            double H(double u, double v)
+            {
+                var (c, a) = img.SampleFiltered(u, v, t.WidthTiling, t.HeightTiling, t.PixelBlending, texels);
+                double h = TextureImage.Brightness(c) * a;
+                return t.Negative ? 1 - h : h;
+            }
+            // The rise per pixel across and up the image.
+            double gu = (H(uv.X + ex, uv.Y) - H(uv.X - ex, uv.Y)) / (2 * step);
+            double gv = (H(uv.X, uv.Y + ey) - H(uv.X, uv.Y - ey)) / (2 * step);
+            var tu = (du - n * Vec3.Dot(du, n)).Normalized();
+            var tv = (dv - n * Vec3.Dot(dv, n)).Normalized();
+            var tilted = (n - (tu * gu + tv * gv) * (t.Amplitude * Math.Clamp(t.Opacity, 0, 1))).Normalized();
+            return tilted.LengthSquared > 0 ? tilted : n;
+        }
+
         private Vec3 Background(Vec3 dir)
         {
             if (!_scene.GradientBackground) return _scene.BackgroundColor;
@@ -235,7 +386,7 @@ public static class RayTracer
             return Vec3.Lerp(_scene.GradientBottom, _scene.GradientTop, t);
         }
 
-        public Vec3 Trace(Vec3 origin, Vec3 dir, int depth, out bool hitSomething)
+        public Vec3 Trace(Vec3 origin, Vec3 dir, int depth, out bool hitSomething, double travelled = 0)
         {
             hitSomething = _bvh.Intersect(origin, dir, _bias, double.PositiveInfinity, out var hit);
             if (!hitSomething) return Background(dir);
@@ -245,18 +396,20 @@ public static class RayTracer
             var p = origin + dir * hit.T;
             var nf = tri.Normal;
             var ns = (tri.NA * (1 - hit.U - hit.V) + tri.NB * hit.U + tri.NC * hit.V).Normalized();
+            if (ns.LengthSquared == 0) ns = nf;
+            var look = LookAt(m, tri, hit, p, ns, travelled + hit.T);
+            ns = look.Normal;
             bool inside = Vec3.Dot(dir, nf) > 0;
             if (inside)
             {
                 nf = -nf;
                 ns = -ns;
             }
-            if (ns.LengthSquared == 0) ns = nf;
             var view = -dir;
             var lift = nf * _bias * 10;
 
-            var diffuse = m.Color * m.Diffuse;
-            var lit = Vec3.Scale(diffuse, _ambient) + m.Color * m.Luminosity;
+            var diffuse = look.Color * look.Diffuse;
+            var lit = Vec3.Scale(diffuse, _ambient) + look.Color * look.Luminosity;
             var highlight = Vec3.Zero;
             foreach (var light in _lights)
             {
@@ -288,30 +441,31 @@ public static class RayTracer
                 if (strength <= 0) continue;
                 var c = light.Color * strength;
                 lit += Vec3.Scale(diffuse, c) * ndl;
-                if (m.Specular > 0)
+                if (look.Specular > 0)
                 {
                     var r = ns * (2 * ndl) - toLight;
                     double rv = Vec3.Dot(r, view);
-                    if (rv > 0) highlight += c * (m.Specular * Math.Pow(rv, m.Glossiness));
+                    if (rv > 0) highlight += c * (look.Specular * Math.Pow(rv, m.Glossiness));
                 }
             }
 
-            double reflection = _settings.Reflections ? m.Reflection : 0;
-            double transparency = _settings.Transparency ? Math.Min(m.Transparency, 1 - reflection) : 0;
+            double reflection = _settings.Reflections ? look.Reflection : 0;
+            double transparency = _settings.Transparency ? Math.Min(look.Transparency, 1 - reflection) : 0;
             var color = lit * (1 - reflection - transparency) + highlight;
+            double far = travelled + hit.T;
             if (reflection > 0)
             {
                 var r = dir - ns * (2 * Vec3.Dot(dir, ns));
                 if (Vec3.Dot(r, nf) <= 0) r = dir - nf * (2 * Vec3.Dot(dir, nf));
-                color += (depth < _settings.MaxDepth ? Trace(p + lift, r.Normalized(), depth + 1, out _) : Background(r)) * reflection;
+                color += (depth < _settings.MaxDepth ? Trace(p + lift, r.Normalized(), depth + 1, out _, far) : Background(r)) * reflection;
             }
             if (transparency > 0 && depth < _settings.MaxDepth)
-                color += Transmitted(p, dir, nf, ns, lift, m.Ior, inside, depth) * transparency;
+                color += Transmitted(p, dir, nf, ns, lift, m.Ior, inside, depth, far) * transparency;
             return Fog(color, hit.T);
         }
 
         /// <summary>What's seen through a transparent surface: straight through, or bent by its refraction index.</summary>
-        private Vec3 Transmitted(Vec3 p, Vec3 dir, Vec3 nf, Vec3 ns, Vec3 lift, double ior, bool inside, int depth)
+        private Vec3 Transmitted(Vec3 p, Vec3 dir, Vec3 nf, Vec3 ns, Vec3 lift, double ior, bool inside, int depth, double travelled)
         {
             var through = dir;
             if (Math.Abs(ior - 1) > 1e-12)
@@ -324,7 +478,7 @@ public static class RayTracer
                     : (dir * eta + ns * (eta * cosI - Math.Sqrt(k))).Normalized();
             }
             var start = Vec3.Dot(through, nf) < 0 ? p - lift : p + lift;
-            return Trace(start, through, depth + 1, out _);
+            return Trace(start, through, depth + 1, out _, travelled);
         }
 
         /// <summary>How much light gets from a point to a light: 1 unblocked, less through transparent surfaces, 0 blocked.</summary>
@@ -334,8 +488,10 @@ public static class RayTracer
             for (int i = 0; i < 64 && share > 1e-4; i++)
             {
                 if (!_bvh.Intersect(from, dir, _bias, distance, out var hit)) return share;
-                var m = _materials[_bvh[hit.Triangle].Material];
-                if (m.CastShadows) share *= _settings.Transparency ? m.Transparency : 0;
+                var tri = _bvh[hit.Triangle];
+                var m = _materials[tri.Material];
+                double clear = m.TexturedTransparency ? LookAt(m, tri, hit, from + dir * hit.T, tri.Normal, 0).Transparency : m.Transparency;
+                if (m.CastShadows) share *= _settings.Transparency ? clear : 0;
                 from += dir * hit.T;
                 distance -= hit.T;
             }

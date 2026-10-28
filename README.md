@@ -6,7 +6,8 @@ A cross-platform recreation of the classic standalone 3D modeler of the mid-1990
 Modeler** (versions 4 and 5), built with .NET 10 and Avalonia. It keeps the classic workflow (the quad view, points
 and n-gon polygons, foreground and background layers, tabbed tool panels, numeric requesters for everything, a
 keyboard-driven, grid-snapped way of working) and adds modern touches: shaded and smooth-shaded views, multi-level
-undo, edge selection, and Lua macros. A **Layout** workspace in the same window animates and renders what you model.
+undo, edge selection, UV maps, and Lua macros. A **Layout** workspace in the same window animates and renders what you
+model.
 
 It follows the plan in [Classic 3D Modeler Recreation Plan.md](Classic%203D%20Modeler%20Recreation%20Plan.md), Modeler
 phases 0 to 7 and Layout phases L1 to L6.
@@ -46,8 +47,8 @@ phases 0 to 7 and Layout phases L1 to L6.
     Quantize.
   - **Multiply**: Extrude, Lathe, Mirror, Clone, Array (rectangular and radial), Path Extrude, Rail Extrude, Bevel and
     Smooth Shift.
-  - **Polygon**: Flip, Triple, Merge Points, Align, Unify, Subdivide (faceted or smooth), Metaform, Surface, Merge
-    Polygons, Split and Remove.
+  - **Polygon**: Flip, Triple, Merge Points, Align, Unify, Subdivide (faceted or smooth), Metaform, Surface, Make UVs,
+    Merge Polygons, Split and Remove.
   - **Tools**:
     - Boolean against the background layers: Union, Subtract, Intersect and Add.
     - Drill with the background's outline: Core, Tunnel, Stencil and Slice.
@@ -57,26 +58,58 @@ phases 0 to 7 and Layout phases L1 to L6.
 - **Surfaces**: named polygon groups with colour, diffuse, specular, glossiness, luminosity, transparency,
   reflection, smoothing and smoothing angle. They are edited live in the surface editor, and smooth surfaces are
   smooth-shaded in the views.
+- **Image textures**, the LightWave 5 way: a "T" button beside a surface's colour, diffuse, specular, luminosity,
+  transparency, reflection or bump opens its texture panel.
+  - Each layer has an image (PNG, JPEG, BMP and more), a projection (planar, cylindrical, spherical, cubic, or UV
+    through a named UV map), an axis, a centre and size (with Automatic Sizing to fit the surface), tiling across and
+    up (reset, repeat, mirror, edge), wrap amounts for cylindrical and spherical, and opacity and blending (normal,
+    additive, multiply). Layers stack.
+  - The perspective view shows colour textures, in both renderers; Layout's view shows them too, and the ray tracer
+    uses every channel, bump included.
+  - An image that can't be found or read shows as a magenta checker, and the status bar says which.
+- **UV maps**: named per-point UVs, with per-polygon-corner UVs where a seam needs them (as LWO2's VMAP and VMAD).
+  - **Make UVs** (Polygon tab) lays out the selection by a planar, cylindrical, spherical, cubic or atlas projection,
+    into a new or existing map, cutting seams where a wrap needs them and leaving the neighbours' UVs as they were.
+  - **The UV view**: U (or View › UV View) turns the view under the mouse into the current UV map, laid out over its
+    texture. Points and polygons are picked there as anywhere, and Move, Rotate, Size and the other tools that move
+    points move UVs (one undo step each). View › Next UV Map chooses another map.
+  - UVs follow every edit: undo and redo, cut and paste, merging points, and mirror, clone, array, extrude, lathe,
+    bevel, smooth shift, subdivide, metaform, triple, split and merge polygons carry or interpolate them. Booleans and
+    drills give each cut face the UVs its source face had at the same place.
 - **Files**:
   - LightWave objects: LWOB (and the LWLO layered form) read and written; an unchanged object writes back
-    byte for byte. LWO2 (LightWave 6 and later) is read only.
+    byte for byte. Surfaces' textures (CTEX, DTEX, STEX, RTEX, TTEX, LTEX, BTEX and their TFLG, TSIZ, TCTR, TIMG,
+    TWRP, TFP0/1, TOPC, TAMP… sub-chunks) are read and written, keeping any sub-chunk this doesn't model. UV maps go
+    in LWO2-style VMAP and VMAD chunks, which LightWave 5 skips.
+  - LWO2 (LightWave 6 and later) is read only, with its UV maps (VMAP and VMAD) and image-map textures (BLOK and
+    CLIP).
   - VideoScape GEO is read and written.
-  - Wavefront OBJ is read and written, with its .mtl.
+  - Wavefront OBJ is read and written, with its .mtl: texture coordinates (`vt`, faces as `v/vt`) and `map_Kd`,
+    `map_Ks`, `map_Ke` and `bump` maps.
+  - Image paths are stored relative to the object file where they can be, and looked for from it (and LightWave's
+    Images folders beside it), then from the working folder.
   - Recent files, auto-save, and crash recovery: if the app didn't close cleanly, it offers the auto-save back.
 
 ![MetaNURBS](Images/AVAModeler-metanurbs.png)
+
+![Textures in the perspective view, and the planet's UV map in the UV view](Images/AVAModeler-textures.png)
+
+![The UV view with part of the map chosen to work on](Images/AVAModeler-uv.png)
 
 ### Macros and plugins
 
 - **Macros** are Lua scripts (through MoonSharp), in the spirit of classic Modeler's ARexx macros.
   - What they can do: run any tool with any parameters, build geometry point by point, select, set layers, undo,
-    and load and save. Macros › Macro Reference lists every command.
-  - Samples: `samples/scripts/spaceship.lua` models a classic spaceship from scratch, and `logo.lua` makes bevelled
-    flying-logo type.
+    make and choose UV maps, texture surfaces, and load and save. Macros › Macro Reference lists every command.
+  - Samples: `samples/scripts/spaceship.lua` models a classic spaceship from scratch, `logo.lua` makes bevelled
+    flying-logo type, and `still-life.lua` builds a crate, a planet and a floor and textures them three ways (cubic,
+    UV and planar), with the images in `samples/images` (drawn by `make_textures.py` there).
   ```lua
   tool("Box", { Size = {2, 1, 1}, SegmentsX = 4 })
   selmode("polygons"); selbox(-1, 0.4, -1, 1, 1, 1)
   tool("Extrude", { Offset = {0, 0.5, 0} })
+  makeuvs("Wrap", "cylindrical", "y")
+  texture("Default", "brick.png", { Projection = "uv", UVMap = "Wrap" })
   ```
 - **Plugins** are .NET assemblies.
   - Any public `Tool` class in one becomes a tool in its tab. An `IModelerPlugin` class can also add file formats
@@ -106,6 +139,8 @@ Modeler and Layout shows the change at once.
 - **Rendering**: an offline CPU ray tracer, multithreaded and deterministic.
   - Shading: Phong with glossiness, luminosity, smoothing within each surface's angle, reflection, and transparency
     with refraction.
+  - Textures: image layers on every channel, filtered bilinearly between mipmap levels (trilinear) so distant
+    textures don't shimmer, and bump maps that tilt the shading by the image's slope.
   - Lights and backdrop: ray-traced shadows with soft-edged spots, ambient light, a gradient backdrop, and fog.
   - Antialiasing, and saving to PNG with or without alpha.
 - **Deformation**: bones bend objects, weighted by distance as classic LightWave's were. Skelegons in the Modeler
@@ -114,6 +149,8 @@ Modeler and Layout shows the change at once.
 ![Layout](Images/AVAModeler-layout.png)
 
 ![A ray-traced frame](Images/AVAModeler-render.png)
+
+![A ray-traced still life: a cubic-mapped, bump-mapped crate, a UV-mapped planet and a tiled floor](Images/AVAModeler-textured-render.png)
 
 ## Download and run
 
@@ -141,7 +178,7 @@ On Windows, unzip and run `AVAModeler.exe`. On macOS, if Gatekeeper refuses to o
 |---|---|---|
 | Select | Click; drag a box; right-drag a lasso (Shift adds, Ctrl removes) | Space cycles Points / Polygons / Volume / Edges; `/` deselect; `'` invert; `]` connected |
 | Use a tool | Pick it from the tab (or its key), then drag in a view; Shift keeps to one axis | Enter keeps the result, Esc throws it away |
-| Navigate | Wheel zooms; middle-drag or Alt-drag pans; drag the perspective view to turn it; double-click to maximize | A fit all, Shift+A fit selected, `.` and `,` zoom, 0 maximize |
+| Navigate | Wheel zooms; middle-drag or Alt-drag pans; drag the perspective view to turn it; double-click to maximize | A fit all, Shift+A fit selected, `.` and `,` zoom, 0 maximize, U the UV view |
 | Layers | The layer buttons (top half foreground, bottom half background) | 1–9 foreground, Shift adds, Alt background, `\` swaps |
 | Edit | | Ctrl+Z undo, Ctrl+Shift+Z redo, X cut, C copy, Ctrl+V paste, Delete remove |
 | Workspaces | | F1 Modeler, F2 Layout, F9 render (in Layout) |
@@ -159,17 +196,17 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 357 tests cover every layer:
+It needs the .NET 10 SDK. 439 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
-| Core | 17 | Math, the mesh and its edge maps, layers, selection modes, undo |
-| Formats | 56 | LWOB byte-identical round trips, LWLO layers, detail polygons, LWO2, GEO, OBJ, malformed files |
-| Geometry | 76 | Booleans and drills (exact volumes, watertight results), subdivision, the Multiply algorithms, triangulation |
-| Rendering | 23 | The four views' projections; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking |
-| Tools | 38 | Every tool, the numeric parameters, the command API, Lua macros, a plugin loaded from its own assembly, the spaceship and logo built from scratch |
-| Scene | 126 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer |
-| UI | 21 | The window, mouse and keyboard driven through a headless window, Layout, and the screenshots |
+| Core | 38 | Math, the mesh and its edge maps, layers, selection modes, undo; UV maps through edits and undo, every projection's maths, image sampling and tiling, PNG and BMP reading, finding images |
+| Formats | 68 | LWOB byte-identical round trips (textures included), LWLO layers, detail polygons, LWO2 (UV maps, seams and image blocks), GEO, OBJ (`vt` and .mtl maps), image paths, malformed files |
+| Geometry | 79 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation |
+| Rendering | 30 | The four views' projections; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
+| Tools | 54 | Every tool, the numeric parameters, the command API, Lua macros, a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
+| Scene | 134 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps |
+| UI | 36 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -183,11 +220,11 @@ Core, Geometry and Tools carry no UI, so tools are tested without a window, scri
 
 | Project | What's in it |
 |---|---|
-| `AVAModeler.Core` | Double-precision math, the mesh (indexed points and n-gon polygons, with lazy edge and adjacency maps), layers, surfaces, selection, undo (copy-on-write snapshots of the layers an edit changes), the document |
+| `AVAModeler.Core` | Double-precision math, the mesh (indexed points and n-gon polygons, with lazy edge and adjacency maps, and UV maps), layers, surfaces and their texture layers, the projections, texture images (PNG and BMP read here), selection, undo (copy-on-write snapshots of the layers an edit changes), the document |
 | `AVAModeler.Formats` | LWOB/LWLO read and write, LWO2 read, VideoScape GEO, OBJ |
 | `AVAModeler.Geometry` | Triangulation (LibTessDotNet), BSP booleans and drills, Catmull–Clark subdivision, the extrude/lathe/bevel family |
-| `AVAModeler.Tools` | The tool framework and every tool, the command API, Lua macros (MoonSharp), plugins |
-| `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers, the view cameras, picking |
+| `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp), plugins, SkiaSharp image reading |
+| `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing, the view cameras, picking |
 | `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones, LWS and JSON scenes, the ray tracer |
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render window |
@@ -206,6 +243,12 @@ Core, Geometry and Tools carry no UI, so tools are tested without a window, scri
   one SRFS chunk, or a repeated PNTS/POLS in a layer, read correctly but are rewritten in the standard order.
 - **Bevel** works per face, as LightWave 5's did (there's no group bevel). The camera view in Layout shows heading and
   pitch, not bank.
+- **Textures**: the views show colour layers (up to four a surface); the other channels and bump maps show in the
+  ray tracer. Cylindrical and spherical maps are worked out per corner in the views (and exactly per pixel in the ray
+  tracer), so a big face can differ slightly. Procedural textures from LWOB files are kept but not drawn, and LWO2's
+  procedural, gradient and front-projection layers are skipped. LWOB has nowhere for a layer's blending mode, so it
+  isn't saved there (the native .avascene keeps it). Tools that make new geometry from nothing (Box, Text and so on)
+  leave it without UVs, and a swept wall takes its edge's UVs at both ends rather than new ones.
 
 ## About and licence
 

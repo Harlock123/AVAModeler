@@ -11,6 +11,11 @@ public sealed class Polygon
     public List<int> Points;
     public int Surface;
     public List<Polygon>? Details;
+    /// <summary>
+    /// UV coordinates this polygon's corners have of their own, where they differ from their points' (a seam, as an
+    /// LWO2 VMAD keeps them): by UV map name, then by point index. Null when there are none.
+    /// </summary>
+    public Dictionary<string, Dictionary<int, Vec2>>? CornerUVs;
 
     public Polygon(IEnumerable<int> points, int surface = 0)
     {
@@ -20,7 +25,28 @@ public sealed class Polygon
 
     public int Count => Points.Count;
 
-    public Polygon Clone() => new(Points, Surface) { Details = Details?.Select(d => d.Clone()).ToList() };
+    public Polygon Clone() => new(Points, Surface)
+    {
+        Details = Details?.Select(d => d.Clone()).ToList(),
+        CornerUVs = CornerUVs?.ToDictionary(kv => kv.Key, kv => new Dictionary<int, Vec2>(kv.Value)),
+    };
+
+    /// <summary>
+    /// Gives the polygon new points, corner for corner: a corner's own UVs (see <see cref="CornerUVs"/>) go with it to
+    /// the point that takes its place. With a different number of points, the corner UVs of points that stay are kept.
+    /// </summary>
+    public void SetPoints(IReadOnlyList<int> points)
+    {
+        if (CornerUVs != null && points.Count == Points.Count)
+            foreach (var (name, corners) in CornerUVs.ToList())
+            {
+                var moved = new Dictionary<int, Vec2>();
+                for (int i = 0; i < points.Count; i++)
+                    if (corners.TryGetValue(Points[i], out var uv)) moved[points[i]] = uv;
+                CornerUVs[name] = moved;
+            }
+        Points = [.. points];
+    }
 
     /// <summary>The edges as point-index pairs, in order (a 2-point polygon has one; a 1-point polygon none).</summary>
     public IEnumerable<(int A, int B)> Edges()
@@ -43,9 +69,10 @@ public readonly record struct Edge(int A, int B)
 /// <summary>
 /// A mesh: an indexed list of points and a list of polygons that use them. The edge map and the
 /// point-to-polygon map are built when something asks for them and thrown away when the mesh changes. Anything
-/// that changes <see cref="Points"/> or <see cref="Polygons"/> directly must call <see cref="Touch"/>.
+/// that changes <see cref="Points"/> or <see cref="Polygons"/> directly must call <see cref="Touch"/>. A mesh can also
+/// carry named UV maps (see <see cref="UVMaps"/>).
 /// </summary>
-public sealed class Mesh
+public sealed partial class Mesh
 {
     public List<Vec3> Points = [];
     public List<Polygon> Polygons = [];
@@ -59,7 +86,16 @@ public sealed class Mesh
 
     public void Touch() => Version++;
 
-    public Mesh Clone() => new() { Points = [.. Points], Polygons = Polygons.Select(p => p.Clone()).ToList() };
+    public Mesh Clone() => new() { Points = [.. Points], Polygons = Polygons.Select(p => p.Clone()).ToList(), UVMaps = UVMaps.Select(m => m.Clone()).ToList() };
+
+    /// <summary>Takes another mesh's points, polygons and UV maps as its own (the other mesh shouldn't be used after).</summary>
+    public void TakeFrom(Mesh other)
+    {
+        Points = other.Points;
+        Polygons = other.Polygons;
+        UVMaps = other.UVMaps;
+        Touch();
+    }
 
     public bool IsEmpty => Points.Count == 0 && Polygons.Count == 0;
 
@@ -89,10 +125,14 @@ public sealed class Mesh
     {
         Points.Clear();
         Polygons.Clear();
+        foreach (var m in UVMaps) m.Points.Clear();
         Touch();
     }
 
-    /// <summary>Adds another mesh's points and polygons; returns the index its points start at here.</summary>
+    /// <summary>
+    /// Adds another mesh's points and polygons; returns the index its points start at here. Its UV maps come too,
+    /// joining maps of the same name here.
+    /// </summary>
     public int Append(Mesh other, Func<int, int>? surfaceMap = null)
     {
         int offset = Points.Count;
@@ -100,15 +140,27 @@ public sealed class Mesh
         foreach (var p in other.Polygons)
         {
             var c = p.Clone();
-            for (int i = 0; i < c.Points.Count; i++) c.Points[i] += offset;
+            Offset(c, offset);
             if (c.Details != null)
-                foreach (var d in c.Details)
-                    for (int i = 0; i < d.Points.Count; i++) d.Points[i] += offset;
+                foreach (var d in c.Details) Offset(d, offset);
             if (surfaceMap != null) c.Surface = surfaceMap(c.Surface);
             Polygons.Add(c);
         }
+        foreach (var map in other.UVMaps)
+        {
+            var mine = AddUVMap(map.Name);
+            foreach (var (i, uv) in map.Points) mine.Points[i + offset] = uv;
+        }
         Touch();
         return offset;
+    }
+
+    private static void Offset(Polygon p, int offset)
+    {
+        for (int i = 0; i < p.Points.Count; i++) p.Points[i] += offset;
+        if (p.CornerUVs != null)
+            foreach (var name in p.CornerUVs.Keys.ToList())
+                p.CornerUVs[name] = p.CornerUVs[name].ToDictionary(kv => kv.Key + offset, kv => kv.Value);
     }
 
     public Box3 Bounds() => Box3.Of(Points);
@@ -243,6 +295,7 @@ public sealed class Mesh
         }
         Points = kept;
         Polygons = polys;
+        RemapUVs(map);
         Touch();
         return map;
     }
@@ -250,6 +303,7 @@ public sealed class Mesh
     private static void Remap(Polygon p, int[] map)
     {
         for (int i = 0; i < p.Points.Count; i++) p.Points[i] = map[p.Points[i]];
+        RemapCorners(p, map);
         if (p.Details != null)
         {
             p.Details.RemoveAll(d => d.Points.Any(x => map[x] < 0));
@@ -307,8 +361,11 @@ public sealed class Mesh
         return merged;
     }
 
-    private static void Collapse(Polygon poly, int[] target)
+    private void Collapse(Polygon poly, int[] target)
     {
+        // A merged point's UVs stay with the corners that used it (as corner UVs where they differ from the point kept).
+        foreach (int i in poly.Points.Distinct().ToList())
+            if (target[i] != i) KeepCornerUVs(poly, i, target[i]);
         var pts = new List<int>(poly.Points.Count);
         foreach (int i in poly.Points)
         {

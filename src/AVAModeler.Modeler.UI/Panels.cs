@@ -64,7 +64,7 @@ public sealed class ToolTabs : DockPanel
         ["Multiply"] = [],
         ["Polygon"] = [],
         ["Tools"] = [("Cut", "Cut"), ("Copy", "Copy"), ("Paste", "Paste"), ("Swap Layers", "Swap Layers"), ("Run Macro", "Run Macro")],
-        ["Display"] = [("Fit All", "Fit All"), ("Fit Selected", "Fit Selected"), ("Maximize", "Maximize View"), ("Wireframe", "Style Wireframe"),
+        ["Display"] = [("Fit All", "Fit All"), ("Fit Selected", "Fit Selected"), ("Maximize", "Maximize View"), ("UV View", "UV View"), ("Next UV Map", "Next UV Map"), ("Wireframe", "Style Wireframe"),
             ("Shaded", "Style Shaded"), ("Shaded + Wire", "Style ShadedWireframe"), ("MetaNURBS", "MetaNURBS"), ("Backfaces", "Backface Tint"),
             ("Snap to Grid", "Snap"), ("Center: Selection", "Center Selection"), ("Center: Mouse", "Center Mouse"), ("Center: Origin", "Center Origin"),
             ("Surfaces…", "Surface Editor"), ("Preferences…", "Preferences")],
@@ -118,7 +118,7 @@ public sealed class ToolTabs : DockPanel
         "Box", "Ball", "Disc", "Cone", "Points", "Make Polygon", "Text",
         "Move", "Rotate", "Size", "Stretch", "Shear", "Bend", "Twist", "Taper", "Magnet", "Drag", "Jitter", "Smooth", "Center", "Quantize",
         "Extrude", "Lathe", "Mirror", "Clone", "Array", "Path Extrude", "Rail Extrude", "Bevel", "Smooth Shift",
-        "Flip", "Triple", "Merge Points", "Align", "Unify", "Subdivide", "Metaform", "Surface", "Merge Polygons", "Split", "Remove",
+        "Flip", "Triple", "Merge Points", "Align", "Unify", "Subdivide", "Metaform", "Surface", "Make UVs", "Merge Polygons", "Split", "Remove",
         "Boolean", "Drill",
     ];
 

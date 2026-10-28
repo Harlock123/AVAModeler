@@ -108,6 +108,8 @@ public sealed class RenderWindow : Window
             _result = await Task.Run(() => RayTracer.Render(scene, frame, settings, report.Report, token), token);
             _image.Source = ToBitmap(_result);
             _status.Text = $"Frame {frame:0}: {_result.Width} × {_result.Height} in {(DateTime.Now - started).TotalSeconds:0.0} s.";
+            var missing = _session.ImageProblems();
+            if (missing.Count > 0) _status.Text += " " + string.Join(" ", missing);
         }
         catch (OperationCanceledException)
         {

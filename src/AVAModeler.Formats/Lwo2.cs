@@ -4,7 +4,9 @@ namespace AVAModeler.Formats;
 
 /// <summary>
 /// Reads LightWave 6+ objects (FORM/LWO2) for compatibility: layers, points, FACE and PTCH polygons (patches come in
-/// as their cage faces), surface tags, and each surface's basic settings. Vertex maps, curves, images, envelopes and
+/// as their cage faces), surface tags, each surface's basic settings, UV maps (VMAP and VMAD of type TXUV), and image
+/// map texture blocks (BLOK with an IMAP header) for colour, diffuse, specular, luminosity, reflection, transparency
+/// and bump, with their images from the CLIP chunks. Other vertex maps, curves, envelopes, procedural and gradient
 /// textures are skipped. Writing is LWOB/LWLO only (<see cref="Lwob"/>).
 /// </summary>
 public static class Lwo2
@@ -27,6 +29,8 @@ public static class Lwo2
         // Where the polygons of the last POLS chunk start in the mesh, for PTAG; -1 if it was skipped.
         int polygonsStart = -1, polygonsEnd = -1;
         var untagged = new HashSet<Polygon>();
+        var clips = new Dictionary<uint, string>();
+        var clipped = new List<(TextureLayer Layer, int Clip)>();
 
         while (!form.AtEnd)
         {
@@ -88,11 +92,22 @@ public static class Lwo2
                         untagged.Remove(mesh.Polygons[p]);
                     }
                     break;
+                // UV maps and images are extras: one that can't be read is skipped (with what came before it kept).
+                case "VMAP":
+                    Lenient(() => VertexMaps.ReadVmap(body, mesh, pointBase));
+                    break;
+                case "VMAD":
+                    if (polygonsStart >= 0) Lenient(() => VertexMaps.ReadVmad(body, mesh, pointBase, polygonsStart));
+                    break;
+                case "CLIP":
+                    Lenient(() => ReadClip(body, clips));
+                    break;
                 case "SURF":
-                    ReadSurface(doc, body);
+                    ReadSurface(doc, body, clipped);
                     break;
             }
         }
+        foreach (var (layer, clip) in clipped) layer.Image = clips.GetValueOrDefault((uint)clip, "");
 
         if (untagged.Count > 0)
         {
@@ -110,7 +125,7 @@ public static class Lwo2
     /// 40% is 16 (low), 60% is 64, 80% is 256 and 100% is 1024, which is how LightWave 6 converted old surfaces.
     /// Smoothing is on when SMAN is above zero; SIDE 3 means double-sided.
     /// </summary>
-    private static void ReadSurface(Document doc, IffReader body)
+    private static void ReadSurface(Document doc, IffReader body, List<(TextureLayer, int)> clipped)
     {
         string name = body.S0();
         body.S0();
@@ -121,6 +136,15 @@ public static class Lwo2
             var c = r.Chunk(true, out string id);
             switch (id)
             {
+                case "BLOK":
+                    (TextureLayer, int)? block = null;
+                    Lenient(() => block = ReadBlock(c));
+                    if (block is var (layer, clip))
+                    {
+                        s.Textures.Add(layer);
+                        clipped.Add((layer, clip));
+                    }
+                    break;
                 case "COLR": s.Color = Rgb.FromVec(c.Vec12()); break;
                 case "DIFF": s.Diffuse = c.F4(); break;
                 case "SPEC": s.Specular = c.F4(); break;
@@ -137,4 +161,107 @@ public static class Lwo2
             }
         }
     }
+
+    private static void Lenient(Action read)
+    {
+        try { read(); }
+        catch (FormatException) { }
+    }
+
+    /// <summary>A CLIP: its index and, for a still image, the file name.</summary>
+    private static void ReadClip(IffReader body, Dictionary<uint, string> clips)
+    {
+        uint index = body.U4();
+        while (!body.AtEnd)
+        {
+            var c = body.Chunk(true, out string id);
+            if (id == "STIL") clips[index] = c.S0();
+        }
+    }
+
+    private static readonly Dictionary<string, TextureChannel> Channels = new()
+    {
+        ["COLR"] = TextureChannel.Color, ["DIFF"] = TextureChannel.Diffuse, ["SPEC"] = TextureChannel.Specular,
+        ["LUMI"] = TextureChannel.Luminosity, ["REFL"] = TextureChannel.Reflection, ["TRAN"] = TextureChannel.Transparency,
+        ["BUMP"] = TextureChannel.Bump,
+    };
+
+    /// <summary>
+    /// A surface BLOK: an image map's texture layer and the CLIP index of its image, or null for blocks this doesn't
+    /// draw (procedurals, gradients, shaders, disabled layers, and channels such as glossiness).
+    /// </summary>
+    private static (TextureLayer, int)? ReadBlock(IffReader block)
+    {
+        var header = block.Chunk(true, out string kind);
+        if (kind != "IMAP") return null;
+        header.S0();
+        var t = new TextureLayer();
+        bool known = true, enabled = true;
+        while (!header.AtEnd)
+        {
+            var c = header.Chunk(true, out string id);
+            switch (id)
+            {
+                case "CHAN":
+                    known = Channels.TryGetValue(c.Id4(), out var channel);
+                    t.Channel = channel;
+                    break;
+                case "ENAB": enabled = c.U2() != 0; break;
+                case "NEGA": t.Negative = c.U2() != 0; break;
+                case "OPAC":
+                    t.Blend = c.U2() switch { 3 => TextureBlend.Multiply, 7 => TextureBlend.Additive, _ => TextureBlend.Normal };
+                    t.Opacity = c.F4();
+                    break;
+            }
+        }
+        int clip = -1;
+        while (!block.AtEnd)
+        {
+            var c = block.Chunk(true, out string id);
+            switch (id)
+            {
+                case "TMAP":
+                    while (!c.AtEnd)
+                    {
+                        var m = c.Chunk(true, out string mid);
+                        if (mid == "CNTR") t.Center = m.Vec12();
+                        else if (mid == "SIZE") t.Size = m.Vec12();
+                        else if (mid == "CSYS") t.WorldCoordinates = m.U2() == 1;
+                    }
+                    break;
+                case "PROJ":
+                    int proj = c.U2();
+                    t.Projection = proj switch
+                    {
+                        1 => TextureProjection.Cylindrical, 2 => TextureProjection.Spherical, 3 => TextureProjection.Cubic,
+                        5 => TextureProjection.UV, _ => TextureProjection.Planar,
+                    };
+                    // Front projection is a Layout trick this doesn't do.
+                    if (proj == 4) known = false;
+                    break;
+                case "AXIS": t.Axis = (Axis)Math.Clamp((int)c.U2(), 0, 2); break;
+                case "IMAG": clip = c.VX(); break;
+                case "WRAP":
+                    t.WidthTiling = Tiling(c.U2());
+                    t.HeightTiling = Tiling(c.U2());
+                    break;
+                case "WRPW": t.WidthWrap = c.F4(); break;
+                case "WRPH": t.HeightWrap = c.F4(); break;
+                case "VMAP": t.UVMap = c.S0(); break;
+                case "PIXB": t.PixelBlending = c.U2() != 0; break;
+                case "AAST":
+                    t.Antialiasing = c.U2() != 0;
+                    t.AntialiasingStrength = c.F4();
+                    break;
+                case "TAMP": t.Amplitude = c.F4(); break;
+            }
+        }
+        return known && enabled ? (t, clip) : null;
+    }
+
+    /// <summary>LWO2's WRAP codes: 0 reset, 1 repeat, 2 mirror, 3 edge.</summary>
+    private static TextureTiling Tiling(int code) => code switch
+    {
+        0 => TextureTiling.Reset, 2 => TextureTiling.Mirror, 3 => TextureTiling.Edge, _ => TextureTiling.Repeat,
+    };
 }

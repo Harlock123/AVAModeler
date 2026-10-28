@@ -97,11 +97,28 @@ public sealed class GlSurface : OpenGlControlBase
 /// <summary>
 /// One of the four views: its picture (software or OpenGL), the view's name and grid size, a rubber band while
 /// selecting, and the mouse: click to pick, drag a box (or right-drag a lasso) to select, drag with a tool armed to
-/// use it; the wheel zooms, the middle button (or Alt) pans, and dragging in the perspective view turns it.
+/// use it; the wheel zooms, the middle button (or Alt) pans, and dragging in the perspective view turns it. Any view
+/// can be switched to the UV view (<see cref="ShowUV"/>): the current UV map laid out flat over its texture, where
+/// points and polygons are picked as in the other views and the tools that move points move UVs.
 /// </summary>
 public sealed class ViewportControl : Panel
 {
-    public ViewCamera Camera { get; }
+    private readonly ViewCamera _modelCamera;
+    private readonly ViewCamera _uvCamera = new(ViewKind.UV) { Center = new Vec3(0.5, 0.5, 0), PixelsPerUnit = 200 };
+    private bool _uv;
+
+    /// <summary>The camera the view looks through now: its own, or the UV view's.</summary>
+    public ViewCamera Camera => _uv ? _uvCamera : _modelCamera;
+
+    /// <summary>Which of the four views this is (whatever it's showing now).</summary>
+    public ViewKind Kind => _modelCamera.Kind;
+
+    /// <summary>The view's own camera, on the model, even while it shows the UV map.</summary>
+    public ViewCamera ModelCamera => _modelCamera;
+
+    /// <summary>Whether the view shows the UV map.</summary>
+    public bool IsUV => _uv;
+
     public ModelerSession Session { get; }
     private Control _surface;
     private readonly Overlay _overlay;
@@ -119,7 +136,7 @@ public sealed class ViewportControl : Panel
 
     public ViewportControl(ViewKind kind, ModelerSession session, bool openGl)
     {
-        Camera = new ViewCamera(kind) { PixelsPerUnit = 80 };
+        _modelCamera = new ViewCamera(kind) { PixelsPerUnit = 80 };
         Session = session;
         ClipToBounds = true;
         Background = Brushes.Transparent;
@@ -162,10 +179,24 @@ public sealed class ViewportControl : Panel
         Redraw();
     }
 
+    /// <summary>Shows the UV map in this view (or goes back to the view it was).</summary>
+    public void ShowUV(bool on)
+    {
+        if (on == _uv) return;
+        _uv = on;
+        // The picture's camera changes with it.
+        Children.Remove(_surface);
+        _surface = MakeSurface(_useGl);
+        Children.Insert(0, _surface);
+        if (on) FitAll();
+        Redraw();
+    }
+
     private ViewScene Scene()
     {
+        if (_uv) return UVScene();
         var scene = Session.BuildScene(Camera.IsPerspective);
-        if (Session.Context.CenterMode == ActionCenter.Mouse || Session.ActiveTool != null)
+        if (Session.Context.CenterMode == ActionCenter.Mouse || Session.ActiveTool != null && !Session.InUVEdit)
         {
             // A small cross at the action centre while a tool is armed.
             var c = Session.ActiveTool != null ? Session.Context.Center() : Session.Context.MousePoint;
@@ -177,6 +208,20 @@ public sealed class ViewportControl : Panel
         return scene;
     }
 
+    /// <summary>The UV view's picture, with the action centre while a tool works on the UVs.</summary>
+    private ViewScene UVScene()
+    {
+        var scene = Session.BuildUVScene(out _);
+        if (Session.InUVEdit)
+        {
+            var c = Session.ActiveContext.Center();
+            double s = 6 / Math.Max(Camera.PixelsPerUnit, 1e-9);
+            scene.Overlay.Add(new OverlayLine(c - Vec3.UnitX * s, c + Vec3.UnitX * s, Palette.ActionCenter));
+            scene.Overlay.Add(new OverlayLine(c - Vec3.UnitY * s, c + Vec3.UnitY * s, Palette.ActionCenter));
+        }
+        return scene;
+    }
+
     public void Redraw()
     {
         _surface.InvalidateVisual();
@@ -184,26 +229,49 @@ public sealed class ViewportControl : Panel
         _overlay.InvalidateVisual();
     }
 
-    public void FitAll() { Camera.Resize((int)Bounds.Width, (int)Bounds.Height); Camera.Fit(Session.Document.Bounds()); Redraw(); }
+    public void FitAll()
+    {
+        Camera.Resize((int)Bounds.Width, (int)Bounds.Height);
+        Camera.Fit(_uv ? UVBounds(selected: false) : Session.Document.Bounds());
+        Redraw();
+    }
 
     public void FitSelected()
     {
         var box = Box3.Empty;
         var doc = Session.Document;
-        foreach (int l in doc.ForegroundLayers)
-        {
-            var mesh = doc.Layers[l].Mesh;
-            foreach (int i in doc.Selection.ActivePoints(l, mesh)) box = box.Include(mesh.Points[i]);
-        }
+        if (_uv) box = UVBounds(selected: true);
+        else
+            foreach (int l in doc.ForegroundLayers)
+            {
+                var mesh = doc.Layers[l].Mesh;
+                foreach (int i in doc.Selection.ActivePoints(l, mesh)) box = box.Include(mesh.Points[i]);
+            }
         Camera.Resize((int)Bounds.Width, (int)Bounds.Height);
-        Camera.Fit(box.IsEmpty ? doc.Bounds() : box);
+        Camera.Fit(box.IsEmpty ? _uv ? UVBounds(selected: false) : doc.Bounds() : box);
         Redraw();
+    }
+
+    /// <summary>The UV view's extent: the 0–1 square and every UV (or only the selection's, if there is one).</summary>
+    private Box3 UVBounds(bool selected)
+    {
+        var box = selected ? Box3.Empty : new Box3(Vec3.Zero, new Vec3(1, 1, 0));
+        if (Session.Document.ActiveUVMap == null) return box.IsEmpty ? new Box3(Vec3.Zero, new Vec3(1, 1, 0)) : box;
+        var space = new UVSpace(Session.Document, Session.Document.ActiveUVMap);
+        foreach (int l in space.Flat.ForegroundLayers)
+        {
+            var mesh = space.Flat.Layers[l].Mesh;
+            var points = selected ? space.Flat.Selection.ActivePoints(l, mesh) : Enumerable.Range(0, mesh.Points.Count).ToArray();
+            if (selected && !space.Flat.Selection.Any) continue;
+            foreach (int i in points) box = box.Include(mesh.Points[i]);
+        }
+        return box;
     }
 
     // ───────────────────────────── the mouse ─────────────────────────────
 
-    private List<(int, Mesh)> ForegroundMeshes() =>
-        Session.Document.ForegroundLayers.Select(l => (l, Session.Document.Layers[l].Mesh)).ToList();
+    private static List<(int, Mesh)> ForegroundMeshes(Document doc) =>
+        doc.ForegroundLayers.Select(l => (l, doc.Layers[l].Mesh)).ToList();
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -229,7 +297,7 @@ public sealed class ViewportControl : Panel
         }
         else if (props.IsRightButtonPressed) _gesture = Camera.IsPerspective ? Gesture.Orbit : Gesture.Lasso;
         else if (props.IsLeftButtonPressed)
-            _gesture = Session.Document.Selection.Mode == SelectionMode.Volume && !Camera.IsPerspective ? Gesture.Volume
+            _gesture = Session.Document.Selection.Mode == SelectionMode.Volume && !Camera.IsPerspective && !_uv ? Gesture.Volume
                 : Camera.IsPerspective ? Gesture.Orbit : Gesture.Box;
         _lasso.Clear();
         _lasso.Add(p);
@@ -306,6 +374,24 @@ public sealed class ViewportControl : Panel
         Redraw();
     }
 
+    /// <summary>
+    /// Picks in this view: in the model, or for the UV view in its flat copy of the UV map, the selection going back
+    /// to the model.
+    /// </summary>
+    private void Pick(Action<Document> pick)
+    {
+        if (!_uv)
+        {
+            pick(Session.Document);
+            return;
+        }
+        if (Session.Document.ActiveUVMap is not { } map) return;
+        var space = new UVSpace(Session.Document, map);
+        pick(space.Flat);
+        space.SelectionToModel();
+        Session.Document.Notify();
+    }
+
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
@@ -322,15 +408,16 @@ public sealed class ViewportControl : Panel
     private void BeginToolDrag(Point p, bool alternate)
     {
         var tool = Session.ActiveTool!;
-        var ctx = Session.Context;
         // A new drag with a tool that has already been used is a new step (one undo each), except for the
-        // tools whose drags all shape one thing (a box's width in one view, its depth in another).
-        if (tool.Active && ToolUsed && !RefinesAcrossDrags(tool))
+        // tools whose drags all shape one thing (a box's width in one view, its depth in another). A drag in the UV
+        // view works on UVs, so it starts a step of its own too.
+        if (!Session.ReadyTool(_uv, ToolUsed && !RefinesAcrossDrags(tool), UVSnap))
         {
-            tool.Commit();
-            tool.Begin(ctx);
-            Session.Document.Notify();
+            _gesture = Gesture.None;
+            return;
         }
+        Session.Document.Notify();
+        var ctx = Session.ActiveContext;
         var through = ctx.CenterMode == ActionCenter.Mouse ? Camera.Center : ctx.Center();
         _toolStart = Camera.Unproject(p.X, p.Y, through);
         ctx.MousePoint = _toolStart;
@@ -338,16 +425,22 @@ public sealed class ViewportControl : Panel
         ToolDrag(p, first: true);
     }
 
-    /// <summary>Whether the active tool has been dragged since it was (re)armed.</summary>
-    private bool ToolUsed;
+    /// <summary>Whether the active tool has been dragged since it was (re)armed (in any view).</summary>
+    private bool ToolUsed
+    {
+        get => Session.ToolUsed;
+        set => Session.ToolUsed = value;
+    }
+
+    /// <summary>The UV view's snapping step: its grid, when snapping is on.</summary>
+    private double UVSnap => Session.Preferences.SnapToGrid ? _uvCamera.GridStep() : 0;
 
     private static bool RefinesAcrossDrags(Tool t) => t is BoxTool or BallTool or DiscTool or PointsTool or TextTool or LatheTool or MirrorTool;
 
     private void ToolDrag(Point p, bool first)
     {
         var tool = Session.ActiveTool;
-        if (tool == null) return;
-        if (!tool.Active) tool.Begin(Session.Context);
+        if (tool == null || !Session.ReadyTool(_uv, false, UVSnap)) return;
         var (r, u, f) = Camera.Basis();
         var current = Camera.Unproject(p.X, p.Y, _toolStart);
         var drag = new DragInfo
@@ -358,16 +451,23 @@ public sealed class ViewportControl : Panel
         };
         tool.Drag(drag);
         ToolUsed = true;
+        if (Session.UVEditBroken)
+        {
+            Session.CancelTool();
+            Session.SetStatus($"{tool.Name} can't work in the UV view: only tools that move points (Move, Rotate, Size and the like) can move UVs.");
+            _gesture = Gesture.None;
+        }
     }
 
     /// <summary>Resets the "used" flag when a tool is armed.</summary>
     public void ToolArmed() => ToolUsed = false;
 
-    private void Click(Point p, bool add, bool remove)
+    private void Click(Point p, bool add, bool remove) => Pick(doc => Click(doc, p, add, remove));
+
+    private void Click(Document doc, Point p, bool add, bool remove)
     {
-        var doc = Session.Document;
         var sel = doc.Selection;
-        var layers = ForegroundMeshes();
+        var layers = ForegroundMeshes(doc);
         bool keep = add || remove;
         switch (sel.Mode)
         {
@@ -408,12 +508,13 @@ public sealed class ViewportControl : Panel
         doc.Notify();
     }
 
-    private void SelectInside(IReadOnlyList<(double X, double Y)> shape, bool add, bool remove)
+    private void SelectInside(IReadOnlyList<(double X, double Y)> shape, bool add, bool remove) => Pick(doc => SelectInside(doc, shape, add, remove));
+
+    private void SelectInside(Document doc, IReadOnlyList<(double X, double Y)> shape, bool add, bool remove)
     {
-        var doc = Session.Document;
         var sel = doc.Selection;
         if (!add && !remove) sel.Clear();
-        foreach (var (l, mesh) in ForegroundMeshes())
+        foreach (var (l, mesh) in ForegroundMeshes(doc))
             switch (sel.Mode)
             {
                 case SelectionMode.Points:
@@ -443,8 +544,11 @@ public sealed class ViewportControl : Panel
         public override void Render(DrawingContext dc)
         {
             var cam = view.Camera;
-            Text(dc, cam.Title, new Point(6, 4), 12);
-            if (!cam.IsPerspective) Text(dc, "Grid: " + ViewCamera.FormatLength(cam.GridStep()), new Point(6, Bounds.Height - 18), 11);
+            string title = view._uv ? $"UV: {view.Session.Document.ActiveUVMap ?? "(no UV map: Polygon › Make UVs)"}" : cam.Title;
+            Text(dc, title, new Point(6, 4), 12);
+            // UV space has no units: its grid is a fraction of the image.
+            string grid = view._uv ? cam.GridStep().ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) : ViewCamera.FormatLength(cam.GridStep());
+            if (!cam.IsPerspective) Text(dc, "Grid: " + grid, new Point(6, Bounds.Height - 18), 11);
             if (view._gesture is Gesture.Box or Gesture.Volume && view._moved)
                 dc.DrawRectangle(null, Band, new Rect(view._press, view._last).Normalize());
             if (view._gesture == Gesture.Lasso && view._lasso.Count > 1)
@@ -524,6 +628,21 @@ public sealed class QuadView : Grid
 
     public void FitAll() { foreach (var v in Views) v.FitAll(); }
     public void FitSelected() { foreach (var v in Views) v.FitSelected(); }
+
+    /// <summary>The view showing the UV map, if one is.</summary>
+    public ViewportControl? UVView => Views.FirstOrDefault(v => v.IsUV);
+
+    /// <summary>
+    /// Switches a view to the UV map or back: the one given, else the one under the mouse, else whichever already
+    /// shows it, else the Side view. Only one view shows it at a time.
+    /// </summary>
+    public void ToggleUV(ViewportControl? view = null)
+    {
+        view ??= Maximized ?? Views.FirstOrDefault(v => v.IsPointerOver) ?? UVView ?? Views.First(v => v.Kind == ViewKind.Side);
+        bool on = !view.IsUV;
+        foreach (var v in Views) if (v != view) v.ShowUV(false);
+        view.ShowUV(on);
+    }
     public void UseRenderer(bool openGl) { foreach (var v in Views) v.UseRenderer(openGl); }
     public void Redraw() { foreach (var v in Views) v.Redraw(); }
     public void ToolArmed() { foreach (var v in Views) v.ToolArmed(); }

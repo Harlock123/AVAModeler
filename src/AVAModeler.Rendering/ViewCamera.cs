@@ -2,8 +2,11 @@ using AVAModeler.Core;
 
 namespace AVAModeler.Rendering;
 
-/// <summary>The four classic views: three looking straight down an axis, and the perspective.</summary>
-public enum ViewKind { Top, Front, Side, Perspective }
+/// <summary>
+/// The four classic views: three looking straight down an axis, and the perspective; and the UV view, which looks at
+/// a UV map laid out flat (u across, v up) as the Front view looks at the XY plane.
+/// </summary>
+public enum ViewKind { Top, Front, Side, Perspective, UV }
 
 /// <summary>A point on the screen, with how far into the scene it lies (larger is further).</summary>
 public readonly record struct ScreenPoint(double X, double Y, double Depth, bool Visible);
@@ -45,7 +48,7 @@ public sealed class ViewCamera
         switch (Kind)
         {
             case ViewKind.Top: return (Vec3.UnitX, Vec3.UnitZ, -Vec3.UnitY);
-            case ViewKind.Front: return (Vec3.UnitX, Vec3.UnitY, Vec3.UnitZ);
+            case ViewKind.Front or ViewKind.UV: return (Vec3.UnitX, Vec3.UnitY, Vec3.UnitZ);
             case ViewKind.Side: return (Vec3.UnitZ, Vec3.UnitY, -Vec3.UnitX);
         }
         double h = Mat4.Deg(Heading), p = Mat4.Deg(Pitch);
@@ -203,5 +206,8 @@ public sealed class ViewCamera
         Distance = Distance, FieldOfView = FieldOfView,
     };
 
-    public string Title => Kind switch { ViewKind.Top => "Top (XZ)", ViewKind.Front => "Front (XY)", ViewKind.Side => "Side (ZY)", _ => "Perspective" };
+    public string Title => Kind switch
+    {
+        ViewKind.Top => "Top (XZ)", ViewKind.Front => "Front (XY)", ViewKind.Side => "Side (ZY)", ViewKind.UV => "UV", _ => "Perspective",
+    };
 }

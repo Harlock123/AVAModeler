@@ -129,6 +129,8 @@ public sealed class ToolRegistry
 /// </summary>
 public sealed class Commands(Document document, ToolRegistry? registry = null)
 {
+    static Commands() => SkiaImages.Register();
+
     public Document Document { get; private set; } = document;
     public ToolRegistry Registry { get; } = registry ?? ToolRegistry.Default;
     public ToolContext Context { get; private set; } = new(document);
@@ -142,6 +144,9 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
 
     /// <summary>Lines a script printed.</summary>
     public List<string> Output { get; } = [];
+
+    /// <summary>The folder a running macro's file is in: relative image paths it gives are looked for from there first.</summary>
+    public string? BaseDirectory { get; set; }
 
     /// <summary>Runs a tool with parameters by name (unnamed ones keep their defaults).</summary>
     public Tool Run(string toolName, IReadOnlyDictionary<string, object?>? args = null)
@@ -242,6 +247,74 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
     }
 
     public void Save(string path) => (Saver ?? throw new InvalidOperationException("No file saver is set up."))(Document, path);
+
+    // ───────────────────────────── UV maps and textures ─────────────────────────────
+
+    /// <summary>Makes UVs for the selection (or everything) in a map, by a projection along an axis, fitted to it.</summary>
+    public void MakeUVs(string map, UVProjection projection = UVProjection.Planar, Axis axis = Axis.Z) =>
+        Run("Make UVs", new Dictionary<string, object?> { ["MapName"] = map, ["Projection"] = projection, ["Axis"] = axis });
+
+    /// <summary>Chooses the UV map to work on (the UV view shows it); not an undoable edit.</summary>
+    public void SetUVMap(string map)
+    {
+        Document.CurrentUVMap = map;
+        Document.Notify();
+    }
+
+    public IReadOnlyList<string> UVMapNames => Document.UVMapNames();
+
+    /// <summary>A point's UVs in the current layer's chosen UV map, or null.</summary>
+    public Vec2? GetUV(int point)
+    {
+        var map = Document.CurrentUVMap ?? Document.ActiveUVMap;
+        return map != null && Document.Current.Mesh.FindUVMap(map) is { } m && m.Points.TryGetValue(point, out var uv) ? uv : null;
+    }
+
+    /// <summary>Sets a point's UVs in the chosen UV map (made if new; "UV" if none is chosen and there are none), in the current layer.</summary>
+    public void SetUV(int point, Vec2 uv)
+    {
+        var mesh = Document.Current.Mesh;
+        if (point < 0 || point >= mesh.Points.Count) throw new ArgumentException($"There's no point {point + 1}.");
+        string map = Document.CurrentUVMap ?? Document.ActiveUVMap ?? "UV";
+        Document.Edit("Set UV", () => mesh.SetPointUV(map, point, uv), [Document.CurrentLayer]);
+        Document.CurrentUVMap ??= map;
+    }
+
+    /// <summary>
+    /// Sets a surface's image texture for a channel: the channel's first texture layer, or a new one. The surface is
+    /// made if it's new. A relative image path is looked for from <see cref="BaseDirectory"/> first; a rooted one inside
+    /// the object's folder is stored relative to it. Returns the layer
+    /// (still part of the document; change it within <paramref name="setup"/> so the change is one undo step).
+    /// </summary>
+    public TextureLayer SetTexture(string surface, string image, TextureChannel channel = TextureChannel.Color, Action<TextureLayer>? setup = null)
+    {
+        TextureLayer? layer = null;
+        Document.Edit("Texture", () =>
+        {
+            var s = Document.Surfaces[Document.SurfaceIndex(surface)];
+            layer = s.TexturesOf(channel).FirstOrDefault(t => t.IsImage);
+            if (layer == null)
+            {
+                layer = new TextureLayer { Channel = channel, UVMap = Document.ActiveUVMap ?? "UV" };
+                s.Textures.Add(layer);
+            }
+            string path = image;
+            if (!Path.IsPathRooted(path) && BaseDirectory != null && Path.GetFullPath(Path.Combine(BaseDirectory, path)) is var full && File.Exists(full)) path = full;
+            layer.Image = TextureImages.RelativePath(path, Document.FilePath);
+            setup?.Invoke(layer);
+        }, []);
+        return layer!;
+    }
+
+    /// <summary>Removes a surface's texture layers for a channel (or all of them); returns how many went.</summary>
+    public int ClearTextures(string surface, TextureChannel? channel = null)
+    {
+        int i = Document.Surfaces.FindIndex(s => s.Name == surface);
+        if (i < 0) throw new ArgumentException($"There's no surface called \"{surface}\".");
+        int gone = 0;
+        Document.Edit("Remove texture", () => gone = Document.Surfaces[i].Textures.RemoveAll(t => channel == null || t.Channel == channel), []);
+        return gone;
+    }
 
     public void Print(string line) => Output.Add(line);
 }

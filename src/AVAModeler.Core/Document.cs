@@ -16,7 +16,7 @@ public sealed record RawChunk(string Id, byte[] Data);
 
 /// <summary>
 /// A surface: a named group of polygons and how they look. Every polygon names one by index into the document's
-/// surface table.
+/// surface table. Texture layers (<see cref="Textures"/>) can lay images over its colour and other settings.
 /// </summary>
 public sealed class Surface
 {
@@ -28,6 +28,8 @@ public sealed class Surface
     /// <summary>Faces meeting at less than this angle (degrees) are shaded as one smooth surface.</summary>
     public double SmoothingAngle = 89.5;
     public bool Smoothing, DoubleSided;
+    /// <summary>The texture layers, applied in order (see <see cref="TextureLayer"/>).</summary>
+    public List<TextureLayer> Textures = [];
     /// <summary>The surface's sub-chunks as read from a file, for writing back unchanged; cleared on any edit.</summary>
     public List<RawChunk>? Raw;
     /// <summary>The values <see cref="Raw"/> was read with: if they still match, the raw chunks are written back.</summary>
@@ -39,12 +41,17 @@ public sealed class Surface
     {
         var s = (Surface)MemberwiseClone();
         s.Raw = Raw == null ? null : [.. Raw];
+        s.Textures = Textures.Select(t => t.Clone()).ToList();
         return s;
     }
 
     /// <summary>The surface's settings in one string, to tell whether it has changed since it was read.</summary>
     public string Signature() => FormattableString.Invariant(
-        $"{Name}|{Color}|{Diffuse:R}|{Specular:R}|{Luminosity:R}|{Reflection:R}|{Transparency:R}|{Glossiness:R}|{SmoothingAngle:R}|{Smoothing}|{DoubleSided}");
+        $"{Name}|{Color}|{Diffuse:R}|{Specular:R}|{Luminosity:R}|{Reflection:R}|{Transparency:R}|{Glossiness:R}|{SmoothingAngle:R}|{Smoothing}|{DoubleSided}")
+        + string.Concat(Textures.Select(t => "|" + t.Signature()));
+
+    /// <summary>The texture layers for one channel, in order.</summary>
+    public IEnumerable<TextureLayer> TexturesOf(TextureChannel channel) => Textures.Where(t => t.Channel == channel);
 }
 
 /// <summary>A layer's part in the work: off, in the foreground (being edited), or in the background (shown dimmed, the operand for booleans).</summary>
@@ -289,6 +296,8 @@ public sealed class Document
     public bool Modified;
     /// <summary>A layer's mesh copied or cut, ready to paste.</summary>
     public Mesh? Clipboard;
+    /// <summary>The UV map being worked on (shown in the UV view, and made by Make UVs unless told otherwise); null for none chosen.</summary>
+    public string? CurrentUVMap;
     /// <summary>Goes up on every change, so views know to redraw.</summary>
     public int Version { get; private set; }
 
@@ -385,6 +394,22 @@ public sealed class Document
         if (!fg.Any()) Layers[0].State = LayerState.Foreground;
         Notify();
     }
+
+    /// <summary>The names of the UV maps in every layer, in the order first met.</summary>
+    public List<string> UVMapNames() => Layers.SelectMany(l => l.Mesh.UVMaps).Select(m => m.Name).Distinct().ToList();
+
+    /// <summary>The UV map to show and work on: the chosen one while it exists, or failing that the first there is (null if none).</summary>
+    public string? ActiveUVMap
+    {
+        get
+        {
+            var names = UVMapNames();
+            return CurrentUVMap != null && names.Contains(CurrentUVMap) ? CurrentUVMap : names.FirstOrDefault();
+        }
+    }
+
+    /// <summary>The folder relative image paths start from: the object file's, if it has one.</summary>
+    public string? ImageBase => TextureImages.BaseOf(FilePath);
 
     public Box3 Bounds(bool foregroundOnly = false)
     {

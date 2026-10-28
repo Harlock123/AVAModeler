@@ -7,8 +7,9 @@ namespace AVAModeler.Scene;
 /// <summary>
 /// The native scene format (".avascene"): JSON holding everything in a <see cref="Scene"/>. Object geometry is either
 /// referenced by its file path (read back through a loader callback, like LWS objects) or embedded: layers, points,
-/// polygons and surfaces. An object with no file path is always embedded. Numbers are written so they read back
-/// exactly. Surfaces' raw LWOB chunks aren't kept.
+/// polygons (with their UV maps) and surfaces (with their texture layers). An object with no file path is always
+/// embedded; its image paths are as the object had them, found from the folder of the file it came from. Numbers are
+/// written so they read back exactly. Surfaces' raw LWOB chunks aren't kept.
 /// </summary>
 public static class SceneJson
 {
@@ -385,16 +386,18 @@ public static class SceneJson
         public Layer ToLayer() => new() { Name = Name, State = State, Pivot = Vec(Pivot), Mesh = Mesh?.ToMesh() ?? new Mesh() };
     }
 
-    /// <summary>Points as a flat x, y, z list, and polygons.</summary>
+    /// <summary>Points as a flat x, y, z list, polygons, and UV maps.</summary>
     private sealed class MeshDto
     {
         public double[] Points { get; set; } = [];
         public List<PolygonDto> Polygons { get; set; } = [];
+        public List<UVMapDto>? UVMaps { get; set; }
 
         public static MeshDto Of(Mesh m) => new()
         {
             Points = m.Points.SelectMany(p => new[] { p.X, p.Y, p.Z }).ToArray(),
             Polygons = m.Polygons.Select(PolygonDto.Of).ToList(),
+            UVMaps = m.UVMaps.Count == 0 ? null : m.UVMaps.Select(u => new UVMapDto { Name = u.Name, Points = Flat(u.Points) }).ToList(),
         };
 
         public Mesh ToMesh()
@@ -402,9 +405,30 @@ public static class SceneJson
             var m = new Mesh();
             for (int i = 0; i + 2 < Points.Length; i += 3) m.Points.Add(new Vec3(Points[i], Points[i + 1], Points[i + 2]));
             m.Polygons.AddRange(Polygons.Select(p => p.ToPolygon()));
+            foreach (var u in UVMaps ?? [])
+            {
+                var map = m.AddUVMap(u.Name);
+                foreach (var (i, uv) in Unflat(u.Points))
+                    if (i >= 0 && i < m.Points.Count) map.Points[i] = uv;
+            }
             m.Touch();
             return m;
         }
+    }
+
+    /// <summary>A UV map: its points as a flat index, u, v list.</summary>
+    private sealed class UVMapDto
+    {
+        public string Name { get; set; } = "";
+        public double[] Points { get; set; } = [];
+    }
+
+    /// <summary>UVs by point as a flat index, u, v list.</summary>
+    private static double[] Flat(Dictionary<int, Vec2> uvs) => uvs.SelectMany(kv => new[] { kv.Key, kv.Value.X, kv.Value.Y }).ToArray();
+
+    private static IEnumerable<(int, Vec2)> Unflat(double[] flat)
+    {
+        for (int i = 0; i + 2 < flat.Length; i += 3) yield return ((int)flat[i], new Vec2(flat[i + 1], flat[i + 2]));
     }
 
     private sealed class PolygonDto
@@ -412,10 +436,58 @@ public static class SceneJson
         public int[] Points { get; set; } = [];
         public int Surface { get; set; }
         public List<PolygonDto>? Details { get; set; }
+        /// <summary>The corners' own UVs (seams), by map name, each a flat point, u, v list.</summary>
+        public Dictionary<string, double[]>? CornerUVs { get; set; }
 
-        public static PolygonDto Of(Polygon p) => new() { Points = [.. p.Points], Surface = p.Surface, Details = p.Details?.Select(Of).ToList() };
+        public static PolygonDto Of(Polygon p) => new()
+        {
+            Points = [.. p.Points], Surface = p.Surface, Details = p.Details?.Select(Of).ToList(),
+            CornerUVs = p.CornerUVs?.ToDictionary(kv => kv.Key, kv => Flat(kv.Value)),
+        };
 
-        public Polygon ToPolygon() => new(Points, Surface) { Details = Details?.Select(d => d.ToPolygon()).ToList() };
+        public Polygon ToPolygon() => new(Points, Surface)
+        {
+            Details = Details?.Select(d => d.ToPolygon()).ToList(),
+            CornerUVs = CornerUVs?.ToDictionary(kv => kv.Key, kv => Unflat(kv.Value).ToDictionary(x => x.Item1, x => x.Item2)),
+        };
+    }
+
+    private sealed class TextureDto
+    {
+        public TextureChannel Channel { get; set; }
+        public TextureProjection Projection { get; set; }
+        public string Image { get; set; } = "";
+        public string? UVMap { get; set; }
+        public Axis Axis { get; set; } = Axis.Z;
+        public double[]? Center { get; set; }
+        public double[]? Size { get; set; }
+        public TextureTiling WidthTiling { get; set; } = TextureTiling.Repeat;
+        public TextureTiling HeightTiling { get; set; } = TextureTiling.Repeat;
+        public double WidthWrap { get; set; } = 1;
+        public double HeightWrap { get; set; } = 1;
+        public double Opacity { get; set; } = 1;
+        public TextureBlend Blend { get; set; }
+        public double Amplitude { get; set; } = 1;
+        public bool PixelBlending { get; set; } = true;
+        public bool Negative { get; set; }
+        public bool WorldCoordinates { get; set; }
+        public string? Procedural { get; set; }
+
+        public static TextureDto Of(TextureLayer t) => new()
+        {
+            Channel = t.Channel, Projection = t.Projection, Image = t.Image, UVMap = t.UVMap.Length > 0 ? t.UVMap : null, Axis = t.Axis,
+            Center = Arr(t.Center), Size = Arr(t.Size), WidthTiling = t.WidthTiling, HeightTiling = t.HeightTiling,
+            WidthWrap = t.WidthWrap, HeightWrap = t.HeightWrap, Opacity = t.Opacity, Blend = t.Blend, Amplitude = t.Amplitude,
+            PixelBlending = t.PixelBlending, Negative = t.Negative, WorldCoordinates = t.WorldCoordinates, Procedural = t.Procedural,
+        };
+
+        public TextureLayer ToLayer() => new()
+        {
+            Channel = Channel, Projection = Projection, Image = Image, UVMap = UVMap ?? "", Axis = Axis, Center = Vec(Center),
+            Size = Size == null ? Vec3.One : Vec(Size), WidthTiling = WidthTiling, HeightTiling = HeightTiling, WidthWrap = WidthWrap,
+            HeightWrap = HeightWrap, Opacity = Opacity, Blend = Blend, Amplitude = Amplitude, PixelBlending = PixelBlending,
+            Negative = Negative, WorldCoordinates = WorldCoordinates, Procedural = Procedural,
+        };
     }
 
     private sealed class SurfaceDto
@@ -431,12 +503,14 @@ public static class SceneJson
         public double SmoothingAngle { get; set; }
         public bool Smoothing { get; set; }
         public bool DoubleSided { get; set; }
+        public List<TextureDto>? Textures { get; set; }
 
         public static SurfaceDto Of(Surface s) => new()
         {
             Name = s.Name, Color = [s.Color.R, s.Color.G, s.Color.B], Diffuse = s.Diffuse, Specular = s.Specular,
             Glossiness = s.Glossiness, Luminosity = s.Luminosity, Reflection = s.Reflection, Transparency = s.Transparency,
             SmoothingAngle = s.SmoothingAngle, Smoothing = s.Smoothing, DoubleSided = s.DoubleSided,
+            Textures = s.Textures.Count == 0 ? null : s.Textures.Select(TextureDto.Of).ToList(),
         };
 
         private static byte Channel(int v) => (byte)Math.Clamp(v, 0, 255);
@@ -446,6 +520,7 @@ public static class SceneJson
             Color = Color.Length >= 3 ? new Rgb(Channel(Color[0]), Channel(Color[1]), Channel(Color[2])) : Rgb.Grey,
             Diffuse = Diffuse, Specular = Specular, Glossiness = Glossiness, Luminosity = Luminosity, Reflection = Reflection,
             Transparency = Transparency, SmoothingAngle = SmoothingAngle, Smoothing = Smoothing, DoubleSided = DoubleSided,
+            Textures = Textures?.Select(t => t.ToLayer()).ToList() ?? [],
         };
     }
 

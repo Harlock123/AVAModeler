@@ -45,6 +45,7 @@ public sealed class SoftwareRenderer : IRenderer
         Array.Fill(_depth, float.PositiveInfinity);
         if (scene.ShowGrid) DrawGrid();
 
+        if (scene.Backdrop != null && !camera.IsPerspective) DrawBackdrop(scene.Backdrop);
         bool shaded = camera.IsPerspective && scene.Style != DisplayStyle.Wireframe;
         // The background layers first, dimmed.
         foreach (var layer in scene.Layers.Where(l => l.Background))
@@ -52,7 +53,7 @@ public sealed class SoftwareRenderer : IRenderer
         foreach (var layer in scene.Layers.Where(l => !l.Background))
         {
             var mesh = layer.Mesh;
-            if (shaded) Shade(layer.Subdivided ?? mesh, scene, layer.Subdivided == null ? layer.SelectedPolygons : null);
+            if (shaded) Shade(layer, scene);
             bool wire = !shaded || scene.Style == DisplayStyle.ShadedWireframe || layer.Subdivided != null;
             if (wire) DrawWire(mesh, layer.Subdivided != null ? Palette.Cage : Palette.Wire, depthTest: shaded && layer.Subdivided == null);
             if (layer.Subdivided != null && !shaded) DrawWire(layer.Subdivided, Palette.Wire, false);
@@ -116,8 +117,11 @@ public sealed class SoftwareRenderer : IRenderer
 
     // ───────────────────────────── shaded faces ─────────────────────────────
 
-    private void Shade(Mesh mesh, ViewScene scene, IReadOnlySet<int>? selected)
+    private void Shade(ViewLayer layer, ViewScene scene)
     {
+        var mesh = layer.Subdivided ?? layer.Mesh;
+        var selected = layer.Subdivided == null ? layer.SelectedPolygons : null;
+        var space = layer.Subdivided ?? layer.TextureSpace ?? layer.Mesh;
         var tris = Tessellation.Of(mesh);
         var proj = new ScreenPoint[mesh.Points.Count];
         for (int i = 0; i < proj.Length; i++) proj[i] = _cam.Project(mesh.Points[i]);
@@ -125,6 +129,8 @@ public sealed class SoftwareRenderer : IRenderer
         var normals = new Vec3[mesh.Polygons.Count];
         for (int i = 0; i < normals.Length; i++) normals[i] = mesh.Normal(i);
         var corners = Shading.CornerNormals(mesh, scene.Surfaces);
+        var textured = new Dictionary<int, TexturedSurface?>();
+        Span<TexturedCorner> tc = stackalloc TexturedCorner[3];
         foreach (var t in tris)
         {
             ScreenPoint a = proj[t.A], b = proj[t.B], c = proj[t.C];
@@ -132,6 +138,18 @@ public sealed class SoftwareRenderer : IRenderer
             var poly = mesh.Polygons[t.Polygon];
             var surface = Shading.SurfaceOf(scene, poly);
             bool sel = selected != null && selected.Contains(t.Polygon);
+            if (scene.ShowTextures && surface != null)
+            {
+                if (!textured.TryGetValue(poly.Surface, out var ts)) textured[poly.Surface] = ts = Texturing.Prepare(surface, layer.ImageBase ?? scene.ImageBase);
+                if (ts != null)
+                {
+                    var n = normals[t.Polygon];
+                    Texturing.Corners(ts, mesh, space, t.Polygon, t.A, t.B, t.C, point => Shading.FaceLight(n, mesh.Points[point], surface, _cam, light,
+                        scene.BackfaceTint, sel, surface.Smoothing ? Shading.Corner(corners, mesh, t.Polygon, point) : null), tc);
+                    FillTextured(a, b, c, tc[0], tc[1], tc[2], ts, writeDepth: true);
+                    continue;
+                }
+            }
             if (surface is { Smoothing: true })
             {
                 Vec3 Col(int point) => Shading.FaceColor(normals[t.Polygon], mesh.Points[point], surface, _cam, light, scene.BackfaceTint, sel, Shading.Corner(corners, mesh, t.Polygon, point));
@@ -182,6 +200,69 @@ public sealed class SoftwareRenderer : IRenderer
                 Pixels[row + x] = flat ? flatColor : Pack(ca * w0 + cb * w1 + cc * w2);
             }
         }
+    }
+
+    /// <summary>
+    /// A z-buffered textured triangle: the corners' lighting and image coordinates blended across it in perspective
+    /// (by 1/depth), and each pixel's colour from <see cref="Texturing.Fragment"/>, as the OpenGL shader works it out.
+    /// </summary>
+    private void FillTextured(ScreenPoint a, ScreenPoint b, ScreenPoint c, TexturedCorner ca, TexturedCorner cb, TexturedCorner cc, TexturedSurface ts, bool writeDepth)
+    {
+        double area = (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+        if (Math.Abs(area) < 1e-9) return;
+        int minX = Math.Max(0, (int)Math.Floor(Math.Min(a.X, Math.Min(b.X, c.X))));
+        int maxX = Math.Min(Width - 1, (int)Math.Ceiling(Math.Max(a.X, Math.Max(b.X, c.X))));
+        int minY = Math.Max(0, (int)Math.Floor(Math.Min(a.Y, Math.Min(b.Y, c.Y))));
+        int maxY = Math.Min(Height - 1, (int)Math.Ceiling(Math.Max(a.Y, Math.Max(b.Y, c.Y))));
+        if (minX > maxX || minY > maxY) return;
+        double inv = 1 / area;
+        bool persp = _cam.IsPerspective;
+        double za = 1 / Math.Max(a.Depth, 1e-9), zb = 1 / Math.Max(b.Depth, 1e-9), zc = 1 / Math.Max(c.Depth, 1e-9);
+        for (int y = minY; y <= maxY; y++)
+        {
+            double py = y + 0.5;
+            int row = y * Width;
+            for (int x = minX; x <= maxX; x++)
+            {
+                double px = x + 0.5;
+                double w0 = ((b.X - px) * (c.Y - py) - (b.Y - py) * (c.X - px)) * inv;
+                double w1 = ((c.X - px) * (a.Y - py) - (c.Y - py) * (a.X - px)) * inv;
+                double w2 = 1 - w0 - w1;
+                if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+                double depth = persp ? 1 / (w0 * za + w1 * zb + w2 * zc) : w0 * a.Depth + w1 * b.Depth + w2 * c.Depth;
+                float d = (float)depth;
+                if (writeDepth)
+                {
+                    if (d >= _depth[row + x]) continue;
+                    _depth[row + x] = d;
+                }
+                // Perspective-correct weights: linear in 1/depth across the screen.
+                double pa = w0, pb = w1, pc = w2;
+                if (persp)
+                {
+                    pa = w0 * za * depth;
+                    pb = w1 * zb * depth;
+                    pc = w2 * zc * depth;
+                }
+                Pixels[row + x] = Pack(Texturing.Fragment(ts, TexturedCorner.Blend(ca, cb, cc, pa, pb, pc)));
+            }
+        }
+    }
+
+    /// <summary>An image over the 0–1 square of the XY plane (the UV view's texture), under everything else.</summary>
+    private void DrawBackdrop(TextureImage image)
+    {
+        var ts = Texturing.Backdrop(image);
+        var corners = new[] { new Vec3(0, 0, 0), new Vec3(1, 0, 0), new Vec3(1, 1, 0), new Vec3(0, 1, 0) };
+        TexturedCorner At(Vec3 p)
+        {
+            var c = new TexturedCorner { Mul = Texturing.BackdropBrightness };
+            c.Set(0, new Vec2(p.X, p.Y), 1);
+            return c;
+        }
+        var s = corners.Select(_cam.Project).ToArray();
+        FillTextured(s[0], s[1], s[2], At(corners[0]), At(corners[1]), At(corners[2]), ts, writeDepth: false);
+        FillTextured(s[0], s[2], s[3], At(corners[0]), At(corners[2]), At(corners[3]), ts, writeDepth: false);
     }
 
     // ───────────────────────────── lines and points ─────────────────────────────

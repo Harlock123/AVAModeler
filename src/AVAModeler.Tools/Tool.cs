@@ -182,11 +182,7 @@ public abstract class Tool
         // Put the originals back into the same mesh objects, so anything holding a layer's mesh still sees it.
         foreach (var (i, m) in _originals)
         {
-            var copy = m.Clone();
-            var mesh = Doc.Layers[i].Mesh;
-            mesh.Points = copy.Points;
-            mesh.Polygons = copy.Polygons;
-            mesh.Touch();
+            Doc.Layers[i].Mesh.TakeFrom(m.Clone());
         }
         Doc.Selection = _originalSelection!.Clone();
         Apply();

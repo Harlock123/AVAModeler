@@ -31,6 +31,33 @@ public static class Shading
         return new Vec3(Math.Clamp(col.X, 0, 1), Math.Clamp(col.Y, 0, 1), Math.Clamp(col.Z, 0, 1));
     }
 
+    /// <summary>
+    /// <see cref="FaceColor"/> taken apart for a textured face, whose colour comes per pixel: the colour is
+    /// clamp(colour · Mul + Add), with the same lighting, tint and selection.
+    /// </summary>
+    public static (double Mul, Vec3 Add) FaceLight(Vec3 normal, Vec3 at, Surface? surface, ViewCamera cam, Vec3 light, bool backfaceTint, bool selected, Vec3? smoothNormal = null)
+    {
+        var toEye = cam.IsPerspective ? (cam.Eye - at).Normalized() : -cam.Basis().Forward;
+        bool facingAway = Vec3.Dot(normal, toEye) < 0;
+        var lit = smoothNormal ?? normal;
+        var n = facingAway ? -lit : lit;
+        double k = 0.22 + 0.78 * (surface?.Diffuse ?? 1) * Math.Max(0, Vec3.Dot(n, light));
+        double spec = (surface?.Specular ?? 0) * Math.Pow(Math.Max(0, Vec3.Dot((light + toEye).Normalized(), n)), Math.Max(4, surface?.Glossiness ?? 64));
+        double mul = Math.Min(1, k + (surface?.Luminosity ?? 0));
+        var add = Vec3.One * spec;
+        if (facingAway && !(surface?.DoubleSided ?? false) && backfaceTint)
+        {
+            mul *= 0.35;
+            add = add * 0.35 + new Vec3(0.42, 0.47, 0.72) * 0.65;
+        }
+        if (selected)
+        {
+            mul *= 0.45;
+            add = add * 0.45 + new Vec3(1, 0.89, 0.29) * 0.55;
+        }
+        return (mul, add);
+    }
+
     private sealed record NormalsEntry(int Version, int SurfacesHash, Vec3[][] Normals);
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Mesh, NormalsEntry> NormalsCache = new();
 

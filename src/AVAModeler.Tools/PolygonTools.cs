@@ -142,7 +142,7 @@ public static class LayerOps
         }, [layer]);
     }
 
-    /// <summary>The selected polygons (with their points) of a layer as a mesh of their own, optionally taken out.</summary>
+    /// <summary>The selected polygons (with their points and UVs) of a layer as a mesh of their own, optionally taken out.</summary>
     private static Mesh Extract(Document doc, int layer, bool remove)
     {
         var mesh = doc.Layers[layer].Mesh;
@@ -154,10 +154,16 @@ public static class LayerOps
         var map = new Dictionary<int, int>();
         var part = new Mesh();
         foreach (int p in used) map[p] = part.AddPoint(mesh.Points[p]);
+        foreach (var uvs in mesh.UVMaps)
+        {
+            var copy = part.AddUVMap(uvs.Name);
+            foreach (int p in used)
+                if (uvs.Points.TryGetValue(p, out var uv)) copy.Points[map[p]] = uv;
+        }
         foreach (int pi in polys)
         {
             var c = mesh.Polygons[pi].Clone();
-            c.Points = c.Points.Select(i => map[i]).ToList();
+            c.SetPoints(c.Points.Select(i => map[i]).ToList());
             c.Details = null;
             part.Polygons.Add(c);
         }

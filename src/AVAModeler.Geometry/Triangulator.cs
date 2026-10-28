@@ -86,9 +86,14 @@ public static class Triangulator
             var t = TriangulatePolygon(mesh, poly);
             if (t.Length == 0) continue;
             var pts = poly.Points;
+            var source = poly.Clone();
             poly.Points = [pts[t[0]], pts[t[1]], pts[t[2]]];
             for (int i = 3; i < t.Length; i += 3)
-                mesh.Polygons.Add(new Polygon([pts[t[i]], pts[t[i + 1]], pts[t[i + 2]]], poly.Surface));
+            {
+                var tri = new Polygon([pts[t[i]], pts[t[i + 1]], pts[t[i + 2]]], poly.Surface);
+                mesh.Polygons.Add(tri);
+                mesh.InheritUVs(tri, source, q => q);
+            }
             split++;
         }
         if (split > 0) mesh.Touch();

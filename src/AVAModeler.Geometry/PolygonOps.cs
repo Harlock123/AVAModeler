@@ -64,9 +64,11 @@ public static class PolygonOps
             second.Add(poly.Points[k]);
             if (k == i) break;
         }
+        var other = new Polygon(second, poly.Surface);
+        mesh.InheritUVs(other, poly, q => q);
         poly.Points = first;
         poly.Details = null;
-        mesh.Polygons.Add(new Polygon(second, poly.Surface));
+        mesh.Polygons.Add(other);
         mesh.Touch();
         return mesh.Polygons.Count - 1;
     }

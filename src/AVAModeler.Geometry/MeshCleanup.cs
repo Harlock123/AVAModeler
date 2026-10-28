@@ -55,6 +55,8 @@ internal static class MeshCleanup
         mesh.Polygons.RemoveAll(poly =>
         {
             int before = poly.Count;
+            foreach (int i in poly.Points.Distinct().ToList())
+                if (target[i] != i) mesh.KeepCornerUVs(poly, i, target[i]);
             var pts = new List<int>(before);
             foreach (int i in poly.Points)
                 if (pts.Count == 0 || pts[^1] != target[i]) pts.Add(target[i]);
@@ -173,6 +175,7 @@ internal static class MeshCleanup
                         if (!owner.TryGetValue((b, a), out var q) || q == p) continue;
                         var merged = TryMerge(p, q);
                         if (merged == null) continue;
+                        TakeCornerUVs(p, q);
                         p.Points = merged;
                         alive.Remove(q);
                         removed.Add(q);
@@ -186,6 +189,20 @@ internal static class MeshCleanup
         if (removed.Count == 0) return;
         mesh.Polygons.RemoveAll(removed.Contains);
         mesh.Touch();
+    }
+
+    /// <summary>Gives a face the corner UVs another (being merged into it) has at points it hasn't got itself.</summary>
+    public static void TakeCornerUVs(Polygon into, Polygon from)
+    {
+        if (from.CornerUVs == null) return;
+        foreach (var (name, corners) in from.CornerUVs)
+            foreach (var (point, uv) in corners)
+            {
+                if (into.Points.Contains(point) || !from.Points.Contains(point)) continue;
+                into.CornerUVs ??= [];
+                if (!into.CornerUVs.TryGetValue(name, out var mine)) into.CornerUVs[name] = mine = [];
+                mine[point] = uv;
+            }
     }
 
     /// <summary>The outline of two faces that share edges, or null when it isn't a single loop through distinct points.</summary>
@@ -259,7 +276,7 @@ internal static class MeshCleanup
     {
         var small = source.Polygons.Where(p => p.Count < 3).Select(p => p.Clone()).ToList();
         if (small.Count == 0) return;
-        var only = new Mesh { Points = [.. source.Points], Polygons = small };
+        var only = new Mesh { Points = [.. source.Points], Polygons = small, UVMaps = source.UVMaps.Select(m => m.Clone()).ToList() };
         only.RemoveUnusedPoints();
         target.Append(only);
     }

@@ -35,7 +35,8 @@ internal static class Ui
     /// <summary>The middle of a control, in its own coordinates (its Bounds are in its parent's).</summary>
     public static Point Mid(Control c) => new(c.Bounds.Width / 2, c.Bounds.Height / 2);
 
-    public static ViewportControl View(MainWindow w, ViewKind kind) => w.Modeler.Views.Views.Single(v => v.Camera.Kind == kind);
+    /// <summary>One of the four views by its place in the quad (whatever it's showing).</summary>
+    public static ViewportControl View(MainWindow w, ViewKind kind) => w.Modeler.Views.Views.Single(v => v.Kind == kind);
 
     public static void Drag(Window w, Point from, Point to, MouseButton button = MouseButton.Left, RawInputModifiers mods = RawInputModifiers.None)
     {

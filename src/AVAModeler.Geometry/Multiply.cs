@@ -6,7 +6,9 @@ namespace AVAModeler.Geometry;
 /// The Multiply tab's algorithms: extrude, lathe, path and rail extrude, bevel, smooth shift, mirror, clone and
 /// array. Each edits the mesh in place and works on the polygons given. Unless said otherwise, the polygons acted on
 /// keep their indices (an extruded face is still the same polygon, now at the far end) and new polygons are added at
-/// the end, so a tool can keep the selection. New faces take the surface of the polygon they grew from.
+/// the end, so a tool can keep the selection. New faces take the surface of the polygon they grew from, and new
+/// points and corners the UVs of the ones they were copied from (so a wall swept from an edge has the edge's UVs at
+/// both ends: carried along, not stretched out anew).
 /// </summary>
 public static class Multiply
 {
@@ -135,6 +137,8 @@ public static class Multiply
             var v = poly.Points.ToArray();
             int count = v.Length;
             var inner = new int[count];
+            var source = poly.Clone();
+            var origin = new Dictionary<int, int>();
             for (int i = 0; i < count; i++)
             {
                 var p = mesh.Points[v[i]];
@@ -144,11 +148,18 @@ public static class Multiply
                 double denom = 1 + Vec3.Dot(m1, m2);
                 var d = denom > 1e-6 ? (m1 + m2) * (inset / denom) : m1 * inset;
                 inner[i] = mesh.Points.Count;
+                origin[inner[i]] = v[i];
                 mesh.Points.Add(p + d + n * shift);
             }
             for (int i = 0; i < count; i++)
-                mesh.Polygons.Add(new Polygon([v[i], v[(i + 1) % count], inner[(i + 1) % count], inner[i]], poly.Surface));
+            {
+                var wall = new Polygon([v[i], v[(i + 1) % count], inner[(i + 1) % count], inner[i]], poly.Surface);
+                mesh.Polygons.Add(wall);
+                mesh.InheritUVs(wall, source, q => origin.GetValueOrDefault(q, q));
+            }
             poly.Points = [.. inner];
+            poly.CornerUVs = null;
+            mesh.InheritUVs(poly, source, q => origin.GetValueOrDefault(q, q));
         }
         mesh.Touch();
     }
@@ -222,7 +233,11 @@ public static class Multiply
         }
         int Copy(int p, int f) => index[Find((p, f))];
 
+        // Where each face's copies came from, for their UVs.
+        var sources = faces.ToDictionary(f => f, f => mesh.Polygons[f].Clone());
+        var origins = faces.ToDictionary(f => f, f => mesh.Polygons[f].Points.Distinct().ToDictionary(p => Copy(p, f), p => p));
         var walls = new List<Polygon>();
+        var wallFaces = new List<(int F, int G)>();
         foreach (int f in faces)
         {
             var poly = mesh.Polygons[f];
@@ -231,11 +246,15 @@ public static class Multiply
                 if (a == b) continue;
                 var l = edgeFaces[Edge.Of(a, b)];
                 if (l.Count != 2)
+                {
                     walls.Add(new Polygon([a, b, Copy(b, f), Copy(a, f)], poly.Surface));
+                    wallFaces.Add((f, -1));
+                }
                 else if (!IsSmooth(l) && l[0] == f)
                 {
                     int g = l[1];
                     walls.Add(new Polygon([Copy(a, g), Copy(b, g), Copy(b, f), Copy(a, f)], poly.Surface));
+                    wallFaces.Add((f, g));
                 }
             }
         }
@@ -244,6 +263,14 @@ public static class Multiply
         {
             var poly = mesh.Polygons[f];
             poly.Points = poly.Points.Select(p => Copy(p, f)).ToList();
+            poly.CornerUVs = null;
+            mesh.InheritUVs(poly, sources[f], q => origins[f].GetValueOrDefault(q, -1));
+        }
+        for (int i = 0; i < walls.Count; i++)
+        {
+            var (f, g) = wallFaces[i];
+            if (g >= 0) mesh.InheritUVs(walls[i], sources[g], q => origins[g].GetValueOrDefault(q, -1));
+            mesh.InheritUVs(walls[i], sources[f], q => origins[f].GetValueOrDefault(q, sources[f].Points.Contains(q) ? q : -1));
         }
         foreach (var (p, to) in moves) mesh.Points[p] = to;
         mesh.Polygons.AddRange(walls);
@@ -322,12 +349,14 @@ public static class Multiply
     {
         double tol = tolerance ?? Tolerance.For(mesh);
         var map = new Dictionary<int, int>();
+        var origin = new Dictionary<int, int>();
         int Map(int p)
         {
             if (map.TryGetValue(p, out int m)) return m;
             var v = mesh.Points[p];
             if (Math.Abs(v[axis] - center) <= tol) return map[p] = p;
             mesh.Points.Add(v.With(axis, 2 * center - v[axis]));
+            origin[mesh.Points.Count - 1] = p;
             return map[p] = mesh.Points.Count - 1;
         }
         var added = new List<int>();
@@ -337,7 +366,9 @@ public static class Multiply
             if (poly.Points.All(p => Math.Abs(mesh.Points[p][axis] - center) <= tol)) continue;
             var pts = poly.Points.Select(Map).ToList();
             if (pts.Count >= 3) pts.Reverse();
-            mesh.Polygons.Add(new Polygon(pts, poly.Surface));
+            var copy = new Polygon(pts, poly.Surface);
+            mesh.Polygons.Add(copy);
+            mesh.InheritUVs(copy, poly, q => origin.GetValueOrDefault(q, q));
             added.Add(mesh.Polygons.Count - 1);
         }
         mesh.Touch();
@@ -397,6 +428,7 @@ public static class Multiply
     {
         bool mirrors = m.Determinant() < 0;
         var map = new Dictionary<int, int>();
+        var origin = new Dictionary<int, int>();
         var added = new List<int>();
         foreach (int pi in polygons)
         {
@@ -406,12 +438,15 @@ public static class Multiply
                 if (!map.TryGetValue(p, out int c))
                 {
                     map[p] = c = mesh.Points.Count;
+                    origin[c] = p;
                     mesh.Points.Add(m.TransformPoint(mesh.Points[p]));
                 }
                 return c;
             }).ToList();
             if (mirrors && pts.Count >= 3) pts.Reverse();
-            mesh.Polygons.Add(new Polygon(pts, poly.Surface));
+            var copy = new Polygon(pts, poly.Surface);
+            mesh.Polygons.Add(copy);
+            mesh.InheritUVs(copy, poly, q => origin.GetValueOrDefault(q, -1));
             added.Add(mesh.Polygons.Count - 1);
         }
         mesh.Touch();
@@ -450,6 +485,9 @@ public static class Multiply
             : [];
 
         var copies = new Dictionary<(int, int), int>();
+        // Each copy's original point, and each swept polygon as it was, for the UVs of what grows from it.
+        var origin = new Dictionary<int, int>();
+        var sources = sel.ToDictionary(i => i, i => mesh.Polygons[i].Clone());
         int At(int p, int k)
         {
             if (k == 0 || closed && k == segments) return p;
@@ -457,25 +495,28 @@ public static class Multiply
             if (!copies.TryGetValue((p, k), out int c))
             {
                 copies[(p, k)] = c = mesh.Points.Count;
+                origin[c] = p;
                 mesh.Points.Add(sections[k].TransformPoint(mesh.Points[p]));
             }
             return c;
         }
         List<int> Strip(int a, int b, int k) => [At(a, k), At(b, k), At(b, k + 1), At(a, k + 1)];
+        void Inherit(Polygon target, int from) => mesh.InheritUVs(target, sources[from], q => origin.GetValueOrDefault(q, q));
 
         var made = new List<Polygon>();
-        void AddNew(List<int> pts, int surface)
+        void AddNew(List<int> pts, int surface, int from)
         {
             var p = new Polygon(pts, surface);
             mesh.Polygons.Add(p);
             made.Add(p);
+            Inherit(p, from);
         }
         foreach (int f in faces)
         {
             var poly = mesh.Polygons[f];
             foreach (var (a, b) in poly.Edges())
                 if (a != b && counts[Edge.Of(a, b)] != 2)
-                    for (int k = 0; k < segments; k++) AddNew(Strip(a, b, k), poly.Surface);
+                    for (int k = 0; k < segments; k++) AddNew(Strip(a, b, k), poly.Surface, f);
         }
         foreach (int i in sel.Where(i => mesh.Polygons[i].Count < 3))
         {
@@ -486,10 +527,12 @@ public static class Multiply
                 var piece = pts.Count == 2 ? Strip(pts[0], pts[1], k) : [At(pts[0], k), At(pts[0], k + 1)];
                 if (k > 0)
                 {
-                    AddNew(piece, poly.Surface);
+                    AddNew(piece, poly.Surface, i);
                     continue;
                 }
                 poly.Points = piece;
+                poly.CornerUVs = null;
+                Inherit(poly, i);
                 made.Add(poly);
             }
         }
@@ -501,10 +544,12 @@ public static class Multiply
             {
                 case SweepFaces.MoveToEnd:
                     poly.Points = poly.Points.Select(p => At(p, segments)).ToList();
+                    poly.CornerUVs = null;
+                    Inherit(poly, f);
                     made.Add(poly);
                     break;
                 case SweepFaces.CapBoth:
-                    AddNew(poly.Points.Select(p => At(p, segments)).ToList(), poly.Surface);
+                    AddNew(poly.Points.Select(p => At(p, segments)).ToList(), poly.Surface, f);
                     poly.Points.Reverse();
                     made.Add(poly);
                     break;

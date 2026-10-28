@@ -374,10 +374,7 @@ public sealed class BooleanTool : Tool
         foreach (int l in Doc.ForegroundLayers)
         {
             var layer = Doc.Layers[l];
-            var result = Booleans.Apply(Operation, layer.Mesh, operand, options);
-            layer.Mesh.Points = result.Points;
-            layer.Mesh.Polygons = result.Polygons;
-            layer.Mesh.Touch();
+            layer.Mesh.TakeFrom(Booleans.Apply(Operation, layer.Mesh, operand, options));
         }
         Doc.Selection.Clear(allModes: true);
     }
@@ -403,10 +400,7 @@ public sealed class DrillTool : Tool
         foreach (int l in Doc.ForegroundLayers)
         {
             var layer = Doc.Layers[l];
-            var result = Drill.Apply(layer.Mesh, operand, Axis, Operation, stencil);
-            layer.Mesh.Points = result.Points;
-            layer.Mesh.Polygons = result.Polygons;
-            layer.Mesh.Touch();
+            layer.Mesh.TakeFrom(Drill.Apply(layer.Mesh, operand, Axis, Operation, stencil));
         }
         Doc.Selection.Clear(allModes: true);
     }

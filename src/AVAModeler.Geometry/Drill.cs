@@ -29,8 +29,8 @@ public static class Drill
     /// Drills a foreground mesh with an operand along an axis and returns the new mesh. Faces the outline misses (or
     /// wholly contains) come through as they were; cut faces are split, their pieces welded to their neighbours with
     /// T-junctions closed, and the pieces on each side rejoined where they make a simple polygon. Every piece keeps
-    /// its face's surface, except Stencil's inside pieces, which take <paramref name="stencilSurface"/>. Points and
-    /// lines come through unchanged; points no polygon uses are not kept.
+    /// its face's surface (and the UVs it had there), except Stencil's inside pieces, which take
+    /// <paramref name="stencilSurface"/>. Points and lines come through unchanged; points no polygon uses are not kept.
     /// </summary>
     public static Mesh Apply(Mesh foreground, Mesh operand, Axis axis, DrillOperation operation, int stencilSurface = 0, double? tolerance = null)
     {
@@ -39,6 +39,7 @@ public static class Drill
         bool keepInside = operation != DrillOperation.Tunnel, keepOutside = operation != DrillOperation.Core;
         var result = new Mesh { Points = [.. foreground.Points] };
         var groups = new Dictionary<Polygon, int>();
+        var sources = new Dictionary<Polygon, (Mesh, Polygon)>();
         var types = new int[16];
 
         for (int pi = 0; pi < foreground.Polygons.Count; pi++)
@@ -61,15 +62,22 @@ public static class Drill
                 // Not cut after all: the face goes through whole, as it was.
                 bool isInside = inside.Count > 0;
                 if (isInside ? keepInside : keepOutside)
-                    result.Polygons.Add(new Polygon(poly.Points, isInside ? insideSurface : poly.Surface));
+                {
+                    var whole = new Polygon(poly.Points, isInside ? insideSurface : poly.Surface);
+                    result.Polygons.Add(whole);
+                    sources[whole] = (foreground, poly);
+                }
                 continue;
             }
+            int made = result.Polygons.Count;
             if (keepInside) Emit(result, inside, insideSurface, groups, pi * 2 + 1);
             if (keepOutside) Emit(result, outside, poly.Surface, groups, pi * 2);
+            for (int i = made; i < result.Polygons.Count; i++) sources[result.Polygons[i]] = (foreground, poly);
         }
 
         var originals = foreground.Points.ToHashSet();
         MeshCleanup.AfterCut(result, tol, groups, originals);
+        UVTransfer.FromSources(result, sources, foreground);
         MeshCleanup.AppendPointsAndLines(result, foreground);
         return result;
     }

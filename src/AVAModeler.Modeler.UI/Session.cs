@@ -80,7 +80,7 @@ public sealed class Keymap
         ["Undo"] = "Ctrl+Z", ["Redo"] = "Ctrl+Shift+Z", ["Cut"] = "X", ["Copy"] = "C", ["Paste"] = "Ctrl+V",
         ["Cycle Selection Mode"] = "Space", ["Commit"] = "Enter", ["Cancel"] = "Escape", ["Deselect"] = "OemQuestion",
         ["Invert Selection"] = "OemQuotes", ["Select Connected"] = "OemCloseBrackets", ["Fit All"] = "A", ["Fit Selected"] = "Shift+A",
-        ["Maximize View"] = "D0", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
+        ["Maximize View"] = "D0", ["UV View"] = "U", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
         ["New"] = "Ctrl+N", ["Open"] = "Ctrl+O", ["Save"] = "Ctrl+S", ["Quit"] = "Ctrl+Q",
     };
 
@@ -134,6 +134,30 @@ public sealed class ModelerSession
     /// <summary>The armed tool (interactive tools wait for a drag in a view), or none.</summary>
     public Tool? ActiveTool { get; private set; }
 
+    /// <summary>Whether the armed tool has been dragged since it was armed or last began a step.</summary>
+    public bool ToolUsed { get; set; }
+
+    /// <summary>The armed tool's work in the UV view: the flat copy of the UV map it works on, and the model as it was.</summary>
+    private sealed class UVEdit(UVSpace space, UndoStack.Snapshot before, ToolContext context)
+    {
+        public UVSpace Space { get; } = space;
+        public UndoStack.Snapshot Before { get; } = before;
+        public ToolContext Context { get; } = context;
+        /// <summary>Whether the tool did more than move points, so its work can't be UVs.</summary>
+        public bool Broken;
+    }
+
+    private UVEdit? _uvEdit;
+
+    /// <summary>The context the armed tool works in: the UV view's flat copy while it's at work there, else the model's.</summary>
+    public ToolContext ActiveContext => _uvEdit?.Context ?? Context;
+
+    /// <summary>Whether the armed tool is at work in the UV view.</summary>
+    public bool InUVEdit => _uvEdit != null;
+
+    /// <summary>Whether a tool used in the UV view made or removed geometry, which UVs can't be (the UI then cancels it).</summary>
+    public bool UVEditBroken => _uvEdit?.Broken ?? false;
+
     /// <summary>Whether the foreground is shown as its smoothed (MetaNURBS) surface.</summary>
     public bool MetaNurbs { get; private set; }
     public bool ShowPoints => Document.Selection.Mode == SelectionMode.Points;
@@ -173,7 +197,7 @@ public sealed class ModelerSession
     /// <summary>Puts a new or loaded document in place.</summary>
     public void Replace(Document doc)
     {
-        ActiveTool?.Cancel();
+        CancelTool();
         ActiveTool = null;
         Document = doc;
         Attach();
@@ -211,9 +235,76 @@ public sealed class ModelerSession
                 return false;
             default:
                 ActiveTool = tool;
+                ToolUsed = false;
                 tool.Begin(Context);
                 SetStatus($"{tool.Name}: {tool.Help}");
                 return true;
+        }
+    }
+
+    /// <summary>
+    /// Gets the armed tool ready for a drag in a view: <paramref name="uv"/> for the UV view, where it works on the
+    /// current UV map laid out flat (see <see cref="UVSpace"/>) and what it does is written back as UVs. A drag in the
+    /// other kind of view than the step under way, or one that starts a new step, first finishes that step (kept if the
+    /// tool was used, else dropped). <paramref name="uvSnap"/> is the UV view's grid step for snapping. Returns false
+    /// when the tool can't work there (no UV map to work on).
+    /// </summary>
+    public bool ReadyTool(bool uv, bool newStep, double uvSnap = 0)
+    {
+        var tool = ActiveTool;
+        if (tool == null) return false;
+        if (tool.Active && (newStep || uv != (_uvEdit != null)))
+        {
+            if (ToolUsed) KeepStep();
+            else DropStep();
+            ToolUsed = false;
+        }
+        if (tool.Active) return true;
+        if (!uv)
+        {
+            tool.Begin(Context);
+            return true;
+        }
+        var map = Document.ActiveUVMap;
+        if (map == null)
+        {
+            SetStatus("There's no UV map to work on: make one with Make UVs (Polygon tab).");
+            return false;
+        }
+        var space = new UVSpace(Document, map);
+        var edit = new UVEdit(space, Document.Snapshot($"{tool.Name} UVs"), new ToolContext(space.Flat) { CenterMode = Context.CenterMode, Snap = uvSnap });
+        space.Flat.Changed += () =>
+        {
+            if (_uvEdit != edit) return;
+            if (space.WriteBack()) Document.Notify();
+            else edit.Broken = true;
+        };
+        _uvEdit = edit;
+        tool.Begin(edit.Context);
+        return true;
+    }
+
+    /// <summary>Keeps the tool's step: one undo step in the model (for work in the UV view, the UVs it changed).</summary>
+    private void KeepStep()
+    {
+        var tool = ActiveTool!;
+        if (tool.Active) tool.Commit();
+        if (_uvEdit is { } edit)
+        {
+            _uvEdit = null;
+            Document.Commit(edit.Before);
+        }
+    }
+
+    /// <summary>Throws the tool's step away, putting the model back as it was.</summary>
+    private void DropStep()
+    {
+        var tool = ActiveTool!;
+        if (tool.Active) tool.Cancel();
+        if (_uvEdit is { } edit)
+        {
+            _uvEdit = null;
+            Document.Revert(edit.Before);
         }
     }
 
@@ -238,7 +329,8 @@ public sealed class ModelerSession
     public void CommitTool()
     {
         if (ActiveTool == null) return;
-        ActiveTool.Commit();
+        if (_uvEdit is { Broken: true }) DropStep();
+        else KeepStep();
         ActiveTool = null;
         Changed?.Invoke();
     }
@@ -247,7 +339,7 @@ public sealed class ModelerSession
     public void CancelTool()
     {
         if (ActiveTool == null) return;
-        ActiveTool.Cancel();
+        DropStep();
         ActiveTool = null;
         Changed?.Invoke();
     }
@@ -304,6 +396,7 @@ public sealed class ModelerSession
             Style = perspective ? Preferences.PerspectiveStyle : DisplayStyle.Wireframe,
             ShowPoints = ShowPoints,
             BackfaceTint = Preferences.BackfaceTint,
+            ImageBase = Document.ImageBase,
             Version = Document.Version,
         };
         var sel = Document.Selection;
@@ -325,6 +418,52 @@ public sealed class ModelerSession
         if (sel.Mode == SelectionMode.Volume && !sel.Volume.IsEmpty) scene.Overlay.AddRange(BoxLines(Clamp(sel.Volume), Palette.Volume));
         return scene;
     }
+
+    /// <summary>
+    /// What the UV view draws: the current UV map of each foreground layer laid out flat (u across, v up) with the
+    /// selection, the 0–1 square, and behind it the image of the first texture laid on by this map (null if there's
+    /// no UV map at all).
+    /// </summary>
+    public ViewScene BuildUVScene(out UVSpace? space)
+    {
+        var scene = new ViewScene { Style = DisplayStyle.Wireframe, ShowPoints = ShowPoints, Version = Document.Version, Surfaces = Document.Surfaces };
+        var square = new[] { Vec3.Zero, Vec3.UnitX, new Vec3(1, 1, 0), Vec3.UnitY };
+        for (int i = 0; i < 4; i++) scene.Overlay.Add(new OverlayLine(square[i], square[(i + 1) % 4], Palette.UVSquare));
+        space = null;
+        if (Document.ActiveUVMap is not { } map) return scene;
+        space = new UVSpace(Document, map);
+        var sel = space.Flat.Selection;
+        foreach (int i in Document.ForegroundLayers)
+        {
+            var mesh = space.Flat.Layers[i].Mesh;
+            if (mesh.IsEmpty) continue;
+            scene.Layers.Add(new ViewLayer
+            {
+                Mesh = mesh,
+                SelectedPoints = sel.Mode == SelectionMode.Points && sel.Points.TryGetValue(i, out var p) ? p : null,
+                SelectedPolygons = sel.Mode == SelectionMode.Polygons && sel.Polygons.TryGetValue(i, out var q) ? q : null,
+                SelectedEdges = sel.Mode == SelectionMode.Edges && sel.Edges.TryGetValue(i, out var e) ? e : null,
+            });
+        }
+        if (UVImage(map) is { } image) scene.Backdrop = TextureImages.Load(image, Document.ImageBase);
+        return scene;
+    }
+
+    /// <summary>
+    /// The image the UV view shows behind a map: that of the first colour texture laid on by it, preferring surfaces the
+    /// foreground uses; or null.
+    /// </summary>
+    public string? UVImage(string map)
+    {
+        var used = Document.ForegroundLayers.SelectMany(l => Document.Layers[l].Mesh.Polygons).Select(p => p.Surface).ToHashSet();
+        var layers = Document.Surfaces.Select((s, i) => (s, i)).OrderBy(x => used.Contains(x.i) ? 0 : 1)
+            .SelectMany(x => x.s.Textures)
+            .Where(t => t.IsImage && t.Projection == TextureProjection.UV && t.UVMap == map && t.Image.Length > 0);
+        return layers.OrderBy(t => t.Channel == TextureChannel.Color ? 0 : 1).FirstOrDefault()?.Image;
+    }
+
+    /// <summary>Notes for the status bar about texture images that can't be found or read (a checker stands in for each).</summary>
+    public List<string> ImageProblems() => TextureImages.Problems(Document.Surfaces, Document.ImageBase);
 
     /// <summary>A volume's unbounded sides drawn at the scene's extent, so it shows.</summary>
     private Box3 Clamp(Box3 v)

@@ -160,7 +160,7 @@ public sealed class ObjectItem : SceneItem
     private Mesh Deform(Mesh b, double frame)
     {
         if (_morphs.Count == 0 && _displacements.Count == 0 && !_bones.Any(x => x.Active))
-            return new Mesh { Points = b.Points, Polygons = b.Polygons };
+            return new Mesh { Points = b.Points, Polygons = b.Polygons, UVMaps = b.UVMaps };
         var pts = b.Points.ToArray();
         foreach (var m in _morphs)
         {
@@ -172,7 +172,7 @@ public sealed class ObjectItem : SceneItem
         BoneDeformer.Apply(this, pts, frame);
         foreach (var d in _displacements)
             for (int i = 0; i < pts.Length; i++) pts[i] = d.Displace(pts[i], frame);
-        return new Mesh { Points = [.. pts], Polygons = b.Polygons };
+        return new Mesh { Points = [.. pts], Polygons = b.Polygons, UVMaps = b.UVMaps };
     }
 }
 

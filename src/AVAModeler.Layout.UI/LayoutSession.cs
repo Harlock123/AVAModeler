@@ -170,10 +170,11 @@ public sealed class LayoutSession
             // Each object has its own surfaces: renumber into one list for the view.
             int offset = surfaces.Count;
             surfaces.AddRange(o.Surfaces);
-            var mesh = new Mesh { Points = world.Points };
-            foreach (var p in world.Polygons) mesh.Polygons.Add(new Polygon(p.Points, p.Surface + offset));
+            var mesh = new Mesh { Points = world.Points, UVMaps = world.UVMaps };
+            foreach (var p in world.Polygons) mesh.Polygons.Add(new Polygon(p.Points, p.Surface + offset) { CornerUVs = p.CornerUVs });
             mesh.Touch();
-            scene.Layers.Add(new ViewLayer { Mesh = mesh });
+            // Textures are laid on in the object's own coordinates, so they move with it.
+            scene.Layers.Add(new ViewLayer { Mesh = mesh, TextureSpace = o.Mesh, ImageBase = ImageBase(o.Item) });
             // The chosen object is boxed in yellow, so its own colours still show.
             if (o.Item == Selected && !mesh.IsEmpty)
                 scene.Overlay.AddRange(Modeler.UI.ModelerSession.BoxLines(mesh.Bounds().Expanded(mesh.Bounds().Extent * 0.02), Palette.Selected));
@@ -190,6 +191,13 @@ public sealed class LayoutSession
         }
         return scene;
     }
+
+    /// <summary>A note for each texture image the scene's objects use that can't be had (a checker stands in for it).</summary>
+    public List<string> ImageProblems() => Scene.Objects.Where(o => !o.IsPlaceholder)
+        .SelectMany(o => TextureImages.Problems(o.Surfaces, ImageBase(o)).Select(p => $"{o.Name}, {p}")).ToList();
+
+    /// <summary>The folder an object's relative image paths start from: its file's, or its document's.</summary>
+    public static string? ImageBase(ObjectItem o) => TextureImages.BaseOf(o.SourcePath ?? o.Document?.FilePath);
 
     /// <summary>A little drawing of an item in its own space: a cross for a null, a cone for a light, a box and lens for a camera, a diamond for a bone.</summary>
     public static IEnumerable<(Vec3, Vec3)> Glyph(SceneItem item)

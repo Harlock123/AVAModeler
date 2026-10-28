@@ -15,6 +15,13 @@ public sealed class ViewLayer
     public IReadOnlySet<Edge>? SelectedEdges;
     /// <summary>A smoothed version of the mesh (the MetaNURBS surface) to draw in place of its faces, with the cage as lines.</summary>
     public Mesh? Subdivided;
+    /// <summary>
+    /// The mesh in its own (object) coordinates, point for point with <see cref="Mesh"/>, where textures are projected
+    /// from; null when the mesh is drawn where it is (as in the Modeler).
+    /// </summary>
+    public Mesh? TextureSpace;
+    /// <summary>The folder this layer's relative image paths start from; null for the scene's.</summary>
+    public string? ImageBase;
 }
 
 /// <summary>A line in world space a tool wants drawn (handles, the action centre, a volume's box).</summary>
@@ -31,6 +38,12 @@ public sealed class ViewScene
     /// <summary>Tint faces seen from behind, so flipped polygons stand out.</summary>
     public bool BackfaceTint = true;
     public bool ShowGrid = true;
+    /// <summary>Show image textures on shaded faces.</summary>
+    public bool ShowTextures = true;
+    /// <summary>The folder relative image paths start from (the object file's).</summary>
+    public string? ImageBase;
+    /// <summary>An image drawn on the 0–1 square of the XY plane, behind everything (the UV view's texture).</summary>
+    public TextureImage? Backdrop;
     public List<OverlayLine> Overlay = [];
 
     public int Version;
@@ -53,4 +66,6 @@ public static class Palette
     public const uint Backface = 0xFF6A78B8;
     public const uint Volume = 0xFFFF7020;
     public const uint ActionCenter = 0xFF20D0FF;
+    /// <summary>The edge of the UV view's 0–1 square.</summary>
+    public const uint UVSquare = 0xFFE8E8E8;
 }

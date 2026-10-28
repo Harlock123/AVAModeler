@@ -113,6 +113,14 @@ internal sealed class IffWriter
     public void F4(float v) { BinaryPrimitives.WriteSingleBigEndian(_buf, v); _s.Write(_buf, 0, 4); }
     public void Bytes(byte[] b) => _s.Write(b);
 
+    /// <summary>An LWO2 variable-length index: two bytes below 0xFF00, otherwise four with 0xFF first.</summary>
+    public void VX(int v)
+    {
+        if (v < 0 || v > 0x00FFFFFF) throw new InvalidOperationException($"Index {v} is out of range for a variable-length index.");
+        if (v < 0xFF00) U2((ushort)v);
+        else U4(0xFF000000u | (uint)v);
+    }
+
     public void Id4(string id)
     {
         if (id.Length != 4) throw new ArgumentException($"Chunk ID \"{id}\" isn't four characters.");

@@ -55,8 +55,47 @@ public static class ObjectFiles
     /// <summary>
     /// Saves an object by extension: .lwo (or .lw) as LWOB/LWLO, .obj as OBJ with a .mtl of the same name beside it,
     /// .geo as VideoScape. Each file is written in full to a temporary file first, so a failure leaves the old one.
+    /// Texture image paths are written as <see cref="RebaseImages"/> would make them, without changing the document.
     /// </summary>
     public static void Save(Document doc, string path)
+    {
+        var changed = RebaseImages(doc, path);
+        try
+        {
+            Write(doc, path);
+        }
+        finally
+        {
+            foreach (var (layer, was) in changed) layer.Image = was;
+        }
+    }
+
+    /// <summary>
+    /// Makes a document's texture image paths right for it saved at <paramref name="path"/>: a path that leads to an
+    /// image is stored relative to the new file's folder where it can be (see <see cref="TextureImages.RelativePath"/>);
+    /// relative paths stay as they are while the folder doesn't change, and paths that lead nowhere are left alone.
+    /// Returns the layers changed and what they had, for putting back.
+    /// </summary>
+    public static List<(TextureLayer Layer, string Was)> RebaseImages(Document doc, string path)
+    {
+        var changed = new List<(TextureLayer, string)>();
+        string? oldBase = doc.ImageBase, newBase = TextureImages.BaseOf(path);
+        foreach (var t in doc.Surfaces.SelectMany(s => s.Textures))
+        {
+            if (!t.IsImage || t.Image.Length == 0) continue;
+            bool rooted = Path.IsPathRooted(t.Image);
+            if (!rooted && string.Equals(oldBase, newBase, StringComparison.Ordinal)) continue;
+            string? full = rooted ? t.Image : TextureImages.Resolve(t.Image, oldBase);
+            if (full == null || !File.Exists(full)) continue;
+            string rel = TextureImages.RelativePath(full, path);
+            if (rel == t.Image) continue;
+            changed.Add((t, t.Image));
+            t.Image = rel;
+        }
+        return changed;
+    }
+
+    private static void Write(Document doc, string path)
     {
         switch (Path.GetExtension(path).ToLowerInvariant())
         {

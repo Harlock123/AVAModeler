@@ -36,6 +36,8 @@ public sealed class LwoInfo
 /// <summary>
 /// LightWave 3.x–5.x objects: LWOB, and the LWLO variant with layers from 5.5. Reads and writes them so that a file
 /// read and written back without changes is byte-identical (see <see cref="LwoInfo"/> and <see cref="Surface.Raw"/>).
+/// Surfaces' textures are read into texture layers (see <see cref="LwobTextures"/>). UV maps, which LWOB didn't have,
+/// are written as LWO2-style VMAP and VMAD chunks after each layer's polygons, and read back (see <see cref="VertexMaps"/>).
 /// </summary>
 public static class Lwob
 {
@@ -62,7 +64,8 @@ public static class Lwob
         var names = new List<string>();
         var defined = new Dictionary<string, List<RawChunk>>();
         var once = new HashSet<(string, int, int)>();
-        int layer = 0, pointBase = 0;
+        int layer = 0, pointBase = 0, polygonBase = -1;
+        var uvChunks = new Dictionary<(string, int), int>();
 
         void Note(string id, int layerIndex = -1, int surface = -1)
         {
@@ -90,6 +93,7 @@ public static class Lwob
                     info.Flags[layer] = body.U2();
                     l.Name = body.AtEnd ? "" : body.S0();
                     pointBase = l.Mesh.Points.Count;
+                    polygonBase = -1;
                     Note(id, layer);
                     break;
                 case "PNTS":
@@ -103,8 +107,28 @@ public static class Lwob
                     Note(id);
                     break;
                 case "POLS":
+                    polygonBase = mesh.Polygons.Count;
                     while (!body.AtEnd) mesh.Polygons.Add(ReadPolygon(body, mesh.Points.Count, pointBase));
                     Note(id, layer);
+                    break;
+                case "VMAP":
+                case "VMAD":
+                    var whole = body.Named(id);
+                    try
+                    {
+                        if (id == "VMAP") VertexMaps.ReadVmap(body, mesh, pointBase);
+                        else VertexMaps.ReadVmad(body, mesh, pointBase, polygonBase);
+                    }
+                    catch (FormatException)
+                    {
+                        // UVs that don't fit the geometry are kept as an unknown chunk rather than losing the object.
+                        Keep(id, whole);
+                        break;
+                    }
+                    // Several of each per layer are usual (one per map), so each is numbered to keep the layout replayable.
+                    int n = uvChunks.GetValueOrDefault((id, layer));
+                    uvChunks[(id, layer)] = n + 1;
+                    Note(id, layer, n);
                     break;
                 case "SURF":
                     var surf = body.Named("SURF");
@@ -176,10 +200,14 @@ public static class Lwob
         return list;
     }
 
-    /// <summary>Sets a surface's typed fields from its sub-chunks; the floating-point V* forms win over the fixed-point ones.</summary>
+    /// <summary>
+    /// Sets a surface's typed fields from its sub-chunks (the floating-point V* forms win over the fixed-point ones), and
+    /// its texture layers.
+    /// </summary>
     private static void Apply(Surface s, List<RawChunk> chunks, string context)
     {
-        foreach (var c in chunks.OrderBy(c => c.Id == "FLAG" ? 0 : c.Id[0] == 'V' ? 2 : 1))
+        s.Textures = LwobTextures.Read(chunks, context);
+        foreach (var c in chunks.Where(c => TypedIds.Contains(c.Id)).OrderBy(c => c.Id == "FLAG" ? 0 : c.Id[0] == 'V' ? 2 : 1))
         {
             var r = new IffReader(c.Data, 0, c.Data.Length, $"{context} {c.Id}");
             switch (c.Id)
@@ -210,7 +238,8 @@ public static class Lwob
 
     /// <summary>
     /// The sub-chunks to write for a surface: the ones read, unchanged, if the surface hasn't been edited; otherwise
-    /// those with the typed fields' sub-chunks replaced (or added before any others, such as textures, which are kept).
+    /// those with the typed fields' sub-chunks replaced (or added before any others), and the texture layers' sub-chunks
+    /// (see <see cref="LwobTextures"/>) where the first texture was, or at the end. Sub-chunks this doesn't model are kept.
     /// </summary>
     internal static List<RawChunk> SurfaceChunks(Surface s)
     {
@@ -248,7 +277,30 @@ public static class Lwob
         Set("TRAN", s.Transparency > 0, w => w.U2(Fixed(s.Transparency)));
         Set("VTRN", s.Transparency > 0, w => w.F4((float)s.Transparency));
         Set("SMAN", s.Smoothing, w => w.F4((float)(s.SmoothingAngle * Math.PI / 180.0)));
-        return list;
+        return WithTextures(list, s.Textures);
+    }
+
+    /// <summary>A surface's sub-chunks with the texture runs taken out and the layers' put back where the first was.</summary>
+    private static List<RawChunk> WithTextures(List<RawChunk> chunks, List<TextureLayer> layers)
+    {
+        if (layers.Count == 0 && !chunks.Any(c => LwobTextures.IsHeader(c.Id))) return chunks;
+        var kept = new List<RawChunk>(chunks.Count);
+        int at = -1;
+        bool inTexture = false;
+        foreach (var c in chunks)
+        {
+            if (LwobTextures.IsHeader(c.Id))
+            {
+                if (at < 0) at = kept.Count;
+                inTexture = true;
+                continue;
+            }
+            if (inTexture && LwobTextures.IsSetting(c.Id)) continue;
+            inTexture = false;
+            kept.Add(c);
+        }
+        kept.InsertRange(at < 0 ? kept.Count : at, layers.SelectMany(LwobTextures.Write));
+        return kept;
     }
 
     private static ushort Fixed(double v) => (ushort)Math.Clamp(Math.Round(v * 256), 0, ushort.MaxValue);
@@ -273,12 +325,37 @@ public static class Lwob
             w.Id4(type);
             if (replay)
             {
+                var written = new HashSet<(string, int)>();
+                bool Has(string id, int layer) => info!.Layout.Any(x => x.Id == id && x.Layer == layer && x.Raw == null);
+                // A layer's UV chunks go where they were, or after its polygons if it had none.
+                void UVs(string at, int layer)
+                {
+                    bool vmap = Has("VMAP", layer), vmad = Has("VMAD", layer);
+                    bool maps, corners;
+                    if (at == "POLS") maps = corners = !vmap && !vmad;
+                    else if (at == "VMAP")
+                    {
+                        maps = written.Add((at, layer));
+                        corners = maps && !vmad;
+                    }
+                    else
+                    {
+                        corners = written.Add((at, layer));
+                        maps = corners && !vmap;
+                    }
+                    if (maps) VertexMaps.WriteVmaps(w, doc.Layers[layer].Mesh);
+                    if (corners) VertexMaps.WriteVmads(w, doc.Layers[layer].Mesh);
+                }
                 foreach (var e in info!.Layout)
                     switch (e.Id)
                     {
                         case "LAYR" when e.Raw == null: WriteLayer(w, doc, e.Layer, info); break;
                         case "PNTS" when e.Raw == null: WritePoints(w, doc.Layers[e.Layer].Mesh); break;
-                        case "POLS" when e.Raw == null: WritePolygons(w, doc.Layers[e.Layer].Mesh); break;
+                        case "POLS" when e.Raw == null:
+                            WritePolygons(w, doc.Layers[e.Layer].Mesh);
+                            UVs(e.Id, e.Layer);
+                            break;
+                        case "VMAP" or "VMAD" when e.Raw == null: UVs(e.Id, e.Layer); break;
                         case "SRFS" when e.Raw == null: WriteNames(w, doc); break;
                         case "SURF" when e.Raw == null: WriteSurface(w, doc.Surfaces[e.Surface]); break;
                         default: w.Chunk(e.Raw!); break;
@@ -291,6 +368,8 @@ public static class Lwob
                 WritePoints(w, mesh);
                 WriteNames(w, doc);
                 WritePolygons(w, mesh);
+                VertexMaps.WriteVmaps(w, mesh);
+                VertexMaps.WriteVmads(w, mesh);
             }
             else
                 for (int i = 0; i < used.Count; i++)
@@ -300,6 +379,8 @@ public static class Lwob
                     WritePoints(w, mesh);
                     if (i == 0) WriteNames(w, doc);
                     WritePolygons(w, mesh);
+                    VertexMaps.WriteVmaps(w, mesh);
+                    VertexMaps.WriteVmads(w, mesh);
                 }
             foreach (var s in doc.Surfaces) WriteSurface(w, s);
             if (info != null) foreach (var c in info.Unknown) w.Chunk(c);
@@ -314,7 +395,8 @@ public static class Lwob
         return info.LayoutUsable
             && doc.Surfaces.Select(s => s.Name).SequenceEqual(info.SurfaceNames)
             && info.Layout.All(e => e.Layer < doc.Layers.Count)
-            && used.All(i => (doc.Layers[i].Mesh.Points.Count == 0 || Has("PNTS", i)) && (doc.Layers[i].Mesh.Polygons.Count == 0 || Has("POLS", i)))
+            && used.All(i => (doc.Layers[i].Mesh.Points.Count == 0 || Has("PNTS", i)) && (doc.Layers[i].Mesh.Polygons.Count == 0 || Has("POLS", i))
+                && (doc.Layers[i].Mesh.UVMaps.Count == 0 || Has("POLS", i) || Has("VMAP", i) || Has("VMAD", i)))
             && (doc.Layers.All(l => l.Mesh.Polygons.Count == 0) || Has("SRFS", -1));
     }
 

@@ -5,7 +5,9 @@ namespace AVAModeler.Geometry;
 /// <summary>
 /// Smooth and faceted subdivision, and smoothing. Catmull–Clark drives the MetaNURBS cage preview and Metaform; it
 /// takes any mix of triangles, quads and n-gons. Open edges and edges shared by more than two faces are treated as
-/// creases (their new points are midpoints, and points along a single crease follow it as a curve).
+/// creases (their new points are midpoints, and points along a single crease follow it as a curve). UVs are
+/// subdivided flat: a new edge point takes the middle of its edge's UVs and a face point the average of its face's,
+/// on each face separately, so seams stay seams.
 /// </summary>
 public static class Subdivision
 {
@@ -56,14 +58,16 @@ public static class Subdivision
             var m = new int[n];
             for (int i = 0; i < n; i++) m[i] = Mid(v[i], v[(i + 1) % n]);
             var pieces = new List<int[]>();
+            int c = -1;
             if (n == 3)
                 pieces.AddRange([[v[0], m[0], m[2]], [m[0], v[1], m[1]], [m[2], m[1], v[2]], [m[0], m[1], m[2]]]);
             else
             {
-                int c = Add(mesh, mesh.Centroid(poly));
+                c = Add(mesh, mesh.Centroid(poly));
                 for (int i = 0; i < n; i++) pieces.Add([v[i], m[i], c, m[(i + n - 1) % n]]);
             }
-            Replace(mesh, f, pieces);
+            var uvs = FaceUVs(mesh, poly, v, i => m[i], c);
+            SetUVs(mesh, Replace(mesh, f, pieces), uvs);
         }
         InsertIntoNeighbours(mesh, faces.ToHashSet(), before, mid);
         mesh.Touch();
@@ -191,7 +195,8 @@ public static class Subdivision
                 if (a == next || a == prev) continue;
                 pieces.Add([a, edgePoint[Edge.Of(a, next)], c, edgePoint[Edge.Of(prev, a)]]);
             }
-            Replace(mesh, f, pieces);
+            var uvs = FaceUVs(mesh, mesh.Polygons[f], v, i => v[i] == v[(i + 1) % n] ? -1 : edgePoint[Edge.Of(v[i], v[(i + 1) % n])], c);
+            SetUVs(mesh, Replace(mesh, f, pieces), uvs);
         }
         InsertIntoNeighbours(mesh, selected, before, edgePoint);
         mesh.Touch();
@@ -207,14 +212,61 @@ public static class Subdivision
         return mesh.Points.Count - 1;
     }
 
-    /// <summary>Puts the first piece in the face's place and the rest at the end, with the face's surface.</summary>
-    private static void Replace(Mesh mesh, int face, List<int[]> pieces)
+    /// <summary>Puts the first piece in the face's place and the rest at the end, with the face's surface; returns the pieces.</summary>
+    private static List<Polygon> Replace(Mesh mesh, int face, List<int[]> pieces)
     {
         var poly = mesh.Polygons[face];
-        if (pieces.Count == 0) return;
+        if (pieces.Count == 0) return [];
         poly.Points = [.. pieces[0]];
         poly.Details = null;
-        for (int i = 1; i < pieces.Count; i++) mesh.Polygons.Add(new Polygon(pieces[i], poly.Surface));
+        poly.CornerUVs = null;
+        var made = new List<Polygon> { poly };
+        for (int i = 1; i < pieces.Count; i++)
+        {
+            var p = new Polygon(pieces[i], poly.Surface);
+            mesh.Polygons.Add(p);
+            made.Add(p);
+        }
+        return made;
+    }
+
+    /// <summary>
+    /// The UVs a face's pieces will have, per map (only maps covering the whole face): each corner's own, the middle of
+    /// each edge's at its new edge point (<paramref name="edgePoint"/> of corner i is the point on the edge from corner
+    /// i to the next, or -1), and the average at the face point (if there is one).
+    /// </summary>
+    private static Dictionary<string, Dictionary<int, Vec2>>? FaceUVs(Mesh mesh, Polygon poly, int[] v, Func<int, int> edgePoint, int facePoint)
+    {
+        if (mesh.UVMaps.Count == 0) return null;
+        var result = new Dictionary<string, Dictionary<int, Vec2>>();
+        foreach (var map in mesh.UVMaps)
+        {
+            var uvs = mesh.CornerUVsOf(map.Name, poly);
+            if (uvs.Length == 0 || uvs.Any(u => u == null)) continue;
+            var at = new Dictionary<int, Vec2>();
+            var sum = Vec2.Zero;
+            for (int i = 0; i < v.Length; i++)
+            {
+                var uv = uvs[i]!.Value;
+                at[v[i]] = uv;
+                sum += uv;
+                int e = edgePoint(i);
+                if (e >= 0) at[e] = (uv + uvs[(i + 1) % v.Length]!.Value) / 2;
+            }
+            if (facePoint >= 0) at[facePoint] = sum / v.Length;
+            result[map.Name] = at;
+        }
+        return result;
+    }
+
+    /// <summary>Gives a face's pieces the UVs worked out for them.</summary>
+    private static void SetUVs(Mesh mesh, List<Polygon> pieces, Dictionary<string, Dictionary<int, Vec2>>? uvs)
+    {
+        if (uvs == null) return;
+        foreach (var (name, at) in uvs)
+            foreach (var piece in pieces)
+                foreach (int q in piece.Points)
+                    if (at.TryGetValue(q, out var uv)) mesh.SetCornerUV(name, piece, q, uv);
     }
 
     /// <summary>Adds the new edge points into the faces outside the selection that share those edges.</summary>
@@ -234,6 +286,10 @@ public static class Subdivision
                     pts ??= poly.Points.Take(i).ToList();
                     pts.Add(a);
                     pts.Add(m);
+                    // The new point sits halfway along this face's edge in its UVs too.
+                    foreach (var map in mesh.UVMaps)
+                        if (mesh.TryGetUV(map.Name, poly, a, out var ua) && mesh.TryGetUV(map.Name, poly, b, out var ub))
+                            mesh.SetCornerUV(map.Name, poly, m, (ua + ub) / 2);
                 }
                 else pts?.Add(a);
             }

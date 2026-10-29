@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Layout's state without its controls: the scene being worked on, its frame and chosen item, loading and saving
+       scenes, and what Layout's views draw. No UI: the Layout workspace and the MCP server both build on it. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Layout</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AVAModeler.Scene\AVAModeler.Scene.csproj" />
+    <ProjectReference Include="..\AVAModeler.Formats\AVAModeler.Formats.csproj" />
+    <ProjectReference Include="..\AVAModeler.Rendering\AVAModeler.Rendering.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AVAModeler.Layout.Tests" />
+  </ItemGroup>
+</Project>

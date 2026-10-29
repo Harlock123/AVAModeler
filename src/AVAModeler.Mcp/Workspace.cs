@@ -6,8 +6,9 @@ namespace AVAModeler.Mcp;
 
 /// <summary>
 /// The files an agent may open and save: paths are resolved against a root folder and must stay inside it, only object
-/// formats the registry knows (built in or from a plugin) are read or written, and an existing file is only written
-/// over when the caller says so. Nothing is ever deleted.
+/// formats the registry knows (built in or from a plugin), scenes (.avascene and .lws) and rendered pictures (.png) are
+/// read or written, and an existing file is only written over when the caller says so (or this workspace wrote it).
+/// Nothing is ever deleted.
 /// </summary>
 public sealed class Workspace(string root, ToolRegistry registry)
 {
@@ -63,14 +64,11 @@ public sealed class Workspace(string root, ToolRegistry registry)
         if (!SaveExtensions.Contains(ext))
             throw new NotSupportedException($"AVA Modeler can't save {(ext == "" ? "files without an extension" : ext + " files")}. It saves {string.Join(", ", SaveExtensions)}.");
         string[] targets = ext == ".obj" ? [full, Path.ChangeExtension(full, ".mtl")] : [full];
-        foreach (var t in targets)
-            if (File.Exists(t) && !overwrite && !_written.Contains(t))
-                throw new IOException($"{Path.GetFileName(t)} already exists. Save with overwrite set to replace it, or choose another name.");
-        if (Path.GetDirectoryName(full) is { } dir) Directory.CreateDirectory(dir);
+        CheckWritable(targets, overwrite);
         var plugin = Registry.Formats.FirstOrDefault(f => f.CanSave && f.Extensions.Contains(ext));
         if (plugin != null && !ObjectFiles.SaveExtensions.Contains(ext)) plugin.Save(doc, full);
         else ObjectFiles.Save(doc, full);
-        foreach (var t in targets) _written.Add(t);
+        Wrote(targets);
         if (ext is ".lwo" or ".lw")
         {
             ObjectFiles.RebaseImages(doc, full);
@@ -78,6 +76,62 @@ public sealed class Workspace(string root, ToolRegistry registry)
             doc.Modified = false;
         }
         return full;
+    }
+
+    /// <summary>The scene formats: the native .avascene (everything) and LightWave .lws.</summary>
+    public static readonly string[] SceneExtensions = [".avascene", ".lws"];
+
+    /// <summary>A scene file's full path inside the root, checking it's a scene format.</summary>
+    public string ScenePath(string path)
+    {
+        string full = Resolve(path);
+        string ext = Path.GetExtension(full).ToLowerInvariant();
+        if (!SceneExtensions.Contains(ext))
+            throw new NotSupportedException($"Scenes are .avascene (AVA Modeler's own, keeps everything) or .lws (LightWave), not {(ext == "" ? "a file without an extension" : ext)}.");
+        return full;
+    }
+
+    /// <summary>
+    /// Loads an object a scene file names, if it's inside the root and in a format AVA Modeler reads; otherwise null,
+    /// with a note saying why (the scene then has a placeholder for it).
+    /// </summary>
+    public Document? LoadForScene(string path, List<string> notes)
+    {
+        try
+        {
+            return Load(path);
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or IOException or FormatException or UnauthorizedAccessException or InvalidDataException)
+        {
+            notes.Add($"{Path.GetFileName(path)}: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Makes ready to write files inside the root: refuses one that exists unless <paramref name="overwrite"/> is set or
+    /// this workspace wrote it, and makes the folders. Call <see cref="Wrote"/> once they're written.
+    /// </summary>
+    public void CheckWritable(IEnumerable<string> fullPaths, bool overwrite)
+    {
+        var list = fullPaths.ToList();
+        foreach (var t in list)
+            if (File.Exists(t) && !overwrite && !WroteEarlier(t))
+                throw new IOException($"{Path.GetFileName(t)} already exists. Save with overwrite set to replace it, or choose another name.");
+        foreach (var t in list)
+            if (Path.GetDirectoryName(t) is { } dir) Directory.CreateDirectory(dir);
+    }
+
+    /// <summary>Notes files this workspace wrote, so it may write over them again (render_animation does so from a worker thread).</summary>
+    public void Wrote(params string[] fullPaths)
+    {
+        lock (_written)
+            foreach (var t in fullPaths) _written.Add(t);
+    }
+
+    private bool WroteEarlier(string fullPath)
+    {
+        lock (_written) return _written.Contains(fullPath);
     }
 
     /// <summary>

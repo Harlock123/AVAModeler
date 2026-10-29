@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- The MCP server: AI agents drive the Modeler through the command API, headless over stdio or live in the app
-       through a local pipe. No UI. -->
+  <!-- The MCP server: AI agents drive the Modeler through the command API and Layout through its session, headless
+       over stdio or live in the app through a local pipe. No UI. -->
   <PropertyGroup>
     <RootNamespace>AVAModeler.Mcp</RootNamespace>
   </PropertyGroup>
@@ -10,6 +10,7 @@
     <ProjectReference Include="..\AVAModeler.Tools\AVAModeler.Tools.csproj" />
     <ProjectReference Include="..\AVAModeler.Rendering\AVAModeler.Rendering.csproj" />
     <ProjectReference Include="..\AVAModeler.Scene\AVAModeler.Scene.csproj" />
+    <ProjectReference Include="..\AVAModeler.Layout\AVAModeler.Layout.csproj" />
     <!-- The official C# MCP SDK's core: the server, client and transports, without the hosting and DI extras. -->
     <PackageReference Include="ModelContextProtocol.Core" Version="2.3.0" />
   </ItemGroup>

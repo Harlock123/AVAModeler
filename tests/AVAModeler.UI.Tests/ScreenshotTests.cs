@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using AVAModeler.Core;
+using AVAModeler.Layout;
 using AVAModeler.Layout.UI;
 using AVAModeler.Modeler.UI;
 using AVAModeler.Rendering;

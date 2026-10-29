@@ -25,7 +25,17 @@ public sealed class ViewLayer
 }
 
 /// <summary>A line in world space a tool wants drawn (handles, the action centre, a volume's box).</summary>
-public readonly record struct OverlayLine(Vec3 A, Vec3 B, uint Color);
+public readonly record struct OverlayLine(Vec3 A, Vec3 B, uint Color)
+{
+    /// <summary>The twelve edges of a box.</summary>
+    public static IEnumerable<OverlayLine> Box(Box3 b, uint color)
+    {
+        var c = new Vec3[8];
+        for (int i = 0; i < 8; i++) c[i] = new Vec3((i & 1) == 0 ? b.Min.X : b.Max.X, (i & 2) == 0 ? b.Min.Y : b.Max.Y, (i & 4) == 0 ? b.Min.Z : b.Max.Z);
+        int[][] edges = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+        return edges.Select(e => new OverlayLine(c[e[0]], c[e[1]], color));
+    }
+}
 
 /// <summary>Everything a view draws: the layers, the surfaces they use, and how.</summary>
 public sealed class ViewScene

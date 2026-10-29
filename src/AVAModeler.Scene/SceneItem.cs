@@ -67,6 +67,9 @@ public abstract class SceneItem
         }
     }
 
+    /// <summary>Puts a parent back as it was, without the checks (for copies and snapshots, whose parents were already checked).</summary>
+    internal void RestoreParent(SceneItem? parent) => _parent = parent;
+
     /// <summary>Throws if an item can't be this one's parent (beyond the cycle check).</summary>
     protected virtual void CheckParent(SceneItem parent) { }
 
@@ -104,6 +107,24 @@ public abstract class SceneItem
 
     /// <summary>Where the item's pivot is in the world.</summary>
     public Vec3 WorldPosition(double frame) => WorldMatrix(frame).TransformPoint(Pivot);
+
+    /// <summary>
+    /// The rotation that turns the item's +Z axis (the way a camera, light or bone faces) toward a point in the world at
+    /// a frame, looking from where its pivot is then and allowing for its parent's turn. Heading and pitch are worked
+    /// out; the bank is kept, as it doesn't move the +Z axis. The heading is the one nearest the item's heading at that
+    /// frame (give or take whole turns), so keys made one after another don't spin it the long way round.
+    /// </summary>
+    /// <exception cref="ArgumentException">The point is where the item is, so there's no way to face it.</exception>
+    public Vec3 RotationToward(Vec3 worldPoint, double frame)
+    {
+        var dir = worldPoint - WorldPosition(frame);
+        if (dir.Length < 1e-9) throw new ArgumentException($"{Name} is at that point, so it can't be turned to face it.");
+        if (TransformParent is { } parent) dir = parent.WorldMatrix(frame).Inverted().TransformVector(dir);
+        var hp = Rotations.FromDirection(dir);
+        var now = RotationAt(frame);
+        double h = hp.X + 360 * Math.Round((now.X - hp.X) / 360);
+        return new Vec3(h, hp.Y, now.Z);
+    }
 
     public void SetPosition(double frame, Vec3 p) => SetVector(0, frame, p);
     public void SetRotation(double frame, Vec3 hpb) => SetVector(3, frame, hpb);

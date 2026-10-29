@@ -66,28 +66,15 @@ public sealed class SceneView : Control
         {
             var c = _cameras[_mode];
             c.Resize(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height));
-            if (_mode == LayoutViewMode.Camera && _session.Scene.CurrentCamera is { } cam)
-            {
-                // Look from the scene camera: its position and heading/pitch (bank isn't shown), and its field of view.
-                var world = cam.WorldMatrix(_session.Frame);
-                var eye = world.TransformPoint(Vec3.Zero);
-                var hpb = Rotations.FromMatrix(world);
-                c.Heading = hpb.X;
-                c.Pitch = hpb.Y;
-                c.Distance = 1;
-                c.FieldOfView = cam.VerticalFov(_session.Frame);
-                c.Center = eye + c.Basis().Forward;
-            }
+            // Look from the scene camera: its position and heading/pitch (bank isn't shown), and its field of view.
+            if (_mode == LayoutViewMode.Camera && _session.Scene.CurrentCamera is { } cam) SceneDrawing.LookThrough(c, cam, _session.Frame);
             return c;
         }
     }
 
     public void Fit()
     {
-        var frame = _session.Scene.Evaluate(_session.Frame);
-        var box = Box3.Empty;
-        foreach (var o in frame.Objects) box = box.Include(o.WorldMesh.Bounds());
-        foreach (var (item, m) in frame.World) if (item is not ObjectItem) box = box.Include(m.TransformPoint(Vec3.Zero));
+        var box = SceneDrawing.Bounds(_session.Scene.Evaluate(_session.Frame));
         foreach (var (mode, c) in _cameras)
         {
             if (mode == LayoutViewMode.Camera) continue;

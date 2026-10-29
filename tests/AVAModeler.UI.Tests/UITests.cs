@@ -5,6 +5,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
 using AVAModeler.Core;
+using AVAModeler.Layout;
 using AVAModeler.Layout.UI;
 using AVAModeler.Modeler.UI;
 using AVAModeler.Rendering;

@@ -1,4 +1,5 @@
 using Avalonia.Threading;
+using AVAModeler.Layout;
 using AVAModeler.Mcp;
 using AVAModeler.Modeler.UI;
 using AVAModeler.Tools;
@@ -8,10 +9,12 @@ namespace AVAModeler;
 /// <summary>
 /// The app's live MCP door: while AI agents are allowed (Macros › Allow AI Agents, or Preferences), a
 /// <see cref="LiveListener"/> takes connections from <c>AVAModeler --mcp --attach</c> bridges, and every call runs on
-/// the UI thread against the open document, through the session's command API, so the views redraw as the agent works
-/// and Ctrl+Z undoes its steps. Calls wait while the person has a tool armed or a dialog box open.
+/// the UI thread against the open document, through the session's command API, and against Layout's scene, so the views
+/// redraw as the agent works and Ctrl+Z undoes its modeling steps. Calls wait while the person has a tool armed or a
+/// dialog box open. Scene calls don't switch the window to Layout: the person may be modeling, and Layout shows the
+/// agent's scene whenever they turn to it (F2).
 /// </summary>
-internal sealed class LiveAgents(ModelerSession session) : ILiveModeler, IUiThread, IAsyncDisposable
+internal sealed class LiveAgents(ModelerSession session, LayoutSession layout) : ILiveModeler, IUiThread, IAsyncDisposable
 {
     private LiveListener? _listener;
 
@@ -22,12 +25,23 @@ internal sealed class LiveAgents(ModelerSession session) : ILiveModeler, IUiThre
 
     public Commands Commands => session.Commands;
 
+    public LayoutSession Layout => layout;
+
     public string? Busy =>
         session.ActiveTool is { } tool ? $"the person is using the {tool.Name} tool (Enter keeps its work, Esc drops it)"
         : Dialogs.ModalsOpen > 0 ? "a dialog box is open in the app"
         : null;
 
-    public void Report(string text) => session.SetStatus(text);
+    /// <summary>
+    /// Both workspaces' status bars say what the agent did, whichever is on screen, and Layout shows its item list and
+    /// the chosen item's settings afresh (an agent may have renamed or changed them).
+    /// </summary>
+    public void Report(string text)
+    {
+        session.SetStatus(text);
+        layout.SetStatus(text);
+        layout.NotifyChangedElsewhere();
+    }
 
     public Task<T> InvokeAsync<T>(Func<T> work) => Dispatcher.UIThread.InvokeAsync(work).GetTask();
 

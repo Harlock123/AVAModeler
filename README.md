@@ -123,8 +123,9 @@ phases 0 to 7 and Layout phases L1 to L6.
 ### AI agents
 
 - **An MCP server**: AI agents such as Claude Code drive AVA Modeler through the Model Context Protocol, with the
-  same tools and settings a person uses, each step one undo step. `AVAModeler --mcp` works headless on a model of its
-  own; with Macros › Allow AI Agents on, an agent can also build in the open window while you watch. See
+  same tools and settings a person uses, each step one undo step. They model, and in Layout they stage, light,
+  animate and ray-trace scenes. `AVAModeler --mcp` works headless on a model and scene of its own; with Macros › Allow
+  AI Agents on, an agent can also build in the open window while you watch. See
   [Driving AVA Modeler from an AI agent](#driving-ava-modeler-from-an-ai-agent).
 
 ![A table an AI agent built through MCP, live in the open window](Images/AVAModeler-mcp.png)
@@ -201,25 +202,27 @@ Help › Keyboard lists them all, and Edit › Preferences changes any of them.
 
 AVA Modeler is an [MCP](https://modelcontextprotocol.io) server, so an AI agent (Claude Code, or any MCP client) can
 model with it the way a person does: it runs the same tools with the same parameters, through the same command layer
-the menus and Lua macros use, and every step is one undo step. It doesn't move the mouse or click: it calls the tools.
-It sees its work by asking for pictures of the views, or a ray-traced still.
+the menus and Lua macros use, and every step is one undo step. It can then put what it modeled in a Layout scene,
+light it, animate it and render it. It doesn't move the mouse or click: it calls the tools. It sees its work by asking
+for pictures of the views, Layout's view, or ray-traced frames.
 
 There are two ways to run it, both from the same program:
 
 - **Headless**: `AVAModeler --mcp` serves MCP on stdin and stdout with no window. The agent's client starts it as a
-  command; it has an object of its own and saves files in its working folder.
+  command; it has an object and a scene of its own and saves files in its working folder.
 - **Live**: `AVAModeler --mcp --attach` connects the agent to the AVA Modeler open on your desktop. Everything it
-  does happens in the open object: you watch it appear in the four views, your edits and its edits share one undo
-  history, and Ctrl+Z undoes its steps. Turn it on with **Macros › Allow AI Agents (MCP)** (or in Edit › Preferences;
+  does happens in the open object and in Layout's scene: you watch it appear in the views, your edits and its edits
+  to the object share one undo history, and Ctrl+Z undoes its steps. Its scene changes go to Layout's scene whether or
+  not Layout is on screen (the window isn't switched for you; F2 shows it), and Layout's item list follows them. Turn it on with **Macros › Allow AI Agents (MCP)** (or in Edit › Preferences;
   it's off until you do). The app then listens on a local pipe (a Unix domain socket on Linux and macOS, a named pipe
   on Windows) that only your own user account can open, so nothing on the network or from another account can
   connect. If the app isn't open, or agents aren't allowed, the agent's calls say so and say how to turn it on; the
   bridge reconnects by itself once the app is there. While you have a tool armed or a dialog box open, an agent's call
   waits (up to 20 seconds) for you to finish rather than change things under you.
 
-Options: `--root FOLDER` sets the working folder (the current folder by default), which `open`, `save` and texture
-paths start from; `open` and `save` stay inside it, only read and write object formats AVA Modeler knows, and never
-write over a file unless asked to. `--no-plugins` skips the plugins folder.
+Options: `--root FOLDER` sets the working folder (the current folder by default), which `open`, `save`, the scene
+files and texture paths start from; files stay inside it, only formats AVA Modeler knows are read and written, and a
+file is never written over unless asked to. `--no-plugins` skips the plugins folder.
 
 ### Setting up Claude Code
 
@@ -258,6 +261,22 @@ Or, for everyone working in a folder, in its `.mcp.json`:
 | `render_view` | A PNG of the top, front, side or perspective view, as the app draws it (wireframe, shaded or textured). |
 | `render` | A ray-traced PNG of the object, lit and framed. |
 
+The Layout tools:
+
+| Tool | What it does |
+|---|---|
+| `get_scene`, `get_keys` | Reads the scene at a frame: the frame range and rate, the current camera, ambient light, backdrop and fog; every item's kind, name, parent, position, rotation, scale, settings and animated channels; an object's world bounds; load warnings. And an item's keys, channel by channel, with their TCB settings and end behaviours. |
+| `new_scene`, `open_scene`, `save_scene` | Scene files in the working folder: the native `.avascene` (meshes inside it by default) and LightWave `.lws` (objects by their files; the warnings say what it drops). |
+| `add_object` | The Modeler's object, live (later modeling shows in the scene), one of its layers, or an object file. |
+| `add_light`, `add_camera`, `add_null`, `add_bone`, `remove_item` | Distant, point and spot lights with colour, intensity, cone, range and shadows; cameras by zoom factor or field of view; nulls; bones that bend an object. Lights and cameras can be aimed at a point as they're added. |
+| `set_item` | An item's name, parent, pivot, visibility and its own settings (a light's, a camera's, an object's shadows, a bone's). |
+| `set_transform`, `look_at` | Position, rotation and scale at a frame, as keys or as plain values (the rule is in the tool's description); turning anything to face a point or another item. |
+| `set_key`, `delete_key`, `set_end_behavior` | One key on one channel with tension, continuity, bias and the linear flag; removing keys; what a channel does before its first key and after its last. |
+| `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame. |
+| `undo_scene` | Takes back the agent's own scene changes, one call at a time (Layout has no undo of its own). |
+| `render_scene_view` | A quick picture as Layout's view draws it, through the camera or from above, the front, the side or an orbit, with the lights, cameras, nulls and bones drawn; it also says where each item landed in the picture. |
+| `render_scene`, `render_animation` | A ray-traced frame through a camera; or a run of frames written as numbered PNGs in the working folder, with a contact sheet back. Both are bounded in size and time. |
+
 The agent is told the conventions when it connects: metres; LightWave's left-handed space with +X right, +Y up and +Z
 away from you in the Front view; faces seen from the side where their points run clockwise; layers, points and
 polygons counted from 0. A mistake (an unknown tool, a bad value, an index that isn't there) comes back as an error
@@ -277,6 +296,25 @@ render_view   {"view": "perspective"}                                           
 save          {"path": "table.lwo"}
 ```
 
+And then a scene: the table under a warm spotlight, the camera swinging half round it over 60 frames, frame 30 rendered.
+
+```text
+add_object        {"name": "Table"}                                                    # the Modeler's object, live
+add_light         {"type": "spot", "name": "Warm", "position": [2,3,-2], "look_at": [0,0.4,0],
+                   "color": [1,0.8,0.55], "intensity": 1.3, "cone_angle": 35}
+set_item          {"item": "Light", "intensity": 0.4}                                 # the default light as a fill
+set_transform     {"item": "Camera", "frame": 1, "position": [0,1.5,-4], "key": true}
+look_at           {"item": "Camera", "target": "Table", "frame": 1, "key": true}
+set_transform     {"item": "Camera", "frame": 30, "position": [4,2,0], "key": true}
+look_at           {"item": "Camera", "target": "Table", "frame": 30, "key": true}
+set_transform     {"item": "Camera", "frame": 60, "position": [0,1.5,4], "key": true}
+look_at           {"item": "Camera", "target": "Table", "frame": 60, "key": true}
+render_scene_view {"view": "camera", "frame": 30}                                      # quick check of the framing
+render_scene      {"frame": 30, "width": 480, "samples": 4}                            # look at it
+render_animation  {"step": 6, "width": 160}                                            # frames/frame0001.png… and a contact sheet
+save_scene        {"path": "table.avascene"}
+```
+
 ## Building and testing
 
 ```bash
@@ -285,7 +323,7 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 478 tests cover every layer:
+It needs the .NET 10 SDK. 510 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
@@ -294,9 +332,10 @@ It needs the .NET 10 SDK. 478 tests cover every layer:
 | Geometry | 79 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation |
 | Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
 | Tools | 62 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
-| Scene | 134 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps |
-| Mcp | 24 | Every MCP tool group with its errors and undo; a whole agent session building a table; the live mode through a pipe and the bridge, its UI-thread marshalling and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
-| UI | 39 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, an AI agent working in the open window, and the screenshots |
+| Scene | 142 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots and copies, aiming an item at a point |
+| Layout | 6 | Layout's session without its controls: how agents' values become keys, the modified flag, loading and saving scenes, looking through a camera, what the views draw |
+| Mcp | 41 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was, undo_scene, the look-at maths, keys read between frames); whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
+| UI | 40 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, an AI agent working in the open window and in its Layout scene, and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -317,9 +356,10 @@ Layout reuses them.
 | `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp), plugins, SkiaSharp image reading |
 | `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing, the view cameras, picking |
 | `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones, LWS and JSON scenes, the ray tracer |
+| `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, scene files, what the views draw), shared by the Layout workspace and the MCP server |
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render window |
-| `AVAModeler.Mcp` | The MCP server for AI agents: the tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
+| `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
 | `AVAModeler` | The application: one window hosting both workspaces |
 
 ## Known limits
@@ -342,8 +382,11 @@ Layout reuses them.
   isn't saved there (the native .avascene keeps it). Tools that make new geometry from nothing (Box, Text and so on)
   leave it without UVs, and a swept wall takes its edge's UVs at both ends rather than new ones.
 
-- **AI agents (MCP)** can model, but not animate: Layout's scenes and keys aren't offered to them yet. Points and
-  Drag work only with the mouse, so agents use `add_points` and Move instead. `render` uses a fixed camera rig and
+- **AI agents (MCP)**: Points and Drag work only with the mouse, so agents use `add_points` and Move instead.
+  Layout has no undo of its own: `undo_scene` takes back only an agent's own scene changes, and only while nobody
+  else has changed the scene since (not across `new_scene` or `open_scene`); the person's Ctrl+Z doesn't reach the
+  scene. Agents can't make morphs, displacements or skelegon bones, and `render_scene_view`'s camera view, like
+  Layout's, doesn't show the camera's bank. `render` uses a fixed camera rig and
   lights round the object. Only one AVA Modeler per user takes agents at a time. Inside `run_lua`, `undo()` and
   `redo()` aren't allowed (the macro is one undo step) and a macro stops after 30 seconds unless given longer. Texture
   image paths may point outside the working folder (they're only read). The live pipe is tested on Linux; Windows and

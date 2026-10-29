@@ -49,6 +49,11 @@ public sealed class ObjectItem : SceneItem
     /// <summary>The document's surface table, which the mesh's polygons index.</summary>
     public IReadOnlyList<Surface> Surfaces => Document?.Surfaces ?? [];
 
+    // For SceneSnapshot: the lists as they are.
+    internal List<Bone> BoneList => _bones;
+    internal List<MorphTarget> MorphList => _morphs;
+    internal List<WaveDisplacement> DisplacementList => _displacements;
+
     internal void AttachBone(Bone b) => _bones.Add(b);
     internal void DetachBone(Bone b) => _bones.Remove(b);
 

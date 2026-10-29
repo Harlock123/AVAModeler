@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using AVAModeler.Core;
+using System.Text.Json.Nodes;
 using AVAModeler.Formats;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -20,7 +21,7 @@ public class EndToEndTests
     private static async Task BuildATable(McpClient client, string folder)
     {
         var tools = await client.ListToolsAsync(cancellationToken: Cancel);
-        Assert.Equal(30, tools.Count);
+        Assert.Equal(52, tools.Count);
         Assert.All(tools, t => Assert.False(string.IsNullOrWhiteSpace(t.Description), $"{t.Name} has no description"));
         var listed = await client.Json("list_tools");
         Assert.Contains(listed["tools"]!.AsArray(), t => (string?)t!["name"] == "Lathe");
@@ -70,6 +71,84 @@ public class EndToEndTests
         Assert.Contains("no tool called \"Lath\"", await client.Fails("run_tool", new { name = "Lath" }));
         Assert.Contains("limit must be a whole number", await client.Fails("get_points", new { limit = "all" }));
         Assert.Equal(8, (int)(await client.Json("get_document"))["undo"]!["depth"]!);
+    }
+
+    /// <summary>
+    /// What an agent would do next: put the table in a scene, light it with a warm spot, swing the camera round it over
+    /// 60 frames (keyed, and aimed at the table at each key), render frame 30 and look at it, then save the scene and
+    /// open it again.
+    /// </summary>
+    private static async Task StageTheTable(McpClient client, string folder)
+    {
+        var obj = await client.Json("add_object", new { name = "Table" });
+        Assert.Equal("Table", (string?)obj["name"]);
+        Assert.Equal("the Modeler's object (live)", (string?)obj["source"]);
+        var spot = await client.Json("add_light", new { type = "spot", name = "Warm", position = new[] { 2.0, 3, -2 }, look_at = new[] { 0, 0.4, 0 }, color = new[] { 1, 0.8, 0.55 }, intensity = 1.3, cone_angle = 35 });
+        Assert.Equal("spot", (string?)spot["type"]);
+        await client.Json("set_item", new { item = "Light", intensity = 0.4 });
+        await client.Json("set_scene", new { background_color = new[] { 0.05, 0.05, 0.1 } });
+        double[][] path = [[0, 1.5, -4], [4, 2, 0], [0, 1.5, 4]];
+        int[] frames = [1, 30, 60];
+        for (int i = 0; i < 3; i++)
+        {
+            await client.Json("set_transform", new { item = "Camera", frame = frames[i], position = path[i], key = true });
+            await client.Json("look_at", new { item = "Camera", target = "Table", frame = frames[i], key = true });
+        }
+        var keys = await client.Json("get_keys", new { item = "Camera", channel = "heading" });
+        Assert.Equal([0.0, -90, -180], keys["channels"]![0]!["keys"]!.AsArray().Select(k => Math.Round((double)k!["value"]!, 6)));
+        // Between keys the camera is on its way round, still roughly facing the table.
+        var at15 = await client.Json("get_scene", new { frame = 15 });
+        var cam = at15["items"]!.AsArray().Single(i => (string?)i!["name"] == "Camera")!;
+        var p = cam["position"]!.AsArray().Select(v => (double)v!).ToArray();
+        Assert.True(p[0] > 1 && p[0] < 4 && p[2] > -4 && p[2] < 0, $"The camera at frame 15 is at [{string.Join(", ", p)}].");
+        var look = cam["looks_toward"]!.AsArray().Select(v => (double)v!).ToArray();
+        Assert.True(-p[0] * look[0] - p[2] * look[2] > 0, "The camera at frame 15 should still look toward the table.");
+
+        // Check the placement cheaply, then ray-trace frame 30.
+        var view = await client.Call("render_scene_view", new { view = "camera", frame = 30, width = 160 });
+        Assert.Contains("object Table at (80, ", Text(view));
+        var render = await client.Call("render_scene", new { frame = 30, width = 96, samples = 1 });
+        var image = TextureImages.Decode(Pngs.Of(render))!;
+        Assert.Equal((96, 72), (image.Width, image.Height));
+        // Not blank, and the table shows: the middle isn't the backdrop the top corners are.
+        (int, int, int) At(int x, int y) { int i = (y * image.Width + x) * 4; return (image.Rgba[i], image.Rgba[i + 1], image.Rgba[i + 2]); }
+        var backdrop = At(0, 0);
+        Assert.Equal(backdrop, At(95, 0));
+        int different = 0;
+        for (int y = 24; y < 48; y++)
+            for (int x = 32; x < 64; x++)
+                if (At(x, y) != backdrop) different++;
+        Assert.True(different > 24 * 32 / 2, $"Only {different} of the middle's pixels show anything.");
+        Assert.True(Pngs.Inspect(Pngs.Of(render)).Colours > 20);
+
+        // Keep it, and open it again: the same items, keys and settings.
+        var before = await client.Json("get_scene", new { frame = 30 });
+        await client.Json("save_scene", new { path = "table.avascene" });
+        Assert.True(File.Exists(Path.Combine(folder, "table.avascene")));
+        await client.Json("new_scene", new { });
+        Assert.Equal(2, (await client.Json("get_scene"))["items"]!.AsArray().Count);
+        await client.Json("open_scene", new { path = "table.avascene" });
+        var after = await client.Json("get_scene", new { frame = 30 });
+        foreach (var o in new[] { before, after })
+        {
+            o.Remove("file");
+            o.Remove("modified");
+            o.Remove("undo_scene");
+            // Saved, the Modeler's object is embedded in the file.
+            foreach (var item in o["items"]!.AsArray()) item!.AsObject().Remove("source");
+        }
+        Assert.Equal(before.ToJsonString(), after.ToJsonString());
+    }
+
+    [Fact]
+    public async Task An_agent_session_stages_and_renders_a_scene_in_process()
+    {
+        using var folder = new TempFolder();
+        await using var session = await InProcess.Start(new HeadlessHost(folder.Path));
+        await BuildATable(session.Client, folder.Path);
+        await StageTheTable(session.Client, folder.Path);
+        Assert.Contains("undo_scene", session.Client.ServerInstructions ?? "");
+        Assert.Contains("add_object", session.Client.ServerInstructions ?? "");
     }
 
     [Fact]
@@ -147,6 +226,11 @@ public class EndToEndTests
             // And a ray-traced still.
             var view = await client.Call("render", new { width = 64, height = 48, samples = 1 });
             Assert.True(Pngs.Inspect(Pngs.Of(view)).Colours > 4);
+            // And a scene, a frame of it rendered.
+            await client.Json("add_object", new { name = "Table" });
+            await client.Json("look_at", new { item = "Camera", target = "Table" });
+            var frame = await client.Call("render_scene", new { width = 64, samples = 1 });
+            Assert.True(Pngs.Inspect(Pngs.Of(frame)).Colours > 4);
         }
         lock (stderr) Assert.Contains(stderr, l => l.Contains("headless"));
         TestContext.Current.SendDiagnosticMessage($"The process session took {clock.Elapsed.TotalSeconds:0.0} s.");

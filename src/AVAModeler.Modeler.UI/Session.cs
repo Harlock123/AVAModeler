@@ -397,7 +397,7 @@ public sealed class ModelerSession
     {
         var scene = ViewScene.FromDocument(Document, perspective ? Preferences.PerspectiveStyle : DisplayStyle.Wireframe, Preferences.BackfaceTint, Smoothed);
         var sel = Document.Selection;
-        if (sel.Mode == SelectionMode.Volume && !sel.Volume.IsEmpty) scene.Overlay.AddRange(BoxLines(Clamp(sel.Volume), Palette.Volume));
+        if (sel.Mode == SelectionMode.Volume && !sel.Volume.IsEmpty) scene.Overlay.AddRange(OverlayLine.Box(Clamp(sel.Volume), Palette.Volume));
         return scene;
     }
 
@@ -453,14 +453,6 @@ public sealed class ModelerSession
         var b = Document.Bounds().Expanded(1);
         if (b.IsEmpty) b = new Box3(-Vec3.One * 10, Vec3.One * 10);
         return new Box3(Vec3.Max(v.Min, b.Min), Vec3.Min(v.Max, b.Max));
-    }
-
-    public static IEnumerable<OverlayLine> BoxLines(Box3 b, uint color)
-    {
-        var c = new Vec3[8];
-        for (int i = 0; i < 8; i++) c[i] = new Vec3((i & 1) == 0 ? b.Min.X : b.Max.X, (i & 2) == 0 ? b.Min.Y : b.Max.Y, (i & 4) == 0 ? b.Min.Z : b.Max.Z);
-        int[][] edges = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
-        return edges.Select(e => new OverlayLine(c[e[0]], c[e[1]], color));
     }
 
     /// <summary>Counts for the status bar: points and polygons in the foreground, the selection, and polygon types.</summary>

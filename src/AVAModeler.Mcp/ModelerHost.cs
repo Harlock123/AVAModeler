@@ -1,13 +1,15 @@
 using System.Diagnostics;
 using AVAModeler.Core;
+using AVAModeler.Layout;
 using AVAModeler.Tools;
 
 namespace AVAModeler.Mcp;
 
 /// <summary>
-/// Where the MCP tools' work runs. The tool handlers (<see cref="ModelerTools"/>) only ever touch the document through
-/// <see cref="RunAsync{T}"/>, so the same handlers serve the headless server (<see cref="HeadlessHost"/>, its own
-/// document) and the live app (<see cref="LiveHost"/>, the open document, on the UI thread).
+/// Where the MCP tools' work runs. The tool handlers (<see cref="ModelerTools"/>) only ever touch the document and the
+/// scene through <see cref="RunAsync{T}"/> and <see cref="RunSceneAsync{T}"/>, so the same handlers serve the headless
+/// server (<see cref="HeadlessHost"/>, a document and scene of its own) and the live app (<see cref="LiveHost"/>, the
+/// open document and Layout's scene, on the UI thread).
 /// </summary>
 public interface IModelerHost
 {
@@ -20,11 +22,17 @@ public interface IModelerHost
     /// bar.
     /// </summary>
     Task<T> RunAsync<T>(string action, Func<Commands, T> work, CancellationToken cancel = default);
+
+    /// <summary>
+    /// Runs <paramref name="work"/> as <see cref="RunAsync{T}"/> does, with Layout's session (its scene, frame and
+    /// auto-key) beside the command API.
+    /// </summary>
+    Task<T> RunSceneAsync<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel = default);
 }
 
 /// <summary>
-/// The headless host: a document of its own with no window, as <c>AVAModeler --mcp</c> serves it. Calls run on
-/// whichever thread the request came in on, one at a time.
+/// The headless host: a document and a Layout scene of its own with no window, as <c>AVAModeler --mcp</c> serves it.
+/// Calls run on whichever thread the request came in on, one at a time.
 /// </summary>
 public sealed class HeadlessHost(string root, ToolRegistry? registry = null) : IModelerHost
 {
@@ -33,12 +41,18 @@ public sealed class HeadlessHost(string root, ToolRegistry? registry = null) : I
     public string Root { get; } = Path.GetFullPath(root);
     public Commands Commands { get; } = new(new Document(), registry);
 
-    public async Task<T> RunAsync<T>(string action, Func<Commands, T> work, CancellationToken cancel = default)
+    /// <summary>Layout's state: the scene (Layout's default, a camera and a light), its frame and auto-key.</summary>
+    public LayoutSession Layout { get; } = new();
+
+    public Task<T> RunAsync<T>(string action, Func<Commands, T> work, CancellationToken cancel = default) =>
+        RunSceneAsync(action, (c, _) => work(c), cancel);
+
+    public async Task<T> RunSceneAsync<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel = default)
     {
         await _gate.WaitAsync(cancel).ConfigureAwait(false);
         try
         {
-            return work(Commands);
+            return work(Commands, Layout);
         }
         finally
         {
@@ -58,6 +72,9 @@ public interface ILiveModeler
 {
     /// <summary>The command API on the document now open (it changes when a document is opened or made).</summary>
     Commands Commands { get; }
+
+    /// <summary>Layout's state in the app (its scene is the one Layout shows, whether or not Layout is on screen).</summary>
+    LayoutSession Layout { get; }
 
     /// <summary>
     /// Why the app can't take a call just now ("the Move tool is in use", "a dialog box is open"), or null when it can.
@@ -86,7 +103,10 @@ public sealed class LiveHost(IUiThread ui, ILiveModeler modeler, string root) : 
     /// <summary>How often a waiting call looks again.</summary>
     public TimeSpan BusyPoll { get; init; } = TimeSpan.FromMilliseconds(200);
 
-    public async Task<T> RunAsync<T>(string action, Func<Commands, T> work, CancellationToken cancel = default)
+    public Task<T> RunAsync<T>(string action, Func<Commands, T> work, CancellationToken cancel = default) =>
+        RunSceneAsync(action, (c, _) => work(c), cancel);
+
+    public async Task<T> RunSceneAsync<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel = default)
     {
         await _gate.WaitAsync(cancel).ConfigureAwait(false);
         try
@@ -100,7 +120,7 @@ public sealed class LiveHost(IUiThread ui, ILiveModeler modeler, string root) : 
                     if (modeler.Busy is { } why) return (false, default(T), why);
                     try
                     {
-                        var r = work(modeler.Commands);
+                        var r = work(modeler.Commands, modeler.Layout);
                         modeler.Report($"AI agent: {action}.");
                         return (true, r, (string?)null);
                     }

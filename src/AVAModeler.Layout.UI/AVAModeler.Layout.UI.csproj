@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- The Layout workspace: the scene view, items, keyframes and the graph editor, and rendering. -->
+  <!-- The Layout workspace: the scene view, items, keyframes and the graph editor, and rendering. Its state
+       (LayoutSession) lives in AVAModeler.Layout, which has no UI. -->
   <PropertyGroup>
     <RootNamespace>AVAModeler.Layout.UI</RootNamespace>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
@@ -7,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.4" />
+    <ProjectReference Include="..\AVAModeler.Layout\AVAModeler.Layout.csproj" />
     <ProjectReference Include="..\AVAModeler.Rendering\AVAModeler.Rendering.csproj" />
     <ProjectReference Include="..\AVAModeler.Scene\AVAModeler.Scene.csproj" />
     <ProjectReference Include="..\AVAModeler.Formats\AVAModeler.Formats.csproj" />

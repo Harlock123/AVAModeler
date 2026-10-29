@@ -17,7 +17,7 @@ public static class ModelerServer
 
     /// <summary>What every agent is told on connecting: the conventions the tools' descriptions build on.</summary>
     public const string Instructions = """
-        AVA Modeler is a polygon modeler in the style of LightWave Modeler 4 and 5. You build objects with the same tools a person uses in its interface, and look at your work with render_view.
+        AVA Modeler is a polygon modeler in the style of LightWave Modeler 4 and 5, with a Layout workspace for scenes, animation and rendering. You build objects with the same tools a person uses in its interface, and look at your work with render_view.
 
         Conventions (they matter):
         - Units are metres. The space is left-handed, as LightWave's: +X right, +Y up, +Z away from the viewer in the Front view. The Front view looks along +Z (X right, Y up), the Top view looks down along -Y (X right, Z up the picture), the Side view looks along -X (Z right, Y up).
@@ -26,9 +26,19 @@ public static class ModelerServer
         - Each layer is in the foreground (being edited), the background (shown dimmed; the other operand for Boolean, Drill, Path Extrude and Rail Extrude) or off. New geometry goes into the current layer, the lowest-numbered foreground layer.
         - Tools act on the selection in the foreground layers. With nothing selected they act on everything there, as classic Modeler did, so set or clear the selection before each step. Several tools clear the selection when they finish.
         - Rotations are in degrees and right-handed about their axis: a positive angle about Y turns +Z toward +X.
-        - Every change is one undo step (undo takes it back, and in the live app Ctrl+Z does too). A call that fails changes nothing.
+        - Every change to the object is one undo step (undo takes it back, and in the live app Ctrl+Z does too). A call that fails changes nothing.
 
-        A good way to work: list_tools, then describe_tool for the tools you'll use; build with run_tool (or add_points and add_polygons); check counts with get_document and the shape with render_view (perspective, then top, front and side to check alignment); set_surface for colours; save as .lwo.
+        A good way to model: list_tools, then describe_tool for the tools you'll use; build with run_tool (or add_points and add_polygons); check counts with get_document and the shape with render_view (perspective, then top, front and side to check alignment); set_surface for colours; save as .lwo.
+
+        Layout (the scene tools) stages, lights, animates and renders what you model:
+        - The object and the scene are separate. add_object with no file puts the Modeler's object in the scene live (later modeling shows there at once); with file, an object file from the working folder. Objects keep their own coordinates; their position, rotation and scale place them.
+        - Same space and units. Items have position [x, y, z], rotation [heading, pitch, bank] in degrees and scale. Heading turns about +Y (90 faces +X), then pitch about the turned X axis (positive looks down), then bank about the turned Z axis. Cameras look along their +Z axis with +Y up; distant and spot lights shine along their +Z; point lights shine every way. look_at aims anything at a point or item.
+        - A camera's lens is LightWave's zoom factor: zoom = 1 / tan(vertical field of view / 2); 3.2 (the default) is 34.7 degrees high. Light colours (and all scene colours) are 0 to 1; intensity 1 is 100%; range is metres to fade out (0: no falloff); a spot's cone_angle is its half-angle.
+        - Frames run from the scene's first to last frame, 1 to 60 at 30 frames a second by default (set_scene changes them). Channels are keyed at frames and interpolated by TCB splines. set_transform and look_at key when key is true (Layout's Auto key, on by default) and otherwise just set values; the first key on a channel replaces its constant, so key the start frame first, then later frames. get_scene and get_keys show what is keyed.
+        - The scene has no undo in the app. A scene call that fails changes nothing, and undo_scene takes back your own scene calls, one at a time, while nobody else has changed the scene since (not after new_scene or open_scene). undo doesn't touch the scene.
+        - In the live app the scene is the one Layout shows; the window stays where the person has it (they see the scene with F2).
+
+        A good way to make a scene: build the object; add_object; add_light (a key light from above to one side, e.g. distant with look_at the object, and maybe a weaker fill); set the camera with set_transform and look_at the object (or add_camera); render_scene_view (view camera, then top) to check placement; key the motion with set_transform or set_key at the first and later frames (look_at at each key for a camera that should keep watching); check an in-between frame with get_scene; render_scene a frame small and look at it; then larger, render_animation for a run of frames, and save_scene as .avascene.
         """;
 
     /// <summary>The MCP tools, bound to a host.</summary>
@@ -141,6 +151,8 @@ public static class ModelerServer
     {
         public string Root => Path.GetTempPath();
         public Task<T> RunAsync<T>(string action, Func<AVAModeler.Tools.Commands, T> work, CancellationToken cancel = default) =>
+            throw new InvalidOperationException("Not connected to a modeler.");
+        public Task<T> RunSceneAsync<T>(string action, Func<AVAModeler.Tools.Commands, AVAModeler.Layout.LayoutSession, T> work, CancellationToken cancel = default) =>
             throw new InvalidOperationException("Not connected to a modeler.");
     }
 }

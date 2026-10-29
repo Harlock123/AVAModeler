@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using AVAModeler.Core;
+using AVAModeler.Layout;
 using AVAModeler.Tools;
 using static AVAModeler.Mcp.Tests.Calls;
 
@@ -37,6 +38,7 @@ internal sealed class TestUiThread : IUiThread, IDisposable
 internal sealed class TestModeler(TestUiThread ui) : ILiveModeler
 {
     private readonly Commands _commands = new(new Document());
+    private readonly LayoutSession _layout = new();
     public volatile string? BusyWith;
     public readonly ConcurrentQueue<string> Reports = new();
     public int WrongThread;
@@ -51,6 +53,18 @@ internal sealed class TestModeler(TestUiThread ui) : ILiveModeler
     }
 
     public Document Document => _commands.Document;
+
+    public LayoutSession Layout
+    {
+        get
+        {
+            if (Environment.CurrentManagedThreadId != ui.ThreadId) Interlocked.Increment(ref WrongThread);
+            return _layout;
+        }
+    }
+
+    /// <summary>The scene as the test sees it (not counted as a wrong-thread use; read it through the UI thread).</summary>
+    public LayoutSession LayoutUnchecked => _layout;
 
     public string? Busy => BusyWith;
 
@@ -117,6 +131,44 @@ public sealed class LiveTests : IDisposable
     }
 
     [Fact]
+    public async Task Scene_calls_run_on_the_ui_thread_against_layouts_session()
+    {
+        await using var listener = Listen(TimeSpan.FromMilliseconds(400));
+        await using var agent = await Agent();
+        int changes = 0;
+        await _ui.InvokeAsync(() => { _app.LayoutUnchecked.Changed += () => changes++; return 0; });
+        await agent.Client.Json("run_tool", new { name = "Box" });
+        var obj = await agent.Client.Json("add_object", new { });
+        Assert.Equal("the Modeler's object (live)", (string?)obj["source"]);
+        await agent.Client.Json("add_light", new { type = "point", name = "Bulb", position = new[] { 0.0, 2, 0 } });
+        await agent.Client.Json("set_transform", new { item = "Camera", frame = 10, position = new[] { 1.0, 1, -4 }, key = true });
+        // Layout's session (the one its views draw) has them, and was told.
+        var (names, document, x) = await _ui.InvokeAsync(() =>
+        {
+            var s = _app.LayoutUnchecked.Scene;
+            return (s.Items.Select(i => i.Name).ToList(), s.Objects.Single().Document, s.CurrentCamera!.PositionAt(10).X);
+        });
+        Assert.Equal(["Camera", "Light", "Modeler object", "Bulb"], names);
+        Assert.Same(_app.Document, document);
+        Assert.Equal(1, x);
+        Assert.True(Volatile.Read(ref changes) >= 3);
+        Assert.Contains("AI agent: added a light.", _app.Reports);
+        // Pictures are drawn from a copy, away from the UI thread.
+        var view = await agent.Client.Call("render_scene_view", new { width = 64 });
+        Assert.True(Pngs.Inspect(Pngs.Of(view)).Colours > 4);
+        var frame = await agent.Client.Call("render_scene", new { width = 32, samples = 1 });
+        Assert.True(Pngs.Inspect(Pngs.Of(frame)).Colours > 2);
+        // The person changes the scene: the agent's earlier steps aren't undone over it.
+        await _ui.InvokeAsync(() => _app.LayoutUnchecked.Scene.AddNull("The person's"));
+        Assert.Contains("has changed since", await agent.Client.Fails("undo_scene"));
+        // While the person is busy, scene calls wait too.
+        _app.BusyWith = "a dialog box is open in the app";
+        Assert.Contains("a dialog box is open", await agent.Client.Fails("add_null", new { }));
+        _app.BusyWith = null;
+        Assert.Equal(0, _app.WrongThread);
+    }
+
+    [Fact]
     public async Task A_call_waits_while_the_person_is_busy_then_says_why()
     {
         await using var listener = Listen(TimeSpan.FromMilliseconds(600));
@@ -139,7 +191,7 @@ public sealed class LiveTests : IDisposable
     {
         await using var agent = await Agent(TimeSpan.FromMilliseconds(300));
         // The tools are listed even before the app is there.
-        Assert.Equal(30, (await agent.Client.ListToolsAsync(cancellationToken: Cancel)).Count);
+        Assert.Equal(52, (await agent.Client.ListToolsAsync(cancellationToken: Cancel)).Count);
         var message = await agent.Client.Fails("get_document");
         Assert.Contains("No AVA Modeler is taking AI agents", message);
         Assert.Contains("Allow AI Agents", message);

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using AVAModeler.Layout.UI;
 using AVAModeler.Mcp;
 using AVAModeler.Modeler.UI;
 using AVAModeler.Rendering;
@@ -112,6 +113,58 @@ public class LiveAgentTests
             Assert.Empty(w.Session.Document.Current.Mesh.Points);
             Agent.Json(client, "run_tool", new { name = "Box" });
             Assert.Equal(8, w.Session.Document.Current.Mesh.Points.Count);
+            Wait(client.DisposeAsync().AsTask());
+        }
+        finally
+        {
+            Wait(w.Agents.StopAsync());
+        }
+    }
+
+    [AvaloniaFact]
+    public void An_agent_stages_a_scene_in_the_open_apps_layout()
+    {
+        var w = Ui.Open();
+        string pipe = Agent.Pipe();
+        Assert.Null(w.Agents.Start(pipe));
+        try
+        {
+            var client = Agent.Connect(pipe, Path.GetTempPath());
+            Agent.BuildATable(client);
+            // The scene calls work on Layout's session even while the Modeler is on screen, and don't switch to Layout.
+            var obj = Agent.Json(client, "add_object", new { name = "Table" });
+            Assert.Equal("the Modeler's object (live)", (string?)obj["source"]);
+            Agent.Json(client, "add_light", new { type = "spot", name = "Warm", position = new[] { 2.0, 3, -2 }, look_at = new[] { 0, 0.4, 0 } });
+            Agent.Json(client, "set_transform", new { item = "Camera", frame = 1, position = new[] { 3.0, 1.5, -3 }, key = true });
+            Agent.Json(client, "look_at", new { item = "Camera", target = "Table", frame = 1, key = true });
+            Assert.Same(w.Modeler, w.Content);
+            Assert.Contains("AI agent: aimed an item", w.Session.Status);
+            var scene = w.LayoutSession.Scene;
+            Assert.Equal(["Camera", "Light", "Table", "Warm"], scene.Items.Select(i => i.Name));
+            Assert.Same(w.Session.Document, scene.Objects.Single().Document);
+
+            // Turning to Layout shows the agent's scene, without adding the object a second time, through its camera.
+            w.ShowLayout();
+            var layout = (LayoutWorkspace)w.Content!;
+            Assert.Single(layout.Session.Scene.Objects);
+            layout.View.Mode = LayoutViewMode.Camera;
+            Ui.Pump();
+            w.CaptureRenderedFrame();
+            var px = layout.View.Renderer.Pixels;
+            Assert.True(px.Distinct().Count() > 20, "Layout's view looks blank.");
+            Assert.Contains("AI agent", layout.Session.Status);
+
+            // A change the agent makes shows in Layout's item list at once.
+            Agent.Json(client, "set_item", new { item = "Light", name = "Fill", parent = "Table" });
+            Assert.Contains("  Light: Fill", layout.ListedItems);
+
+            // The person changes the scene; then the agent's steps before can't be undone over it.
+            layout.Session.Scene.AddNull("Mine");
+            Assert.Contains("has changed since", Agent.Text(Agent.Call(client, "undo_scene")));
+            // The agent's later changes still show at once.
+            Agent.Json(client, "set_item", new { item = "Warm", intensity = 2.0 });
+            Assert.Equal(2, ((AVAModeler.Scene.LightItem)scene.Find("Warm")!).Intensity.Evaluate(1));
+            Assert.Equal("changed an item", (string?)Agent.Json(client, "undo_scene")["undone"]);
             Wait(client.DisposeAsync().AsTask());
         }
         finally

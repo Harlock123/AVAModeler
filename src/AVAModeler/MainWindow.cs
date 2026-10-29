@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using AVAModeler.Core;
 using AVAModeler.Formats;
 using AVAModeler.Geometry;
+using AVAModeler.Layout;
 using AVAModeler.Layout.UI;
 using AVAModeler.Mcp;
 using AVAModeler.Modeler.UI;
@@ -21,6 +22,9 @@ public sealed class MainWindow : Window
     public ModelerWorkspace Modeler { get; }
     private LayoutWorkspace? _layout;
     private readonly LayoutSession _layoutSession = new();
+
+    /// <summary>Layout's state, there from the start (agents can work on the scene before Layout is first shown).</summary>
+    internal LayoutSession LayoutSession => _layoutSession;
     private readonly DispatcherTimer _autosave = new();
 
     /// <summary>AI agents' live access (MCP), open while the preference allows it.</summary>
@@ -44,7 +48,7 @@ public sealed class MainWindow : Window
         Session = new ModelerSession(prefs, registry);
         Modeler = new ModelerWorkspace(Session);
         Modeler.ShowLayout += ShowLayout;
-        Agents = new LiveAgents(Session);
+        Agents = new LiveAgents(Session, _layoutSession);
         Modeler.AgentsChanged += SyncAgents;
         Width = 1400;
         Height = 900;

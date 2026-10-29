@@ -18,7 +18,7 @@ namespace AVAModeler.Mcp;
 /// errors (<see cref="McpException"/>) with a message that says what to do instead.
 /// </summary>
 /// <remarks>The parameter names are the JSON names agents see, hence snake_case.</remarks>
-public sealed class ModelerTools(IModelerHost host)
+public sealed partial class ModelerTools(IModelerHost host)
 {
     private Workspace? _workspace;
 
@@ -588,7 +588,7 @@ public sealed class ModelerTools(IModelerHost host)
     internal static string Explain(Exception e) => e switch
     {
         ArgumentException or InvalidOperationException or FormatException or NotSupportedException or IOException
-            or UnauthorizedAccessException or MacroException or ModelerBusyException or JsonException => e.Message,
+            or UnauthorizedAccessException or MacroException or ModelerBusyException or JsonException or InvalidDataException => e.Message,
         _ => $"Something went wrong ({e.GetType().Name}): {e.Message}",
     };
 }

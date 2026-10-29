@@ -134,6 +134,8 @@ internal sealed class Bench : IDisposable
     public ModelerTools Tools { get; }
     public Commands Commands => Host.Commands;
     public Document Doc => Host.Commands.Document;
+    public AVAModeler.Layout.LayoutSession Layout => Host.Layout;
+    public AVAModeler.Scene.Scene Scene => Host.Layout.Scene;
 
     public Bench(ToolRegistry? registry = null)
     {

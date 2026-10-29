@@ -200,7 +200,7 @@ internal static class Census
                     : $"There's no {what} {i}: the current layer's {what}s are numbered 0 to {count - 1}.");
     }
 
-    public static double Round(double v, int digits = 6) => Math.Round(v, digits);
+    public static double Round(double v, int digits = 6) => Math.Round(v, digits) + 0.0; // + 0.0 turns -0 into 0
 
     public static JsonArray Vec(Vec3 v) => new(Round(v.X), Round(v.Y), Round(v.Z));
 

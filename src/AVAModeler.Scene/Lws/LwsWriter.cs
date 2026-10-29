@@ -6,8 +6,8 @@ namespace AVAModeler.Scene;
 
 /// <summary>
 /// Writes a scene as a LightWave version 3 scene file (.lws). Objects are written by their
-/// <see cref="ObjectItem.SourcePath"/> (an object without one is written by its name, with a warning), so the meshes
-/// must be saved separately. Morphs, displacements, visibility and the safe areas have no place in the format and are
+/// <see cref="ObjectItem.SourcePath"/>, or else their document's file (an object with neither is written by its name,
+/// with a warning), so the meshes must be saved separately. Morphs, displacements, visibility and the safe areas have no place in the format and are
 /// left out.
 /// </summary>
 public static class LwsWriter
@@ -103,7 +103,7 @@ public static class LwsWriter
 
         private void WriteObject(ObjectItem o)
         {
-            string path = o.SourcePath ?? "";
+            string path = o.SourcePath ?? o.Document?.FilePath ?? "";
             if (path.Length == 0)
             {
                 path = o.Name + ".lwo";

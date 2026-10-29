@@ -89,12 +89,21 @@ public sealed class LayoutWorkspace : DockPanel
         };
         session.Changed += Refresh;
         session.SceneReplaced += () => { RefreshItems(); View.Fit(); };
+        session.ChangedElsewhere += () =>
+        {
+            RefreshItems();
+            // Not while the person is typing in a setting: that would throw their typing away.
+            if (!_properties.IsKeyboardFocusWithin) ShowProperties();
+        };
         AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(View.Fit, DispatcherPriority.Background);
         RefreshItems();
         Refresh();
     }
 
     private Window? Owner => TopLevel.GetTopLevel(this) as Window;
+
+    /// <summary>The item list as shown (kind and name, indented under parents).</summary>
+    public IReadOnlyList<string> ListedItems => _items.ItemsSource as IReadOnlyList<string> ?? [];
 
     private Control Toolbar()
     {

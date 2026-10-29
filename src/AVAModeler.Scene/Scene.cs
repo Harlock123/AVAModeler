@@ -20,6 +20,8 @@ public sealed class Scene
 {
     private readonly List<SceneItem> _items = [];
     private CameraItem? _camera;
+    private int _quiet;
+    private bool _missed;
 
     public double FramesPerSecond = 30;
     public int FirstFrame = 1, LastFrame = 60, FrameStep = 1;
@@ -50,8 +52,37 @@ public sealed class Scene
     public void Notify()
     {
         Version++;
-        Changed?.Invoke();
+        if (_quiet > 0) _missed = true;
+        else Changed?.Invoke();
     }
+
+    /// <summary>
+    /// Makes many changes count as one: <see cref="Changed"/> is held back while <paramref name="change"/> runs, then
+    /// raised once if anything changed (<see cref="Version"/> still goes up with each).
+    /// </summary>
+    public void Batch(Action change)
+    {
+        _quiet++;
+        try
+        {
+            change();
+        }
+        finally
+        {
+            if (--_quiet == 0 && _missed)
+            {
+                _missed = false;
+                Changed?.Invoke();
+            }
+        }
+    }
+
+    /// <summary>The scene as it is now, to put back with <see cref="SceneSnapshot.Restore"/>.</summary>
+    public SceneSnapshot Snapshot() => new(this);
+
+    // For SceneSnapshot: the item list and current camera as they are, and putting them back.
+    internal List<SceneItem> ItemList => _items;
+    internal CameraItem? CameraField { get => _camera; set => _camera = value; }
 
     /// <summary>The camera to look and render through: the one set, or else the first camera.</summary>
     public CameraItem? CurrentCamera
@@ -129,6 +160,80 @@ public sealed class Scene
         }
         if (_camera != null && gone.Contains(_camera)) _camera = null;
         Notify();
+    }
+
+    /// <summary>
+    /// A copy of the scene that shares nothing that can change with it, so it can be rendered on another thread while
+    /// this one is edited: the settings, every item with its channels and settings, the parents and the current
+    /// camera. Each object's document is copied once by <paramref name="copyDocument"/> (shared, as it is, if that is
+    /// null); morph target meshes are shared, as nothing edits them in place.
+    /// </summary>
+    public Scene Copy(Func<Document, Document>? copyDocument = null)
+    {
+        var s = new Scene
+        {
+            FramesPerSecond = FramesPerSecond, FirstFrame = FirstFrame, LastFrame = LastFrame, FrameStep = FrameStep,
+            AmbientColor = AmbientColor, AmbientIntensity = AmbientIntensity, BackgroundColor = BackgroundColor,
+            GradientBackground = GradientBackground, GradientTop = GradientTop, GradientBottom = GradientBottom,
+            Fog = Fog, FogMinDistance = FogMinDistance, FogMaxDistance = FogMaxDistance, FogColor = FogColor,
+        };
+        var docs = new Dictionary<Document, Document>(ReferenceEqualityComparer.Instance);
+        var map = new Dictionary<SceneItem, SceneItem>();
+        foreach (var item in _items)
+        {
+            SceneItem c;
+            switch (item)
+            {
+                case ObjectItem o:
+                    Document? doc = null;
+                    if (o.Document is { } d && !docs.TryGetValue(d, out doc)) docs[d] = doc = copyDocument?.Invoke(d) ?? d;
+                    var obj = new ObjectItem(o.Name, doc, o.Layer)
+                    {
+                        SourcePath = o.SourcePath, CastShadows = o.CastShadows, ReceiveShadows = o.ReceiveShadows, BoneFalloffExponent = o.BoneFalloffExponent,
+                    };
+                    foreach (var m in o.Morphs) obj.AddMorph(new MorphTarget(m.Name, m.Target, m.Weight.Clone()));
+                    foreach (var x in o.Displacements)
+                    {
+                        var w = new WaveDisplacement
+                        {
+                            Shape = x.Shape, Direction = x.Direction, Along = x.Along, Center = x.Center,
+                            Wavelength = x.Wavelength, Speed = x.Speed, Phase = x.Phase,
+                        };
+                        w.Amplitude.CopyFrom(x.Amplitude);
+                        obj.AddDisplacement(w);
+                    }
+                    c = obj;
+                    break;
+                case LightItem l:
+                    var light = new LightItem(l.Name, l.Type) { Color = l.Color, Range = l.Range, ConeAngle = l.ConeAngle, EdgeAngle = l.EdgeAngle, Shadows = l.Shadows };
+                    light.Intensity.CopyFrom(l.Intensity);
+                    c = light;
+                    break;
+                case CameraItem cam:
+                    var camera = new CameraItem(cam.Name) { Width = cam.Width, Height = cam.Height, PixelAspect = cam.PixelAspect, ActionSafe = cam.ActionSafe, TitleSafe = cam.TitleSafe };
+                    camera.Zoom.CopyFrom(cam.Zoom);
+                    c = camera;
+                    break;
+                case Bone b:
+                    c = new Bone(b.Name, (ObjectItem)map[b.Owner])
+                    {
+                        RestPosition = b.RestPosition, RestRotation = b.RestRotation, RestLength = b.RestLength, Strength = b.Strength, Active = b.Active,
+                    };
+                    break;
+                default:
+                    c = new NullItem(item.Name);
+                    break;
+            }
+            c.Pivot = item.Pivot;
+            c.Visible = item.Visible;
+            for (int i = 0; i < 9; i++) c.Channels[i].CopyFrom(item.Channels[i]);
+            s.Add(c);
+            map[item] = c;
+        }
+        foreach (var item in _items)
+            if (item.Parent is { } p) map[item].RestoreParent(map[p]);
+        if (_camera != null && map.TryGetValue(_camera, out var current)) s._camera = (CameraItem)current;
+        return s;
     }
 
     /// <summary>The first item with a name, or null.</summary>

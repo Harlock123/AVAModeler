@@ -6,6 +6,7 @@ crossed orbits: modeled in the Modeler, then staged, lit and animated in Layout,
 
     python3 samples/mcp/carbon_atom.py            # headless: saves carbon.lwo, carbon.avascene and carbon.png here
     python3 samples/mcp/carbon_atom.py --live     # in the open app (Macros › Allow AI Agents on), to watch it build
+    python3 samples/mcp/carbon_atom.py --movie    # also renders the 4-second loop as carbon.mp4 (needs ffmpeg)
 
 Live, it works on the open object and scene, so it stops if the object already has work in it. Nothing is saved
 live unless --save is given; press F2 for Layout and Play to see the electrons go round.
@@ -15,15 +16,18 @@ below. --app gives the command that starts AVA Modeler; by default the Debug bui
 """
 import argparse
 import base64
+import glob
 import json
 import math
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+FRAMES = 120  # 4 seconds at 30 frames a second
 DEFAULT_APP = ["dotnet", os.path.join(REPO, "src", "AVAModeler", "bin", "Debug", "net10.0", "AVAModeler.dll")]
 
 
@@ -113,17 +117,19 @@ def model(s):
 
 def stage(s):
     """Layout: the nucleus turning slowly, each orbit spinning in its own tilted plane, lights, camera and backdrop."""
-    s.call("set_scene", first_frame=1, last_frame=120, fps=30, gradient=True, gradient_top=[12, 16, 40],
+    s.call("set_scene", first_frame=1, last_frame=FRAMES, fps=30, gradient=True, gradient_top=[12, 16, 40],
            gradient_bottom=[0, 0, 0], ambient_intensity=0.15, frame=1)
 
+    # Everything repeats every 120 frames, so the animation loops without a jump: the nucleus turns once (frame 120 is
+    # a frame's turn short of 360, which frame 1 then completes), and each orbit takes a whole number of turns.
     s.call("add_object", layer=1, name="Nucleus")
-    for frame, heading in ((1, 0), (120, 90)):
+    for frame, heading in ((1, 0), (FRAMES, 360 * (FRAMES - 1) / FRAMES)):
         s.call("set_key", item="Nucleus", channel="heading", frame=frame, value=heading, linear=True)
     s.call("set_end_behavior", item="Nucleus", channel="heading", post="repeat")
 
     # An orbit hangs from a Spin null that turns about its own Y axis, under a Tilt null that tips the plane: three
     # planes 120 degrees apart, each 62 degrees from level. Linear keys and a repeating end keep each spin steady.
-    for k, (layer, period, phase) in enumerate(((2, 30, 0), (3, 24, 60), (4, 36, 120)), start=1):
+    for k, (layer, period, phase) in enumerate(((2, 30, 0), (3, 24, 60), (4, 40, 120)), start=1):
         s.call("add_null", name=f"Tilt {k}", rotation=[(k - 1) * 120, 62, 0])
         s.call("add_null", name=f"Spin {k}", parent=f"Tilt {k}")
         s.call("add_object", layer=layer, name=f"Orbit {k}", parent=f"Spin {k}")
@@ -137,10 +143,37 @@ def stage(s):
     s.call("look_at", item="Camera", point=[0, 0, 0], frame=1, key=False)
 
 
+def movie(s, out, width, height, samples):
+    """
+    Renders every frame into frames/ and joins them into carbon.mp4 with ffmpeg. render_animation does a bounded
+    amount of work per call (width × height × samples × frames), so the frames go in batches that each fit.
+    """
+    budget = 20_000_000
+    batch = max(1, budget // (width * height * samples))
+    for first in range(1, FRAMES + 1, batch):
+        last = min(FRAMES, first + batch - 1)
+        print(f"Rendering frames {first} to {last} of {FRAMES}...")
+        s.call("render_animation", folder="frames", first=first, last=last, width=width, height=height,
+               samples=samples, overwrite=True)
+    frames = sorted(glob.glob(os.path.join(out, "frames", "frame*.png")))
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        print(f"The {len(frames)} frames are in {os.path.join(out, 'frames')}; install ffmpeg to join them into a movie.")
+        return
+    subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-framerate", "30", "-start_number", "1",
+                    "-i", os.path.join(out, "frames", "frame%04d.png"),
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart",
+                    os.path.join(out, "carbon.mp4")], check=True)
+    print(f"Saved carbon.mp4 ({len(frames)} frames, {len(frames) / 30:.0f} seconds) in {out}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--live", action="store_true", help="build in the open app (Macros › Allow AI Agents on)")
     parser.add_argument("--save", action="store_true", help="live: also save the object, scene and a render")
+    parser.add_argument("--movie", action="store_true", help="also render the animation as carbon.mp4 (needs ffmpeg)")
+    parser.add_argument("--movie-size", default="960x540", help="the movie's width x height (default 960x540)")
+    parser.add_argument("--movie-samples", type=int, default=4, help="rays a pixel for the movie, 1 to 4 (default 4)")
     parser.add_argument("--out", default=".", help="the folder to save into (default: the current folder)")
     parser.add_argument("--pause", type=float, help="seconds between steps (default 0.6 live, 0 headless)")
     parser.add_argument("--app", help="the command that starts AVA Modeler (default: this repo's Debug build)")
@@ -170,8 +203,11 @@ def main():
         with open(os.path.join(out, "carbon.png"), "wb") as f:
             f.write(s.call("render_scene", frame=10, width=960, height=540, samples=4))
         print(f"Saved carbon.lwo, carbon.avascene and carbon.png in {out}")
-    else:
+    elif not args.movie:
         print("Built. Press F2 for Layout and Play to watch the electrons.")
+    if args.movie:
+        width, height = (int(n) for n in args.movie_size.lower().split("x"))
+        movie(s, out, width, height, args.movie_samples)
     s.close()
 
 

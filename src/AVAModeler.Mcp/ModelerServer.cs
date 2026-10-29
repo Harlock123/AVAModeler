@@ -38,8 +38,14 @@ public static class ModelerServer
         - Frames run from the scene's first to last frame, 1 to 60 at 30 frames a second by default (set_scene changes them). Channels are keyed at frames and interpolated by TCB splines. set_transform and look_at key when key is true (Layout's Auto key, on by default) and otherwise just set values; the first key on a channel replaces its constant, so key the start frame first, then later frames. get_scene and get_keys show what is keyed.
         - The scene has its own undo history, Layout's, separate from the object's: each scene call that changes it is one step ("Agent: …"), undo_scene and redo_scene step through it (in the live app it's shared with the person, whose Ctrl+Z in Layout undoes your steps too), and new_scene or open_scene clear it. A scene call that fails changes nothing and leaves no step. undo and redo don't touch the scene.
         - In the live app the scene is the one Layout shows; the window stays where the person has it (they see the scene with F2).
+        - Objects deform in their own coordinates: morphs first, then bones, then displacements.
+          Morphs: add_morph makes a target from a copy of a Modeler layer with the object's points in the same order (point i moves toward the target's point i). Copy the base to an empty layer with copy_layer, change the copy only with tools that move points, and put the object in the scene by its own layer (add_object layer 1: without a layer every non-empty layer is merged, the target's too). Its weight is the channel morph.<name> (0 the base shape, 1 the target): key it with set_key.
+          Displacements: add_displacement adds a wave (straight crests travelling along an axis) or a ripple (circles round a centre) that moves points along one axis; its amplitude is the channel displacement.<number>.amplitude, numbered from 1.
+          Skelegons: 2-point polygons (add_points, add_polygons) on a surface whose name starts with "Skelegon" (e.g. "Skelegon_Arm"); the first point is the bone's base, the second its tip, and one whose base is on another's tip becomes its child. skelegons_to_bones turns them into bones at rest there; key the bones' rotation to bend the object; set_item changes a bone's rest pose (rest_position, rest_rotation, rest_at_frame for Rest Here).
 
-        A good way to make a scene: build the object; add_object; add_light (a key light from above to one side, e.g. distant with look_at the object, and maybe a weaker fill); set the camera with set_transform and look_at the object (or add_camera); render_scene_view (view camera, then top) to check placement; key the motion with set_transform or set_key at the first and later frames (look_at at each key for a camera that should keep watching); check an in-between frame with get_scene; render_scene a frame small and look at it; then larger, render_animation for a run of frames, and save_scene as .avascene.
+        A good way to make a scene: build the object; add_object; add_light (a key light from above to one side, e.g. distant with look_at the object, and maybe a weaker fill); set the camera with set_transform and look_at the object (or add_camera); render_scene_view (view camera, then top) to check placement; key the motion with set_transform or set_key at the first and later frames (look_at at each key for a camera that should keep watching); check an in-between frame with get_scene; render_scene a frame small and look at it; then larger, render_animation for a run of frames (with movie "mp4" or "gif" to join them, if ffmpeg is installed), and save_scene as .avascene.
+
+        The server's prompts are saved recipes (a lathed vase, a table, a chess pawn, three-point lighting, a turntable render, a bouncing ball, the carbon atom, a morph and a waving flag): step-by-step plans with the exact tool calls, to follow or adapt.
         """;
 
     /// <summary>The MCP tools, bound to a host.</summary>
@@ -50,6 +56,12 @@ public static class ModelerServer
             if (method.GetCustomAttribute<McpServerToolAttribute>() != null)
                 yield return McpServerTool.Create(method, target);
     }
+
+    /// <summary>The saved recipes (<see cref="Recipes"/>) as MCP prompts.</summary>
+    public static IEnumerable<McpServerPrompt> Prompts() =>
+        typeof(Recipes).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.GetCustomAttribute<McpServerPromptAttribute>() != null)
+            .Select(m => McpServerPrompt.Create(m, target: null));
 
     /// <summary>The tools' MCP definitions (names, descriptions, input schemas), without a host to run them.</summary>
     public static IList<Tool> Definitions() => [.. _definitions.Value];
@@ -81,6 +93,8 @@ public static class ModelerServer
             }
         });
         foreach (var tool in Tools(host)) options.ToolCollection.Add(tool);
+        options.PromptCollection = [];
+        foreach (var prompt in Prompts()) options.PromptCollection.Add(prompt);
         return options;
     }
 

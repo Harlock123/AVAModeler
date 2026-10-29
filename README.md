@@ -124,7 +124,8 @@ phases 0 to 7 and Layout phases L1 to L6.
 
 - **An MCP server**: AI agents such as Claude Code drive AVA Modeler through the Model Context Protocol, with the
   same tools and settings a person uses, each step one undo step. They model, and in Layout they stage, light,
-  animate and ray-trace scenes. `AVAModeler --mcp` works headless on a model and scene of its own; with Macros › Allow
+  animate (morphs, displacements and bones from skelegons included) and ray-trace scenes, and render animations
+  into MP4 and GIF movies. Saved recipes (MCP prompts) give them step-by-step plans to start from. `AVAModeler --mcp` works headless on a model and scene of its own; with Macros › Allow
   AI Agents on, an agent can also build in the open window while you watch. See
   [Driving AVA Modeler from an AI agent](#driving-ava-modeler-from-an-ai-agent).
 
@@ -268,6 +269,7 @@ Or, for everyone working in a folder, in its `.mcp.json`:
 | `add_points`, `add_polygons` | Builds geometry point by point in the current layer. |
 | `set_selection_mode`, `select_points`, `select_polygons`, `select_box`, `select_all`, `select_none`, `select_invert`, `select_connected` | The selection. |
 | `set_layers` | The foreground and background layers. |
+| `copy_layer` | Copies a layer into an empty one, points in the same order: the start of a morph target. |
 | `undo`, `redo`, `new`, `open`, `save` | The history and files. |
 | `set_surface`, `set_texture`, `remove_textures`, `make_uvs`, `set_uv_map` | Surfaces, image textures and UV maps. |
 | `run_lua` | Runs a Lua macro as one undo step, returning what it printed. |
@@ -283,18 +285,27 @@ The Layout tools:
 | `new_scene`, `open_scene`, `save_scene` | Scene files in the working folder: the native `.avascene` (meshes inside it by default) and LightWave `.lws` (objects by their files; the warnings say what it drops). |
 | `add_object` | The Modeler's object, live (later modeling shows in the scene), one of its layers, or an object file. |
 | `add_light`, `add_camera`, `add_null`, `add_bone`, `remove_item` | Distant, point and spot lights with colour, intensity, cone, range and shadows; cameras by zoom factor or field of view; nulls; bones that bend an object. Lights and cameras can be aimed at a point as they're added. |
-| `set_item` | An item's name, parent, pivot, visibility and its own settings (a light's, a camera's, an object's shadows, a bone's). |
+| `set_item` | An item's name, parent, pivot, visibility and its own settings (a light's, a camera's, an object's shadows, a bone's rest pose, strength and activity, with Rest Here and resetting its pose). |
+| `add_morph`, `set_morph`, `remove_morph` | Morph targets: a copy of a Modeler layer with the object's points in the same order (a mismatch is refused, saying why), blended by a weight channel, `morph.<name>`. |
+| `add_displacement`, `set_displacement`, `remove_displacement` | Wave and ripple displacements: points move along an axis by a travelling sine wave, its amplitude a channel, `displacement.<number>.amplitude`. |
+| `skelegons_to_bones` | Layout's Skelegons → Bones: a bone for each 2-point polygon on a "Skelegon…" surface, chained where one's base is on another's tip. |
 | `set_transform`, `look_at` | Position, rotation and scale at a frame, as keys or as plain values (the rule is in the tool's description); turning anything to face a point or another item. |
 | `set_key`, `delete_key`, `set_end_behavior` | One key on one channel with tension, continuity, bias and the linear flag; removing keys; what a channel does before its first key and after its last. |
 | `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame. |
 | `undo_scene`, `redo_scene` | Layout's undo and redo, on the history the person's Ctrl+Z uses: each scene call is one step ("Agent: …"), and the person's steps can be undone too. |
 | `render_scene_view` | A quick picture as Layout's view draws it, through the camera or from above, the front, the side or an orbit, with the lights, cameras, nulls and bones drawn; it also says where each item landed in the picture. |
-| `render_scene`, `render_animation` | A ray-traced frame through a camera; or a run of frames written as numbered PNGs in the working folder, with a contact sheet back. Both are bounded in size and time. |
+| `render_scene`, `render_animation` | A ray-traced frame through a camera; or a run of frames written as numbered PNGs in the working folder, with a contact sheet back, and optionally joined into an MP4 or a looping GIF (with ffmpeg). Both are bounded in size and time. |
 
 The agent is told the conventions when it connects: metres; LightWave's left-handed space with +X right, +Y up and +Z
 away from you in the Front view; faces seen from the side where their points run clockwise; layers numbered 1 to 10
 as the app's buttons show them, and points and polygons counted from 0; colours as [r, g, b] from 0 to 255
-everywhere, for surfaces, lights and the scene alike. A mistake (an unknown tool, a bad value, an index that isn't there) comes back as an error
+everywhere, for surfaces, lights and the scene alike. Scene channels are named as `get_keys` lists them:
+`position.x` to `scale.z`, `heading`, `pitch`, `bank`, a light's `intensity`, a camera's `zoom`, an object's morph
+weights (`morph.Smile`: 0 is the base shape, 1 the target) and displacement amplitudes (`displacement.1.amplitude`,
+numbered from 1). A morph target is made from a copy of the base layer (`copy_layer`) changed only by moving points, and
+the object goes in the scene by its own layer, so the target's layer isn't merged into it. A skelegon is a 2-point
+polygon on a surface whose name starts with "Skelegon": its first point is the bone's base, its second the tip, and
+one whose base is on another's tip becomes its child. A mistake (an unknown tool, a bad value, an index that isn't there) comes back as an error
 that says what was wrong, and changes nothing.
 
 A short session, as an agent might run it (the table in the picture above):
@@ -347,6 +358,24 @@ ffmpeg into the MP4 and the looping GIF below.
 
 ![The carbon atom sample: electrons whizzing round the nucleus on three crossed orbits, ray-traced](samples/mcp/carbon.gif)
 
+### Recipes (MCP prompts)
+
+The server also offers saved recipes as MCP prompts (in Claude Code, `/` lists them as
+`/mcp__avamodeler__lathed_vase` and so on): short step-by-step plans, each step with its exact tool call, that take
+arguments such as a size, a colour or a frame count. The tests follow every one, call by call, so they stay correct.
+
+| Prompt | What it makes |
+|---|---|
+| `lathed_vase` | A vase: a profile drawn with `add_points` and `add_polygons`, lathed round Y. |
+| `table` | A table: a lathed leg cloned to the four corners, under a box top. |
+| `chess_pawn` | A chess pawn, lathed from one profile. |
+| `three_point_lighting` | Key, fill and rim lights aimed at an item. |
+| `turntable_render` | The object on a null turning 360° over N frames, a camera, three-point lighting, and `render_animation` with a movie. |
+| `bouncing_ball` | A ball bouncing on a floor, with squash and stretch through its scale keys. |
+| `carbon_atom` | The carbon atom of `samples/mcp/carbon_atom.py`. |
+| `morph_smile` | A smiley badge whose mouth smiles, through a morph keyed on `morph.Smile`. |
+| `wave_flag` | A flag waving on its pole, through a travelling wave displacement with a keyed amplitude. |
+
 ## Building and testing
 
 ```bash
@@ -355,7 +384,7 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 541 tests cover every layer:
+It needs the .NET 10 SDK. 560 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
@@ -366,7 +395,7 @@ It needs the .NET 10 SDK. 541 tests cover every layer:
 | Tools | 62 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
 | Scene | 144 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
 | Layout | 27 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed) |
-| Mcp | 42 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
+| Mcp | 61 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
 | UI | 47 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
@@ -422,8 +451,9 @@ Layout reuses them.
   which item is chosen. A morph target's mesh is kept by reference, so to be undoable it is replaced rather than
   edited in place. The depth is a fixed 100 steps (the Undo Levels preference is the Modeler's).
 - **AI agents (MCP)**: Points and Drag work only with the mouse, so agents use `add_points` and Move instead.
-  `undo_scene` can't go back across `new_scene` or `open_scene`, which clear the scene's history. Agents can't make
-  morphs, displacements or skelegon bones, and `render_scene_view`'s camera view, like Layout's, doesn't show the
+  `undo_scene` can't go back across `new_scene` or `open_scene`, which clear the scene's history.
+  `render_animation`'s movie joins only that call's frames, so a movie longer than its limit (120 frames, 20 million
+  rays) needs ffmpeg run by hand on the frames. `render_scene_view`'s camera view, like Layout's, doesn't show the
   camera's bank. `render` uses a fixed camera rig and
   lights round the object. Only one AVA Modeler per user takes agents at a time. Inside `run_lua`, `undo()` and
   `redo()` aren't allowed (the macro is one undo step) and a macro stops after 30 seconds unless given longer. Texture

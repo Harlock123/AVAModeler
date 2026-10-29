@@ -40,14 +40,14 @@ public sealed partial class ModelerTools
     // ───────────────────────────── reading the scene ─────────────────────────────
 
     [McpServerTool(Name = "get_scene", ReadOnly = true, Idempotent = true)]
-    [Description("Describes Layout's scene: the frame range, frames per second, current frame, current camera, auto-key, ambient light, background and fog; then every item (object, null, light, camera, bone) with its #index, kind, name, parent, visibility, position (metres), rotation [heading, pitch, bank] (degrees), scale, which channels are animated, and its own settings (a light's type, colour, intensity, direction; a camera's zoom, field of view and frame size; an object's source, point and polygon counts and world bounds), all at one frame. Also any warnings (files that couldn't be loaded, missing images) and the scene's undo history (undo_scene: its depth, and what undo_scene and redo_scene would do next).")]
+    [Description("Describes Layout's scene: the frame range, frames per second, current frame, current camera, auto-key, ambient light, background and fog; then every item (object, null, light, camera, bone) with its #index, kind, name, parent, visibility, position (metres), rotation [heading, pitch, bank] (degrees), scale, which channels are animated, and its own settings (a light's type, colour, intensity, direction; a camera's zoom, field of view and frame size; an object's source, point and polygon counts, world bounds, bones, morphs (name, weight channel and weight) and displacements (numbered from 1, with their settings and amplitude)), all at one frame. Also any warnings (files that couldn't be loaded, missing images) and the scene's undo history (undo_scene: its depth, and what undo_scene and redo_scene would do next).")]
     public Task<string> GetScene(
         [Description("The frame to describe positions and values at (default: the current frame).")] double? frame = null,
         CancellationToken cancel = default) =>
         DoScene("read the scene", (c, l) => SceneCensus.Scene(l, c.Document, SceneCensus.Frame(l, frame)), cancel, changes: false);
 
     [McpServerTool(Name = "get_keys", ReadOnly = true, Idempotent = true)]
-    [Description("Lists an item's keys, channel by channel: each key's frame, value, and tension, continuity and bias (Kochanek–Bartels TCB, -1 to 1; left out when 0) and linear flag, plus what the channel does before its first key and after its last (pre and post). A channel never keyed shows its constant value. Channels: position.x/y/z (metres), heading, pitch, bank (degrees), scale.x/y/z, and a light's intensity or a camera's zoom.")]
+    [Description("Lists an item's keys, channel by channel: each key's frame, value, and tension, continuity and bias (Kochanek–Bartels TCB, -1 to 1; left out when 0) and linear flag, plus what the channel does before its first key and after its last (pre and post). A channel never keyed shows its constant value. Channels: position.x/y/z (metres), heading, pitch, bank (degrees), scale.x/y/z, a light's intensity or a camera's zoom, and an object's morph weights (morph.<name>) and displacement amplitudes (displacement.<number>.amplitude).")]
     public Task<string> GetKeys(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("Just this channel (default: all of them).")] string? channel = null,
@@ -59,7 +59,7 @@ public sealed partial class ModelerTools
             return new JsonObject
             {
                 ["item"] = it.Name,
-                ["frames_with_keys"] = new JsonArray(it.KeyFrames().Where(f => f >= l.Scene.FirstFrame && f <= l.Scene.LastFrame).Select(f => (JsonNode)Census.Round(f)).ToArray()),
+                ["frames_with_keys"] = new JsonArray(SceneCensus.KeyFrames(it).Where(f => f >= l.Scene.FirstFrame && f <= l.Scene.LastFrame).Select(f => (JsonNode)Census.Round(f)).ToArray()),
                 ["channels"] = new JsonArray(channels.Select(ch => (JsonNode)Keys(ch.Name, ch.Envelope, l.Scene)).ToArray()),
             };
         }, cancel, changes: false);
@@ -285,7 +285,7 @@ public sealed partial class ModelerTools
     // ───────────────────────────── arranging items ─────────────────────────────
 
     [McpServerTool(Name = "set_item", Destructive = true)]
-    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position) and visibility. A light's type, colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none) and shadows. A camera's zoom or fov (vertical, degrees), width and height (pixels), and make_current. An object's cast_shadows and receive_shadows. A bone's rest_length, strength and active. Intensity and zoom set the value throughout; when they're animated, use set_key.")]
+    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position) and visibility. A light's type, colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none) and shadows. A camera's zoom or fov (vertical, degrees), width and height (pixels), and make_current. An object's cast_shadows and receive_shadows. A bone's rest pose (rest_position, rest_rotation, rest_length: where it binds to the object; changing it leaves the bone's pose, its channels, where it was, so the object bends by the difference, unless reset_pose is true), rest_at_frame (Layout's Rest Here: makes its pose at that frame its rest pose), reset_pose (puts its channels back at its rest pose, unanimated), strength and active. Intensity and zoom set the value throughout; when they're animated, use set_key.")]
     public Task<string> SetItem(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("A new name.")] string? name = null,
@@ -306,7 +306,11 @@ public sealed partial class ModelerTools
         [Description("Camera: make it the current camera.")] bool? make_current = null,
         [Description("Object: cast shadows on other things.")] bool? cast_shadows = null,
         [Description("Object: show shadows cast on it.")] bool? receive_shadows = null,
+        [Description("Bone: where it starts at rest [x, y, z], metres, in the object's coordinates (or its parent bone's: measured from the parent's start along its axes).")] double[]? rest_position = null,
+        [Description("Bone: its direction at rest [heading, pitch, bank], degrees (0, 0, 0 points along +Z; pitch -90 points up +Y), in the object's axes (or its parent bone's).")] double[]? rest_rotation = null,
         [Description("Bone: its length at rest, metres.")] double? rest_length = null,
+        [Description("Bone: Layout's Rest Here: make its pose (position and rotation) at this frame its rest pose, so it no longer bends the object there.")] double? rest_at_frame = null,
+        [Description("Bone: put its channels (position, rotation, scale) back at its rest pose, unanimated (after rest_position, rest_rotation and rest_at_frame).")] bool? reset_pose = null,
         [Description("Bone: how strongly it pulls.")] double? strength = null,
         [Description("Bone: whether it deforms the object.")] bool? active = null,
         CancellationToken cancel = default) =>
@@ -324,6 +328,7 @@ public sealed partial class ModelerTools
             Only<CameraItem>(zoom, "zoom"); Only<CameraItem>(fov, "fov"); Only<CameraItem>(width, "width"); Only<CameraItem>(height, "height"); Only<CameraItem>(make_current, "make_current");
             Only<ObjectItem>(cast_shadows, "cast_shadows"); Only<ObjectItem>(receive_shadows, "receive_shadows");
             Only<Bone>(rest_length, "rest_length"); Only<Bone>(strength, "strength"); Only<Bone>(active, "active");
+            Only<Bone>(rest_position, "rest_position"); Only<Bone>(rest_rotation, "rest_rotation"); Only<Bone>(rest_at_frame, "rest_at_frame"); Only<Bone>(reset_pose, "reset_pose");
 
             // Names are looked up before the item is renamed.
             var p = parent == null || parent.Trim() is "" or "(none)" ? null : Item(s, parent, "parent");
@@ -356,13 +361,25 @@ public sealed partial class ModelerTools
                     if (receive_shadows is { } rs) obj.ReceiveShadows = rs;
                     break;
                 case Bone bone:
+                    if (rest_at_frame is { } raf)
+                    {
+                        if (rest_position != null || rest_rotation != null) throw new ArgumentException("Give rest_at_frame or rest_position and rest_rotation, not both.");
+                        bone.RestFromPose(SceneCensus.Frame(l, raf));
+                    }
+                    if (rest_position != null) bone.RestPosition = Vector(rest_position, "rest_position");
+                    if (rest_rotation != null) bone.RestRotation = Vector(rest_rotation, "rest_rotation");
                     if (rest_length is { } rl)
                     {
                         if (!(rl > 0) || !double.IsFinite(rl)) throw new ArgumentException("rest_length must be more than 0 metres.");
                         bone.RestLength = rl;
                     }
-                    if (strength is { } st) bone.Strength = st;
+                    if (strength is { } st)
+                    {
+                        if (!double.IsFinite(st)) throw new ArgumentException("strength must be a number.");
+                        bone.Strength = st;
+                    }
                     if (active is { } ac) bone.Active = ac;
+                    if (reset_pose == true) bone.ResetPose();
                     break;
             }
             s.Notify();
@@ -437,12 +454,12 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "set_key", Destructive = true)]
-    [Description("Makes or changes one key on one channel: position.x, position.y, position.z (metres), heading, pitch, bank (degrees), scale.x, scale.y, scale.z, or a light's intensity or a camera's zoom. The curve through keys is Kochanek–Bartels: tension (1 slows into and out of the key, -1 overshoots), continuity (sharp corners when away from 0) and bias (-1 leans the curve toward the previous key, 1 toward the next), each -1 to 1, default 0; linear makes the stretch leading into this key a straight line. A channel never keyed before has its constant replaced by its first key. A key already at that frame is replaced (keeping its tension, continuity and bias unless given).")]
+    [Description("Makes or changes one key on one channel: position.x, position.y, position.z (metres), heading, pitch, bank (degrees), scale.x, scale.y, scale.z, a light's intensity or a camera's zoom, or an object's morph weight (morph.<name>, e.g. morph.Smile: 0 is the base shape, 1 the target, and values between blend; beyond 1 exaggerates) or displacement amplitude (displacement.<number>.amplitude, metres; numbered from 1 as get_scene lists them). The curve through keys is Kochanek–Bartels: tension (1 slows into and out of the key, -1 overshoots), continuity (sharp corners when away from 0) and bias (-1 leans the curve toward the previous key, 1 toward the next), each -1 to 1, default 0; linear makes the stretch leading into this key a straight line. A channel never keyed before has its constant replaced by its first key. A key already at that frame is replaced (keeping its tension, continuity and bias unless given).")]
     public Task<string> SetKey(
         [Description("The item's name, or #index from get_scene.")] string item,
-        [Description("The channel, e.g. \"position.y\" or \"heading\".")] string channel,
+        [Description("The channel, e.g. \"position.y\", \"heading\", \"morph.Smile\" or \"displacement.1.amplitude\".")] string channel,
         [Description("The frame, within the scene's frames.")] double frame,
-        [Description("The value: metres, degrees, a scale factor, an intensity (1 is 100%) or a zoom factor.")] double value,
+        [Description("The value: metres, degrees, a scale factor, an intensity (1 is 100%), a zoom factor or a morph weight (0 to 1).")] double value,
         [Description("-1 to 1 (default 0, or the existing key's).")] double? tension = null,
         [Description("-1 to 1 (default 0, or the existing key's).")] double? continuity = null,
         [Description("-1 to 1 (default 0, or the existing key's).")] double? bias = null,
@@ -492,7 +509,7 @@ public sealed partial class ModelerTools
                 }
             }
             if (removed.Count == 0 && kept.Count == 0)
-                throw new ArgumentException($"{it.Name} has no key at frame {frame:0.###}{(channel != null ? $" on {channels[0].Name}" : "")}. Its keys are at frames {string.Join(", ", it.KeyFrames().Select(x => x.ToString("0.###", CultureInfo.InvariantCulture)))}.");
+                throw new ArgumentException($"{it.Name} has no key at frame {frame:0.###}{(channel != null ? $" on {channels[0].Name}" : "")}. Its keys are at frames {string.Join(", ", SceneCensus.KeyFrames(it).Select(x => x.ToString("0.###", CultureInfo.InvariantCulture)))}.");
             var result = new JsonObject { ["item"] = it.Name, ["frame"] = Census.Round(frame), ["removed"] = Strings(removed) };
             if (kept.Count > 0) result["kept"] = $"{string.Join(", ", kept)}: the channel's only key, which holds its value; change it with set_key instead.";
             return result;
@@ -678,7 +695,7 @@ public sealed partial class ModelerTools
     }
 
     [McpServerTool(Name = "render_animation", Destructive = true)]
-    [Description("Ray-traces a run of frames into numbered PNG files in a folder inside the working folder (e.g. frames/frame0001.png, numbered by frame), and returns a contact sheet of them (up to eight a row) and the list of files. Bounded so it can't run away: at most 120 frames, 960 pixels each way and 4 samples a pixel, and width × height × samples × frames at most 20 million; it stops after 5 minutes. An existing file is only replaced when overwrite is true.")]
+    [Description("Ray-traces a run of frames into numbered PNG files in a folder inside the working folder (e.g. frames/frame0001.png, numbered by frame), and returns a contact sheet of them (up to eight a row) and the list of files. With movie (mp4, gif or both) it then joins this run's frames, in order, into frames/frame.mp4 (H.264) and/or a looping frames/frame.gif (at most 640 across), playing at the scene's frames per second divided by step, so it runs at the scene's speed; that needs ffmpeg installed (without it the frames are still saved and the reply says so). Bounded so it can't run away: at most 120 frames, 960 pixels each way and 4 samples a pixel, and width × height × samples × frames at most 20 million; it stops after 5 minutes. For a longer movie, render the frames in parts and make the movie in the last call, which joins only that call's frames. An existing file is only replaced when overwrite is true.")]
     public async Task<CallToolResult> RenderAnimation(
         [Description("The folder for the files, relative to the working folder (default \"frames\"); made if needed.")] string folder = "frames",
         [Description("The files' names before the frame number (default \"frame\").")] string name = "frame",
@@ -690,8 +707,10 @@ public sealed partial class ModelerTools
         [Description("Rays per pixel, 1 to 4 (default 1).")] int samples = 1,
         [Description("The camera, by name (default: the current camera).")] string? camera = null,
         [Description("Replace files that already exist.")] bool overwrite = false,
+        [Description("Also make a movie of the frames: mp4, gif or both (default: none). Needs ffmpeg.")] string? movie = null,
         CancellationToken cancel = default)
     {
+        var formats = MovieFormats(movie);
         if (samples < 1 || samples > MaxAnimationSamples) throw new McpException($"samples must be from 1 to {MaxAnimationSamples}.");
         if (step < 1) throw new McpException("step must be 1 or more.");
         if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains('/') || name.Contains('\\'))
@@ -713,9 +732,10 @@ public sealed partial class ModelerTools
             var files = Files(c);
             string dir = Path.GetDirectoryName(files.Resolve(Path.Combine(folder, "frame.png")))!;
             var paths = frames.Select(fr => Path.Combine(dir, FormattableString.Invariant($"{name}{fr:0000}.png"))).ToList();
-            files.CheckWritable(paths, overwrite);
+            var movies = Movies.Available ? formats.Select(f => MovieEncoder.MoviePath(dir, name, f)).ToList() : [];
+            files.CheckWritable(paths.Concat(movies), overwrite);
             var copy = ScenePictures.Copy(s);
-            return (copy, frames, cam: (CameraItem)copy.Items[IndexOf(s, cm)], pw, ph, paths, files);
+            return (copy, frames, cam: (CameraItem)copy.Items[IndexOf(s, cm)], pw, ph, paths, files, movies, fps: s.FramesPerSecond / step);
         }, cancel, changes: false).ConfigureAwait(false);
         var clock = Stopwatch.StartNew();
         var images = await Rendering(t =>
@@ -740,7 +760,75 @@ public sealed partial class ModelerTools
             ["seconds"] = Math.Round(clock.Elapsed.TotalSeconds, 1),
             ["contact_sheet"] = "The picture: the frames in order, left to right and top to bottom, up to eight a row.",
         };
+        if (formats.Count > 0)
+        {
+            var (made, problem) = await MakeMovies(job.paths, job.movies, formats, job.fps, job.pw, job.ph, job.files, cancel).ConfigureAwait(false);
+            info["movies"] = Strings(made);
+            info["movie_fps"] = Census.Round(job.fps, 3);
+            if (problem != null) info["movie_problem"] = problem;
+        }
         return new CallToolResult { Content = [ImageContentBlock.FromBytes(sheet, "image/png"), new TextContentBlock { Text = info.ToJsonString() }] };
+    }
+
+    private MovieEncoder? _movies;
+
+    /// <summary>What render_animation makes movies with: the ffmpeg on the PATH, unless a test sets another.</summary>
+    internal MovieEncoder Movies
+    {
+        get => _movies ??= MovieEncoder.FromPath();
+        set => _movies = value;
+    }
+
+    private static List<MovieFormat> MovieFormats(string? movie)
+    {
+        string key = new((movie ?? "").ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        return key switch
+        {
+            "" or "none" => [],
+            "mp4" => [MovieFormat.Mp4],
+            "gif" => [MovieFormat.Gif],
+            "both" or "mp4gif" or "gifmp4" or "mp4andgif" => [MovieFormat.Mp4, MovieFormat.Gif],
+            _ => throw new McpException($"movie must be mp4, gif or both, not \"{movie}\"."),
+        };
+    }
+
+    /// <summary>
+    /// Joins a run's frames into movies beside them. The frames are numbered by scene frame (with gaps when stepping),
+    /// and <see cref="MovieEncoder"/> reads name0001.png onwards, so copies numbered 1, 2, 3… go in a temporary folder
+    /// outside the working folder, which is deleted afterwards; the movies are then copied into place.
+    /// </summary>
+    private async Task<(List<string> Made, string? Problem)> MakeMovies(List<string> frames, List<string> targets, List<MovieFormat> formats, double fps, int width, int height, Workspace files, CancellationToken cancel)
+    {
+        if (!Movies.Available) return ([], MovieEncoder.NotInstalled);
+        string temp = Path.Combine(Path.GetTempPath(), "avamodeler-movie-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temp);
+        try
+        {
+            for (int i = 0; i < frames.Count; i++) File.Copy(frames[i], Path.Combine(temp, FormattableString.Invariant($"frame{i + 1:0000}.png")));
+            using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+            timer.CancelAfter(RenderTimeLimit);
+            var result = await Movies.EncodeAsync(temp, "frame", fps, frames.Count, width, height, formats, "movie", timer.Token).ConfigureAwait(false);
+            cancel.ThrowIfCancellationRequested();
+            List<string> made = [];
+            foreach (var file in result.Files)
+            {
+                string target = targets.First(t => string.Equals(Path.GetExtension(t), Path.GetExtension(file), StringComparison.OrdinalIgnoreCase));
+                File.Copy(file, target, overwrite: true);
+                files.Wrote(target);
+                made.Add(target);
+            }
+            return (made, result.Problem);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return ([], $"The movie couldn't be made: {e.Message} The PNG frames are all saved.");
+        }
+        finally
+        {
+            try { Directory.Delete(temp, recursive: true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     // ───────────────────────────── plumbing ─────────────────────────────

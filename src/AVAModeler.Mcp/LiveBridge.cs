@@ -28,12 +28,13 @@ public sealed class LiveBridge(string pipeName, string root) : IAsyncDisposable
         "(also in Edit › Preferences), then call again. To work on a model of your own without the app, run the server as " +
         "\"AVAModeler --mcp\" (without --attach).";
 
-    /// <summary>The server options: the tools' definitions, answered here, and calls passed on.</summary>
+    /// <summary>The server options: the tools' definitions and the recipes (prompts), answered here, and calls passed on.</summary>
     public McpServerOptions Options() => new()
     {
         ServerInfo = ModelerServer.Info,
         ServerInstructions = ModelerServer.Instructions + "\n\nThis is the live app: the person using AVA Modeler sees every change in its views, and their own edits share the same document and undo history.",
-        Capabilities = new ServerCapabilities { Tools = new ToolsCapability() },
+        Capabilities = new ServerCapabilities { Tools = new ToolsCapability(), Prompts = new PromptsCapability() },
+        PromptCollection = [.. ModelerServer.Prompts()],
         Handlers = new McpServerHandlers
         {
             ListToolsHandler = (_, _) => ValueTask.FromResult(new ListToolsResult { Tools = ModelerServer.Definitions() }),

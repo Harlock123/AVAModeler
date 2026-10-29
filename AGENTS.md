@@ -49,12 +49,16 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     one rule for Layout's controls and agents alike).
   - `AnimationRender.cs` (Render Animation's work: a run of frames from a `Scene.Copy` into numbered PNGs on a worker
     thread, with progress and cancelling) and `MovieEncoder.cs` (joins the frames into MP4 and GIF with the ffmpeg on
-    the PATH, using `carbon_atom.py`'s arguments; the MCP server could write movies through it too).
+    the PATH, using `carbon_atom.py`'s arguments; render_animation's movie parameter uses it too).
 - `src/AVAModeler.Mcp/`: the MCP server for AI agents (on the official C# SDK, `ModelContextProtocol.Core`). No UI.
-  - `ModelerTools.cs` is every Modeler tool and `LayoutTools.cs` every Layout (scene) tool, one partial class in the
-    SDK's attribute model; `ModelerServer.cs` builds the server and its instructions to agents. `ToolCatalog.cs`
+  - `ModelerTools.cs` is every Modeler tool, `LayoutTools.cs` every Layout (scene) tool and `DeformTools.cs` the
+    tools that deform scene objects (`copy_layer`, morphs, displacements, `skelegons_to_bones`), one partial class in
+    the SDK's attribute model; `ModelerServer.cs` builds the server, its instructions to agents and its prompts.
+    `Recipes.cs` holds the prompts (saved recipes), one static method each in the SDK's `[McpServerPrompt]` model. `ToolCatalog.cs`
     describes the Modeler's tools from the registry and `[Param]`s; `SceneCensus.cs` describes the scene and reads
-    agents' item and channel names.
+    agents' item and channel names (`morph.<name>` and `displacement.<number>.amplitude` among them: extend
+    `Channels` and `Channel` there when an item gets a new animatable setting, and get_keys, set_key, delete_key and
+    set_end_behavior pick it up).
   - `ModelerHost.cs`: `IModelerHost` runs the handlers' work on the document's thread, with the command API
     (`RunAsync`) or with Layout's `LayoutSession` beside it (`RunSceneAsync`). `HeadlessHost` owns a document and a
     `LayoutSession`; `LiveHost` runs on the app's UI thread through `IUiThread`, against `ILiveModeler.Commands` and
@@ -98,7 +102,9 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   a tool that throws, and `Document.Group` makes several edits one step (or none, if they fail). Every Layout tool that
   changes the scene runs through `DoScene`, which makes the call one step on Layout's shared history
   (`LayoutSession.Edit`, named "Agent: …"): if the call throws, the scene is put back as it was and no step is left
-  (all or nothing). `undo_scene` and `redo_scene` work on that same history, as the person's Ctrl+Z does. Errors go
+  (all or nothing). `undo_scene` and `redo_scene` work on that same history, as the person's Ctrl+Z does. Snapshots
+  keep morph targets by reference, so a tool that changes a target puts a new mesh in (`add_morph` and `set_morph`
+  copy the layer) and never edits one in place. Errors go
   back as `McpException`s whose messages say what to do instead.
 - **Agents see the app's numbers.** MCP tools number layers 1 to 10, as the layer buttons and Lua macros do, and give
   every colour as [r, g, b] whole numbers from 0 to 255, as surfaces and the Layout panel do (`Json.Colour`,
@@ -131,6 +137,11 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   `[McpServerTool]` method with careful `[Description]`s (units, axes, conventions), working through `Do(...)` (or
   `DoScene(...)`) so it runs on the host and its errors are explained. Test it in `AVAModeler.Mcp.Tests` (the handler directly, and through a client where the wiring matters).
   A few of those tests start the built app as a real `--mcp` process (the test project builds it).
+- A recipe (an MCP prompt) goes in `Recipes.cs`. Write each step's tool call on a line of its own after `→ `,
+  with its arguments as JSON (the `Recipe` builder does this). `RecipeTests` fetches every prompt through a client and
+  runs its calls through the server, which checks the arguments against each tool's schema, then checks the result:
+  add the new one to its cases and to its checks. Prompt arguments arrive as text: read numbers and colours with
+  `Recipes.Number`, `Whole` and `Colour`.
 - If the change shows on screen, refresh the screenshots with the command above and look at them.
 - Update `README.md` (features, keys, the test table, known limits) to match.
 

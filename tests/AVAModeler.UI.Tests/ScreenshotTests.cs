@@ -234,6 +234,41 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void The_AI_chat_panel_mid_conversation()
+    {
+        // A fake Claude (no real API call) lathes a chess pawn, looks at it, answers, and is asked for more.
+        var profile = new[] { new[] { 0.0, 0, 0 }, [0.32, 0, 0], [0.32, 0.07, 0], [0.24, 0.11, 0], [0.2, 0.18, 0], [0.13, 0.42, 0], [0.11, 0.56, 0],
+            [0.19, 0.6, 0], [0.19, 0.64, 0], [0.1, 0.67, 0], [0.15, 0.74, 0], [0.16, 0.82, 0], [0.12, 0.9, 0], [0.05, 0.94, 0], [0, 0.95, 0] };
+        var lines = Enumerable.Range(0, profile.Length - 1).Select(i => new[] { i, i + 1 }).ToArray();
+        var api = new AVAModeler.Chat.Tests.FakeClaude()
+            .Reply(AVAModeler.Chat.Tests.FakeClaude.Say("I'll draw half a pawn's profile and lathe it round the Y axis."),
+                AVAModeler.Chat.Tests.FakeClaude.Call("toolu_1", "add_points", new { points = profile }))
+            .Reply(AVAModeler.Chat.Tests.FakeClaude.Call("toolu_2", "add_polygons", new { polygons = lines, surface = "Pawn" }))
+            .Reply(AVAModeler.Chat.Tests.FakeClaude.Call("toolu_3", "run_tool", new { name = "Lathe", @params = new { Axis = "Y", Center = new[] { 0.0, 0, 0 }, Sides = 24 } }))
+            .Reply(AVAModeler.Chat.Tests.FakeClaude.Call("toolu_4", "set_surface", new { name = "Pawn", color = new[] { 236, 228, 210 }, smoothing = true, specular = 0.4, assign = false }))
+            .Reply(AVAModeler.Chat.Tests.FakeClaude.Call("toolu_5", "render_view", new { view = "perspective", width = 320, height = 240, heading = 30, pitch = 15 }))
+            .Reply(AVAModeler.Chat.Tests.FakeClaude.Say("Here's your pawn: a lathed 24-sided solid 0.95 m tall, with a round head, a collar and a wide base, in an ivory surface."))
+            .Reply(AVAModeler.Chat.Tests.FakeClaude.Say("I'll set it on a board with a warm spotlight."),
+                AVAModeler.Chat.Tests.FakeClaude.Call("toolu_6", "add_object", new { name = "Pawn" }))
+            .Hang();
+        var w = ChatPanelTests.WithChat(api, 1400, 860);
+        w.ToggleChat();
+        ChatPanelTests.Type(w, "make a chess pawn");
+        ChatPanelTests.Finish(w.Chat.Running);
+        ChatPanelTests.Type(w, "now put it in a scene with a spotlight and render it");
+        for (int i = 0; i < 2000 && api.Left > 0; i++) { Ui.Pump(); Thread.Sleep(1); }
+        for (int i = 0; i < 50; i++) { Ui.Pump(); Thread.Sleep(2); }
+        Assert.True(w.Chat.Session.Working);
+        Assert.Equal(24 * 14, w.Session.Document.Current.Mesh.Polygons.Count);
+        w.Session.Document.Selection.Clear();
+        Ui.Fit(w);
+        Persp(w, 30, 18, 1.2);
+        Shot(w, "chat");
+        w.Chat.Stop();
+        ChatPanelTests.Finish(w.Chat.Running);
+    }
+
+    [AvaloniaFact]
     public void A_ray_traced_frame()
     {
         var s = new LayoutSession();

@@ -12,5 +12,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\..\src\AVAModeler\AVAModeler.csproj" />
+    <!-- The fake Anthropic API the chat tests use, shared with the chat panel's tests here. -->
+    <Compile Include="..\AVAModeler.Chat.Tests\FakeClaude.cs" Link="FakeClaude.cs" />
   </ItemGroup>
 </Project>

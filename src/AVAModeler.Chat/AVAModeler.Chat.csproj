@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The in-app AI chat: the conversation, the Claude API client and the bridge to the MCP server's tools. No UI. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Chat</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AVAModeler.Mcp\AVAModeler.Mcp.csproj" />
+    <!-- The official Anthropic C# SDK. -->
+    <PackageReference Include="Anthropic" Version="13.3.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AVAModeler.Chat.Tests" />
+  </ItemGroup>
+</Project>

@@ -128,6 +128,10 @@ phases 0 to 7 and Layout phases L1 to L6.
   AI Agents on, an agent can also build in the open window while you watch. See
   [Driving AVA Modeler from an AI agent](#driving-ava-modeler-from-an-ai-agent).
 
+- **AI Chat inside the app** (F4, or Macros › AI Chat): a panel on the right where you ask Claude for something
+  ("make a chess pawn", "put it in a scene with a spotlight and render it") and watch it build with the same tools,
+  with no outside client. See [The AI Chat panel](#the-ai-chat-panel).
+
 ![A table an AI agent built through MCP, live in the open window](Images/AVAModeler-mcp.png)
 
 ### Layout
@@ -193,12 +197,43 @@ On Windows, unzip and run `AVAModeler.exe`. On macOS, if Gatekeeper refuses to o
 | Navigate | Wheel zooms; middle-drag or Alt-drag pans; drag the perspective view to turn it; double-click to maximize | A fit all, Shift+A fit selected, `.` and `,` zoom, 0 maximize, U the UV view |
 | Layers | The layer buttons (top half foreground, bottom half background) | 1–9 foreground, Shift adds, Alt background, `\` swaps |
 | Edit | | Ctrl+Z undo, Ctrl+Shift+Z redo, X cut, C copy, Ctrl+V paste, Delete remove |
-| Workspaces | | F1 Modeler, F2 Layout, F9 render (in Layout) |
+| Workspaces | | F1 Modeler, F2 Layout, F9 render (in Layout), F4 the AI Chat panel |
 | Files | | Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Q quit (File › Quit) |
 
 The default tool keys follow the classic layout: T Move, Y Rotate, H Size, Shift+H Stretch, Shift+X Box, Shift+O
 Ball, Shift+C Disc, P Make Polygon, F Flip, M Merge Points, E Extrude, L Lathe, V Mirror, B Bevel, Tab MetaNURBS.
 Help › Keyboard lists them all, and Edit › Preferences changes any of them.
+
+## The AI Chat panel
+
+![Claude lathing a chess pawn in the chat panel, then staging it](Images/AVAModeler-chat.png)
+
+**F4** (or Macros › AI Chat in the Modeler, AI › Chat in Layout) opens a chat with Claude on the right of the window,
+beside whichever workspace is on screen. Ask for something to model or stage, and Claude builds it in the open window
+while you watch, with the same tools an outside agent gets through MCP (the app runs its own MCP server in-process, so
+nothing listens anywhere and Macros › Allow AI Agents needn't be on).
+
+- **What it shows**: your messages, Claude's replies as they're written, and each tool call as a compact line
+  (`▸ run_tool Lathe → Lathe: 314 points, 336 polygons`); click a line to see its full input and result. Pictures
+  Claude renders to check its work show as thumbnails.
+- **Typing**: Enter sends, Shift+Enter starts a new line. Send becomes **Stop** while Claude works, and stops it at
+  once, even while a call is waiting for you. **New Chat** forgets the conversation; otherwise it lasts until the app
+  closes. The status bar says "Claude is working…" and what it just did.
+- **Undo**: each tool call is one undo step, so Ctrl+Z takes Claude's modeling back step by step. If you have a tool
+  armed or a dialog box open, Claude's calls wait (up to 20 seconds) for you to finish.
+- **Models**: Claude Opus 5.5 (`claude-opus-5-5`, the default and the most capable), Claude Sonnet 5.5
+  (`claude-sonnet-5-5`) and Claude Haiku 4.5 (`claude-haiku-4-5-20251001`), quicker and cheaper.
+- **The key**: it needs an Anthropic API key (from [console.anthropic.com](https://console.anthropic.com)). Set the
+  `ANTHROPIC_API_KEY` environment variable before starting AVA Modeler, or press **Key…** in the panel and paste one:
+  it's kept in `anthropic-api-key` beside `preferences.json` (`~/.config/AVAModeler` on Linux,
+  `%APPDATA%\AVAModeler` on Windows), readable only by you on Linux and macOS, and sent only to the Anthropic API.
+  The environment variable wins over a saved key. The app never shows the key again in full (only `sk-ant-…1234`).
+  Without a key the panel says how to set one.
+- **Cost**: the requests go to your own Anthropic API account, which is billed for them. The system prompt and the
+  tool definitions are marked for prompt caching, so a conversation's later requests cost much less to send. A busy
+  modeling session with Opus and pictures can still use a fair number of tokens.
+- **Errors**: no connection, a refused key (401), rate limits (429) and an overloaded API show as a line in the chat
+  with a **Retry** button.
 
 ## Driving AVA Modeler from an AI agent
 
@@ -343,7 +378,7 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 512 tests cover every layer:
+It needs the .NET 10 SDK. 536 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
@@ -355,7 +390,8 @@ It needs the .NET 10 SDK. 512 tests cover every layer:
 | Scene | 143 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots and copies, aiming an item at a point, object paths relative to the scene |
 | Layout | 7 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw |
 | Mcp | 41 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was, undo_scene, the look-at maths, keys read between frames); whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
-| UI | 40 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, an AI agent working in the open window and in its Layout scene, and the screenshots |
+| Chat | 19 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking |
+| UI | 45 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -380,7 +416,8 @@ Layout reuses them.
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render window |
 | `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
-| `AVAModeler` | The application: one window hosting both workspaces |
+| `AVAModeler.Chat` | The AI Chat's conversation and agent loop on the Anthropic C# SDK (streaming, prompt caching), the bridge to the MCP server's tools through an in-process MCP client, and the API key's store. No UI |
+| `AVAModeler` | The application: one window hosting both workspaces, and the AI Chat panel |
 
 ## Known limits
 
@@ -411,6 +448,12 @@ Layout reuses them.
   `redo()` aren't allowed (the macro is one undo step) and a macro stops after 30 seconds unless given longer. Texture
   image paths may point outside the working folder (they're only read). The live pipe is tested on Linux; Windows and
   macOS use the same .NET pipe code but haven't been tried.
+
+- **AI Chat**: it needs your own Anthropic API key and internet access, and your API account pays for it. One
+  request stops after 60 tool calls (say "continue" to go on). The conversation isn't saved when the app closes, and
+  it isn't trimmed: a very long chat grows slower and dearer, so start a New Chat for a new job. Claude's files go in
+  your Documents folder (the chat's working folder). It's tested against a fake API only; the real API's behaviour
+  (and its model names) can change.
 
 ## About and licence
 

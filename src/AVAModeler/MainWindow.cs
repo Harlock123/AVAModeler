@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
+using AVAModeler.Chat;
 using AVAModeler.Core;
 using AVAModeler.Formats;
 using AVAModeler.Geometry;
@@ -30,6 +31,19 @@ public sealed class MainWindow : Window
     /// <summary>AI agents' live access (MCP), open while the preference allows it.</summary>
     internal LiveAgents Agents { get; }
 
+    /// <summary>The AI Chat panel (F4): Claude working in the open window, through the app's own MCP server in-process.</summary>
+    internal ChatPanel Chat { get; }
+
+    private readonly LazyToolBridge _chatTools;
+    private bool _chatOpen;
+
+    /// <summary>Whether the chat panel is showing (beside whichever workspace is on screen).</summary>
+    internal bool ChatOpen => _chatOpen;
+
+    /// <summary>The chat's working folder, where files Claude opens and saves are (the Documents folder).</summary>
+    internal string ChatRoot { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) is { Length: > 0 } docs
+        ? docs : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
     /// <summary>The pipe agents reach the app on (tests give it one of their own).</summary>
     internal string AgentPipe { get; set; } = LiveProtocol.PipeName;
 
@@ -50,6 +64,12 @@ public sealed class MainWindow : Window
         Modeler.ShowLayout += ShowLayout;
         Agents = new LiveAgents(Session, _layoutSession);
         Modeler.AgentsChanged += SyncAgents;
+        Modeler.ToggleChat += ToggleChat;
+        // Tests never see the person's own key: no environment variable, no key file.
+        var keys = loadPlugins ? ApiKeyStore.ForApp(Preferences.Folder) : new ApiKeyStore(null, null);
+        _chatTools = new LazyToolBridge(async cancel => await McpToolBridge.StartAsync(Agents.ChatHost(ChatRoot), cancel));
+        Chat = new ChatPanel(_chatTools, keys, text => { Session.SetStatus(text); _layoutSession.SetStatus(text); });
+        Chat.CloseRequested += ToggleChat;
         Width = 1400;
         Height = 900;
         MinWidth = 800;
@@ -68,7 +88,12 @@ public sealed class MainWindow : Window
             Closing += Closing_;
             SyncAgents();
         }
-        Closed += (_, _) => _ = Agents.StopAsync();
+        Closed += (_, _) =>
+        {
+            Chat.Stop();
+            _ = _chatTools.DisposeAsync().AsTask();
+            _ = Agents.StopAsync();
+        };
     }
 
     /// <summary>Opens or closes the door to AI agents to match the preference.</summary>
@@ -97,7 +122,30 @@ public sealed class MainWindow : Window
     public void ShowModeler()
     {
         Content = Modeler;
+        PlaceChat();
         Modeler.Views.Redraw();
+    }
+
+    /// <summary>Shows or hides the AI Chat panel (F4, Macros › AI Chat, or Layout's AI › Chat).</summary>
+    internal void ToggleChat()
+    {
+        _chatOpen = !_chatOpen;
+        PlaceChat();
+        if (_chatOpen)
+        {
+            Chat.RefreshIntro();
+            Chat.FocusInput();
+        }
+    }
+
+    /// <summary>The panel goes on the right of the workspace on screen, below its menus.</summary>
+    private void PlaceChat()
+    {
+        if (Chat.Parent is Panel old) old.Children.Remove(Chat);
+        if (!_chatOpen || Content is not DockPanel workspace) return;
+        DockPanel.SetDock(Chat, Dock.Right);
+        // After the menus (the first child), so they keep the full width.
+        workspace.Children.Insert(Math.Min(1, workspace.Children.Count), Chat);
     }
 
     public void ShowLayout()
@@ -107,10 +155,12 @@ public sealed class MainWindow : Window
         {
             _layout = new LayoutWorkspace(_layoutSession, () => Session.Document);
             _layout.ShowModeler += ShowModeler;
+            _layout.ToggleChat += ToggleChat;
             _layoutSession.ShowModelerObject(Session.Document);
         }
         else _layoutSession.ShowModelerObject(Session.Document);
         Content = _layout;
+        PlaceChat();
         _layoutSession.Scene.Notify();
     }
 
@@ -120,6 +170,7 @@ public sealed class MainWindow : Window
         if (e.Handled) return;
         if (e.Key == Key.F1) { ShowModeler(); e.Handled = true; return; }
         if (e.Key == Key.F2) { ShowLayout(); e.Handled = true; return; }
+        if (e.Key == Key.F4 && e.KeyModifiers == KeyModifiers.None) { ToggleChat(); e.Handled = true; return; }
         if (Content == Modeler) e.Handled = Modeler.HandleKey(e);
         else if (Content == _layout && e.Key == Key.F9) { _layout!.Render(); e.Handled = true; }
     }

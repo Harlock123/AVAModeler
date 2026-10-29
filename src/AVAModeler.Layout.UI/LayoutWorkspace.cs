@@ -33,6 +33,9 @@ public sealed class LayoutWorkspace : DockPanel
     /// <summary>Raised to switch to the Modeler workspace.</summary>
     public event Action? ShowModeler;
 
+    /// <summary>Raised to show or hide the AI Chat panel (AI › Chat, F4).</summary>
+    public event Action? ToggleChat;
+
     public LayoutWorkspace(LayoutSession session, Func<Document> modelerDocument)
     {
         Session = session;
@@ -314,6 +317,7 @@ public sealed class LayoutWorkspace : DockPanel
                     Item("_Spot Light", () => Session.Select(Session.Scene.AddLight("Spot Light", LightType.Spot))),
                     Item("_Camera", () => Session.Select(Session.Scene.AddCamera("Camera")))),
                 Group("_Render", Item("_Render Frame", Render)),
+                Group("_AI", Item("_Chat with Claude…  (F4)", () => ToggleChat?.Invoke())),
                 Group("_Help", Item("_Layout", () => _ = Dialogs.Message(Owner, "Layout", Help))),
             },
         };

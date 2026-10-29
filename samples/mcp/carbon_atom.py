@@ -168,7 +168,7 @@ def main():
     if save:
         s.call("save_scene", path="carbon.avascene", overwrite=True, embed_objects=False)  # it refers to carbon.lwo
         with open(os.path.join(out, "carbon.png"), "wb") as f:
-            f.write(s.call("render_scene", frame=10, width=640, height=480, samples=4))
+            f.write(s.call("render_scene", frame=10, width=960, height=540, samples=4))
         print(f"Saved carbon.lwo, carbon.avascene and carbon.png in {out}")
     else:
         print("Built. Press F2 for Layout and Play to watch the electrons.")

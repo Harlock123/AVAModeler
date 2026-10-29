@@ -420,7 +420,7 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 586 tests cover every layer:
+It needs the .NET 10 SDK. 588 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
@@ -432,8 +432,8 @@ It needs the .NET 10 SDK. 586 tests cover every layer:
 | Scene | 144 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
 | Layout | 27 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed) |
 | Mcp | 62 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
-| Chat | 19 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking |
-| UI | 53 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), and the screenshots |
+| Chat | 20 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap, and Auto-continue carrying on past it by itself, then stopping at its ceiling; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking |
+| UI | 54 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -499,7 +499,8 @@ Layout reuses them.
   macOS use the same .NET pipe code but haven't been tried.
 
 - **AI Chat**: it needs your own Anthropic API key and internet access, and your API account pays for it. One
-  request stops after 60 tool calls (say "continue" to go on). The conversation isn't saved when the app closes, and
+  request pauses every 60 tool calls; with Auto-continue ticked (beside the model, on unless you untick it) it
+  carries on by itself, up to 600 calls in all, and without it you say "continue". Stop ends a request at any time. The conversation isn't saved when the app closes, and
   it isn't trimmed: a very long chat grows slower and dearer, so start a New Chat for a new job. Claude's files go in
   your Documents folder (the chat's working folder). It's tested against a fake API only; the real API's behaviour
   (and its model names) can change.

@@ -70,7 +70,7 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - `src/AVAModeler.Chat/`: the AI Chat panel's logic, no UI, on the official Anthropic C# SDK (NuGet `Anthropic`).
   - `ChatSession.cs` is the conversation and the agent loop: a streamed Messages API request with the MCP server's
     tools, each `tool_use` run through the bridge, results back (pictures as image blocks, failures as `is_error`),
-    until Claude stops, 60 tool calls, or Stop. Cache breakpoints sit on the system prompt, the last tool and the
+    until Claude stops, 60 tool calls (carrying on by itself `AutoContinues` times; the panel's Auto-continue box sets 9 and is remembered in Preferences), or Stop. Cache breakpoints sit on the system prompt, the last tool and the
     conversation. `ChatEntries.cs` is what the panel shows; `ChatErrors.cs` turns failures into one plain line.
   - `ToolBridge.cs`: `McpToolBridge` is an in-process MCP client talking to `ModelerServer` over in-memory pipes, built
     over the app's `LiveHost`, so the chat and outside agents share one code path. `ChatModels.cs` has the model ids

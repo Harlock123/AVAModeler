@@ -20,6 +20,8 @@ public sealed class Preferences
     public int SubdivisionLevel { get; set; } = 2;
     /// <summary>Whether the numeric panel is folded to a strip.</summary>
     public bool NumericCollapsed { get; set; }
+    /// <summary>Whether the AI Chat carries on by itself after its tool-call limit, instead of waiting for "continue".</summary>
+    public bool ChatAutoContinue { get; set; } = true;
     /// <summary>
     /// Whether AI agents may drive the open document through MCP (<c>AVAModeler --mcp --attach</c>), over a local
     /// pipe only this user can open. Off unless turned on.

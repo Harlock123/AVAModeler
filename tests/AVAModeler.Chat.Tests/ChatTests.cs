@@ -214,6 +214,38 @@ public class ChatTests
     }
 
     [Fact]
+    public async Task Auto_continue_carries_on_past_the_limit_by_itself_then_stops()
+    {
+        var api = new FakeClaude();
+        for (int i = 0; i < 4; i++) api.Reply(Call($"toolu_{i}a", "run_tool", new { name = "Box" }), Call($"toolu_{i}b", "get_document", new { }));
+        api.Reply(Say("All done."));
+        await using var rig = await Rig.Start(api);
+        rig.Chat.MaxToolCalls = 3;
+        rig.Chat.AutoContinues = 2;
+        await rig.Send("eight calls");
+        // 8 calls: 3, then a notice, 3 more, a notice, and 2; none refused, and Claude finishes.
+        var tools = rig.Chat.Entries.OfType<ToolEntry>().ToList();
+        Assert.Equal(8, tools.Count);
+        Assert.All(tools, t => Assert.DoesNotContain("limit of", t.Result));
+        var notices = rig.Chat.Entries.OfType<NoticeEntry>().ToList();
+        Assert.Equal(2, notices.Count);
+        Assert.Contains("carrying on by itself (2 of 2", notices[1].Text);
+        Assert.Equal("All done.", ((AssistantEntry)rig.Chat.Entries[^1]).Text);
+        // Nothing was typed for it: the conversation has only the person's one message.
+        Assert.Single(api.Requests[^1]["messages"]!.AsArray(), m => (string?)m!["role"] == "user" && m["content"]!.AsArray().Any(b => (string?)b!["type"] == "text"));
+
+        // Past its last automatic continue, it stops as before.
+        var more = new FakeClaude();
+        for (int i = 0; i < 3; i++) more.Reply(Call($"toolu_{i}a", "run_tool", new { name = "Box" }), Call($"toolu_{i}b", "get_document", new { }));
+        await using var rig2 = await Rig.Start(more);
+        rig2.Chat.MaxToolCalls = 2;
+        rig2.Chat.AutoContinues = 1;
+        await rig2.Send("boxes forever");
+        Assert.Equal(4, rig2.Chat.Entries.OfType<ToolEntry>().Count(t => !t.IsError));
+        Assert.Contains("Stopped after 4 tool calls", Assert.IsType<NoticeEntry>(rig2.Chat.Entries[^1]).Text);
+    }
+
+    [Fact]
     public async Task Stop_ends_a_reply_that_is_still_coming()
     {
         var api = new FakeClaude().Hang().Reply(Say("Back again."));

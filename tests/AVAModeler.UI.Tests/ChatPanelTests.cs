@@ -108,6 +108,19 @@ public class ChatPanelTests
     }
 
     [AvaloniaFact]
+    public void Auto_continue_is_on_by_default_and_remembered()
+    {
+        var w = Ui.Open();
+        w.Modeler.Execute("AI Chat");
+        Assert.True(w.Chat.AutoContinue.IsChecked);
+        Assert.Equal(ChatPanel.AutoContinueTimes, w.Chat.Session.AutoContinues);
+        w.Chat.AutoContinue.IsChecked = false;
+        Assert.Equal(0, w.Chat.Session.AutoContinues);
+        Assert.False(w.Session.Preferences.ChatAutoContinue);
+        Assert.True(w.Chat.AutoContinue.IsVisible);
+    }
+
+    [AvaloniaFact]
     public void Without_a_key_the_panel_says_how_to_set_one()
     {
         var api = new FakeClaude();

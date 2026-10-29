@@ -28,6 +28,12 @@ internal sealed class ChatPanel : DockPanel
     private readonly TextBlock _intro = new() { TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 12, Opacity = 0.85 };
     private readonly ComboBox _model;
     private readonly Button _send;
+
+    /// <summary>How many times a request carries on by itself, with Auto-continue ticked: 600 tool calls in all.</summary>
+    public const int AutoContinueTimes = 9;
+
+    /// <summary>Auto-continue: carry on after the tool-call limit without waiting for "continue".</summary>
+    public CheckBox AutoContinue { get; } = new() { Content = "Auto-continue", FontSize = 12, Foreground = Look.Text, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
     private (string Key, IAnthropicClient Client)? _client;
 
     public ChatSession Session { get; }
@@ -51,7 +57,7 @@ internal sealed class ChatPanel : DockPanel
     /// <summary>Raised by the panel's close button.</summary>
     public event Action? CloseRequested;
 
-    public ChatPanel(IToolBridge tools, ApiKeyStore keys, Action<string> status)
+    public ChatPanel(IToolBridge tools, ApiKeyStore keys, Action<string> status, Preferences? prefs = null)
     {
         _keys = keys;
         _status = status;
@@ -78,7 +84,9 @@ internal sealed class ChatPanel : DockPanel
         var row = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
         SetDock(_send, Dock.Right);
         row.Children.Add(_send);
+        SetDock(_model, Dock.Left);
         row.Children.Add(_model);
+        row.Children.Add(AutoContinue);
         var bottom = new StackPanel { Margin = new Thickness(6), Children = { Input, row } };
         SetDock(bottom, Dock.Bottom);
         Children.Add(bottom);
@@ -104,6 +112,15 @@ internal sealed class ChatPanel : DockPanel
             _send.Content = Session.Working ? "Stop" : "Send";
             _status(Session.Working ? "Claude is working…" : "Claude has finished.");
         };
+        AutoContinue.IsCheckedChanged += (_, _) =>
+        {
+            bool on = AutoContinue.IsChecked == true;
+            Session.AutoContinues = on ? AutoContinueTimes : 0;
+            if (prefs != null) prefs.ChatAutoContinue = on;
+        };
+        AutoContinue.IsChecked = prefs?.ChatAutoContinue ?? true;
+        Session.AutoContinues = AutoContinue.IsChecked == true ? AutoContinueTimes : 0;
+        ToolTip.SetTip(AutoContinue, $"When Claude has made {Session.MaxToolCalls} tool calls for one request, carry on by itself instead of waiting for you to say \"continue\" (up to {Session.MaxToolCalls * (AutoContinueTimes + 1)} calls). Stop ends it at any time.");
         RefreshIntro();
     }
 

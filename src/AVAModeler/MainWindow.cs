@@ -68,7 +68,7 @@ public sealed class MainWindow : Window
         // Tests never see the person's own key: no environment variable, no key file.
         var keys = loadPlugins ? ApiKeyStore.ForApp(Preferences.Folder) : new ApiKeyStore(null, null);
         _chatTools = new LazyToolBridge(async cancel => await McpToolBridge.StartAsync(Agents.ChatHost(ChatRoot), cancel));
-        Chat = new ChatPanel(_chatTools, keys, text => { Session.SetStatus(text); _layoutSession.SetStatus(text); });
+        Chat = new ChatPanel(_chatTools, keys, text => { Session.SetStatus(text); _layoutSession.SetStatus(text); }, Session.Preferences);
         Chat.CloseRequested += ToggleChat;
         Width = 1400;
         Height = 900;

@@ -32,6 +32,13 @@ public sealed class ChatSession(IToolBridge tools)
     /// <summary>The most tool calls one request may make before the chat stops and says so.</summary>
     public int MaxToolCalls { get; set; } = 60;
 
+    /// <summary>
+    /// How many times one request carries on by itself after <see cref="MaxToolCalls"/>, as if the person had said
+    /// "continue" (0: it stops and asks). Each time, the count starts again and a line in the chat says so; Stop ends it
+    /// at any point. This bounds what one request can cost.
+    /// </summary>
+    public int AutoContinues { get; set; }
+
     public long MaxTokens { get; set; } = 32000;
 
     /// <summary>What to say when there's no key (the panel says how to set one).</summary>
@@ -130,7 +137,7 @@ public sealed class ChatSession(IToolBridge tools)
 
     private async Task LoopAsync(CancellationToken cancel)
     {
-        int calls = 0, generation = _generation;
+        int calls = 0, continues = 0, generation = _generation;
         bool Gone() => generation != _generation;
         while (true)
         {
@@ -197,6 +204,12 @@ public sealed class ChatSession(IToolBridge tools)
                     results.Add(Result(use.ID, ToolOutcome.Error(stopped ? "Not run: the person pressed Stop." : $"Not run: the limit of {MaxToolCalls} tool calls for one request was reached.")));
                     continue;
                 }
+                if (calls >= MaxToolCalls && continues < AutoContinues)
+                {
+                    continues++;
+                    calls = 0;
+                    Add(new NoticeEntry($"{MaxToolCalls} tool calls made; carrying on by itself ({continues} of {AutoContinues} times this request). Press Stop to end it.", NoticeKind.Info));
+                }
                 if (calls >= MaxToolCalls)
                 {
                     capped = true;
@@ -233,7 +246,9 @@ public sealed class ChatSession(IToolBridge tools)
             }
             if (capped)
             {
-                Add(new NoticeEntry($"Stopped after {MaxToolCalls} tool calls, the most one request may make. Say \"continue\" to let Claude carry on.", NoticeKind.Info));
+                Add(new NoticeEntry(AutoContinues == 0
+                    ? $"Stopped after {MaxToolCalls} tool calls, the most one request may make. Say \"continue\" to let Claude carry on, or tick Auto-continue."
+                    : $"Stopped after {MaxToolCalls * (AutoContinues + 1)} tool calls ({MaxToolCalls}, then {AutoContinues} automatic continues), the most one request may make. Say \"continue\" to let Claude carry on.", NoticeKind.Info));
                 return;
             }
             if (cancel.IsCancellationRequested)

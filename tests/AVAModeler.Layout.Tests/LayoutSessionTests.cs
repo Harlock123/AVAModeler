@@ -61,6 +61,53 @@ public class LayoutSessionTests
     }
 
     [Fact]
+    public void Layouts_own_keys_follow_the_same_rule_as_agents()
+    {
+        var s = new LayoutSession();
+        var cam = s.Scene.Cameras.Single();
+        var x = cam[Channel.PositionX];
+
+        // Auto-key: the first key replaces the frame-0 constant, so the motion starts at the first frame keyed.
+        s.SetFrame(10);
+        s.SetChannel(cam, Channel.PositionX, 2);
+        s.SetFrame(40);
+        s.SetChannel(cam, Channel.PositionX, 8);
+        Assert.Equal([10.0, 40.0], x.Keys.Select(k => k.Frame));
+        Assert.Equal(2, cam.PositionAt(1).X, 9);
+
+        // Auto-key off: a channel with one key or none changes throughout; an animated one changes its key here,
+        // and gets one where it has none, so the change isn't lost.
+        s.AutoKey = false;
+        s.SetChannel(cam, Channel.PositionY, 3);
+        Assert.Single(cam[Channel.PositionY].Keys);
+        Assert.Equal(3, cam.PositionAt(50).Y);
+        s.SetChannel(cam, Channel.PositionX, 9);
+        Assert.Equal([10.0, 40.0], x.Keys.Select(k => k.Frame));
+        Assert.Equal(9, x.Evaluate(40));
+        s.SetFrame(25);
+        s.SetChannel(cam, Channel.PositionX, 5);
+        Assert.Equal([10.0, 25.0, 40.0], x.Keys.Select(k => k.Frame));
+
+        // Create Key replaces the constants of channels never keyed too.
+        var light = s.Scene.Lights.Single();
+        s.Select(light);
+        s.SetFrame(5);
+        s.CreateKey();
+        Assert.All(light.Channels, c => Assert.Equal([5.0], c.Keys.Select(k => k.Frame)));
+
+        // Delete Key keeps a channel's only key, which holds its value.
+        var y = light.PositionAt(5).Y;
+        s.DeleteKey();
+        Assert.All(light.Channels, c => Assert.Single(c.Keys));
+        Assert.Equal(y, light.PositionAt(5).Y);
+        Assert.Contains("only key", s.Status);
+        s.Select(cam);
+        s.SetFrame(25);
+        s.DeleteKey();
+        Assert.Equal([10.0, 40.0], x.Keys.Select(k => k.Frame));
+    }
+
+    [Fact]
     public void The_scene_is_modified_until_saved_and_saves_say_what_they_drop()
     {
         var s = new LayoutSession();

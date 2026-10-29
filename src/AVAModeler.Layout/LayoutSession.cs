@@ -143,12 +143,17 @@ public sealed class LayoutSession
 
     // ───────────────────────────── editing items ─────────────────────────────
 
-    /// <summary>Sets a channel at the current frame: a key with auto-key on, otherwise the key here (if any) or the whole channel.</summary>
+    /// <summary>
+    /// Sets a channel at the current frame by the rule AI agents' keys follow (<see cref="Keying"/>). With auto-key on,
+    /// a key here; the first one replaces the constant of a channel never keyed, so its animation starts at the first
+    /// frame keyed, not at a key at frame 0 nobody chose. With auto-key off, the value throughout for a channel with
+    /// one key or none, or the key here on an animated channel (one with no key here gets one, so the change isn't lost).
+    /// </summary>
     public void SetChannel(SceneItem item, Channel channel, double value)
     {
         var env = item[channel];
-        if (AutoKey || env.IndexOf(Frame) >= 0 || env.Keys.Count > 1) env.AddKey(Frame, value);
-        else env.SetConstant(value);
+        bool key = AutoKey || Keying.IsAnimated(env) && env.IndexOf(Frame) < 0;
+        Keying.Set(env, Scene, Frame, value, key, $"{item.Name}'s {channel}");
         Scene.Notify();
     }
 
@@ -159,18 +164,32 @@ public sealed class LayoutSession
         SetChannel(item, (Channel)(first + 2), v.Z);
     }
 
+    /// <summary>Keys every channel of the chosen item at this frame with its value here, by the same rule as <see cref="SetChannel"/>.</summary>
     public void CreateKey()
     {
         if (Selected == null) return;
-        Selected.CreateKey(Frame);
+        var values = Selected.Channels.Select(c => c.Evaluate(Frame)).ToArray();
+        for (int i = 0; i < values.Length; i++) Keying.Key(Selected.Channels[i], Scene, new EnvelopeKey(Frame, values[i]), keepShape: true);
+        Scene.Notify();
         SetStatus($"Key made at frame {Frame:0}.");
     }
 
+    /// <summary>
+    /// Removes the chosen item's keys at this frame, but not a channel's only key, which holds its value (as agents'
+    /// delete_key does): without it the channel would fall to 0.
+    /// </summary>
     public void DeleteKey()
     {
         if (Selected == null) return;
-        Selected.DeleteKey(Frame);
-        SetStatus($"Key at frame {Frame:0} deleted.");
+        int kept = 0;
+        foreach (var c in Selected.Channels)
+        {
+            if (c.IndexOf(Frame) < 0) continue;
+            if (c.Keys.Count == 1) kept++;
+            else c.RemoveKeyAt(Frame);
+        }
+        Scene.Notify();
+        SetStatus($"Key at frame {Frame:0} deleted." + (kept > 0 ? $" {kept} channel(s) kept it: it's their only key." : ""));
     }
 
     public void Remove(SceneItem item)

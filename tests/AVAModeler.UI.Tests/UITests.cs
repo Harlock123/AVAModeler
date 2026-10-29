@@ -319,7 +319,8 @@ public class LayoutTests
         layout.Session.SetFrame(15);
         double x = obj.PositionAt(15).X;
         Assert.InRange(x, 0.2, 1.8);
-        Assert.Equal([0.0, 1.0, 30.0], obj.KeyFrames()); // a new channel starts with a key at frame 0, as in LightWave
+        // The first key replaces the frame-0 constant, as agents' keys do (channels not keyed keep theirs).
+        Assert.Equal([1.0, 30.0], obj[Channel.PositionX].Keys.Select(k => k.Frame));
         // The Modeler's edits show at once.
         int before = obj.BaseMesh().Polygons.Count;
         w.ShowModeler();

@@ -3,7 +3,8 @@ using AVAModeler.Scene;
 namespace AVAModeler.Layout;
 
 /// <summary>
-/// How an AI agent's settings become keys, with one rule written down (the MCP tools describe it). A channel that has
+/// How settings become keys, with one rule written down: Layout's controls and AI agents' MCP tools (which describe
+/// it) both follow it. A channel that has
 /// never been keyed holds a constant: one key outside the scene's frames (new items keep it at frame 0). Keying such a
 /// channel at a frame replaces that constant, so an animation starts at the first frame keyed rather than being pulled
 /// about by a key at frame 0 nobody chose. Any other key is only replaced at its own frame, keeping its tension,

@@ -138,7 +138,9 @@ Modeler and Layout shows the change at once.
 - **The scene**: objects, nulls, lights, cameras and bones, each with a parent and a pivot. Objects can also be
   loaded from files.
 - **Animation**: a key per channel, interpolated by Kochanek–Bartels TCB splines as classic LightWave did.
-  - With Auto key on, moving or turning an item in the view keys it at the current frame.
+  - With Auto key on, moving or turning an item in the view keys it at the current frame. An item's first key
+    replaces its starting value, so its motion begins at the first frame you key. AI agents' keys follow the same rule.
+  - Delete Key leaves a channel's only key, which holds its value.
   - The timeline plays, steps, and shows the chosen item's keys.
   - The graph editor shows the channels as curves. Choose a key to set its value, tension, continuity, bias and
     linear flag, and set what happens before the first key and after the last.

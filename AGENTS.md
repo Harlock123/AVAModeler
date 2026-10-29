@@ -42,8 +42,8 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - `src/AVAModeler.Layout/`: Layout's state without its controls, so the workspace and the MCP server share it.
   - `LayoutSession.cs`: the scene being worked on, its frame, chosen item and auto-key, the Modeler's object in the
     scene, loading and saving scenes (with an object loader passed in), the modified flag.
-  - `SceneDrawing.cs` (what Layout's views draw, and looking through a scene camera) and `Keying.cs` (how an agent's
-    values become keys).
+  - `SceneDrawing.cs` (what Layout's views draw, and looking through a scene camera) and `Keying.cs` (how values become keys:
+    one rule for Layout's controls and agents alike).
 - `src/AVAModeler.Mcp/`: the MCP server for AI agents (on the official C# SDK, `ModelContextProtocol.Core`). No UI.
   - `ModelerTools.cs` is every Modeler tool and `LayoutTools.cs` every Layout (scene) tool, one partial class in the
     SDK's attribute model; `ModelerServer.cs` builds the server and its instructions to agents. `ToolCatalog.cs`

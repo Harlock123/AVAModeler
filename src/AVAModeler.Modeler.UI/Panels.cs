@@ -64,7 +64,7 @@ public sealed class ToolTabs : DockPanel
         ["Multiply"] = [],
         ["Polygon"] = [],
         ["Tools"] = [("Cut", "Cut"), ("Copy", "Copy"), ("Paste", "Paste"), ("Swap Layers", "Swap Layers"), ("Run Macro", "Run Macro")],
-        ["Display"] = [("Fit All", "Fit All"), ("Fit Selected", "Fit Selected"), ("Maximize", "Maximize View"), ("UV View", "UV View"), ("Next UV Map", "Next UV Map"), ("Wireframe", "Style Wireframe"),
+        ["Display"] = [("Fit All", "Fit All"), ("Fit Selected", "Fit Selected"), ("Maximize", "Maximize View"), ("Numeric", "Numeric Panel"), ("UV View", "UV View"), ("Next UV Map", "Next UV Map"), ("Wireframe", "Style Wireframe"),
             ("Shaded", "Style Shaded"), ("Shaded + Wire", "Style ShadedWireframe"), ("MetaNURBS", "MetaNURBS"), ("Backfaces", "Backface Tint"),
             ("Snap to Grid", "Snap"), ("Center: Selection", "Center Selection"), ("Center: Mouse", "Center Mouse"), ("Center: Origin", "Center Origin"),
             ("Surfaces…", "Surface Editor"), ("Preferences…", "Preferences")],
@@ -131,12 +131,20 @@ public sealed class ToolTabs : DockPanel
 /// <summary>
 /// The numeric panel: an editor for each of a tool's parameters (numbers, X/Y/Z, on/off, choices, text), kept in
 /// step with dragging. For an armed tool, edits update the preview at once; a requester tool's Apply runs it.
+/// It collapses to a thin strip down the right edge (its ▸ button, the strip, or N), which lights up while a tool has
+/// numbers to show; a requester tool opens it again, since its Apply is here.
 /// </summary>
 public sealed class NumericPanel : Border
 {
     private readonly ModelerSession _session;
-    private readonly StackPanel _rows = new() { Spacing = 3, Margin = new Thickness(6) };
+    private readonly StackPanel _rows = new() { Spacing = 3, Margin = new Thickness(6, 0, 6, 6) };
+    private readonly TextBlock _title = new() { FontWeight = FontWeight.Bold, FontSize = 14, Foreground = Look.Text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly Control _open;
+    private readonly Button _strip;
     private Tool? _tool;
+    private bool _collapsed;
+
+    public const double OpenWidth = 236, CollapsedWidth = 22;
     private bool _syncing;
     private readonly List<Action> _refresh = [];
 
@@ -147,13 +155,63 @@ public sealed class NumericPanel : Border
     {
         _session = session;
         Background = Look.PanelDark;
-        Width = 236;
-        Child = new ScrollViewer { Content = _rows };
+        var hide = Look.MakeButton("»", () => Collapsed = true, "Hide the numeric panel (N)");
+        hide.Padding = new Thickness(5, 0);
+        var header = new DockPanel { Margin = new Thickness(6, 6, 4, 3) };
+        DockPanel.SetDock(hide, Dock.Right);
+        header.Children.Add(hide);
+        header.Children.Add(_title);
+        var open = new DockPanel();
+        DockPanel.SetDock(header, Dock.Top);
+        open.Children.Add(header);
+        open.Children.Add(new ScrollViewer { Content = _rows });
+        _open = open;
+        _strip = new Button
+        {
+            Content = new StackPanel
+            {
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock { Text = "«", FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center },
+                    new LayoutTransformControl { LayoutTransform = new RotateTransform(90), Child = new TextBlock { Text = "Numeric", FontSize = 12 } },
+                },
+            },
+            HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Top,
+            Padding = new Thickness(0, 8), Margin = new Thickness(0), CornerRadius = new CornerRadius(0),
+            Background = Look.PanelDark, Foreground = Look.Text,
+        };
+        _strip.Click += (_, _) => Collapsed = false;
         session.Changed += Sync;
         Show(null);
+        Collapsed = session.Preferences.NumericCollapsed;
     }
 
     public Tool? Tool => _tool;
+
+    /// <summary>Whether the panel is folded to a strip, giving the views its room. Remembered in the preferences.</summary>
+    public bool Collapsed
+    {
+        get => _collapsed;
+        set
+        {
+            _collapsed = value;
+            _session.Preferences.NumericCollapsed = value;
+            Width = value ? CollapsedWidth : OpenWidth;
+            Child = value ? _strip : _open;
+            Mark();
+        }
+    }
+
+    /// <summary>The strip lights up while a tool has numbers in the folded panel, and says whose they are.</summary>
+    private void Mark()
+    {
+        bool waiting = _collapsed && _tool != null;
+        _strip.Background = waiting ? Look.ButtonOn : Look.PanelDark;
+        _strip.Foreground = waiting ? Look.TextDark : Look.Text;
+        ToolTip.SetTip(_strip, waiting ? $"Show {_tool!.Name}'s numbers (N)" : "Show the numeric panel (N)");
+    }
 
     /// <summary>Shows a tool's parameters (or a note that there's nothing to show).</summary>
     public void Show(Tool? tool)
@@ -161,12 +219,15 @@ public sealed class NumericPanel : Border
         _tool = tool;
         _rows.Children.Clear();
         _refresh.Clear();
-        _rows.Children.Add(new TextBlock { Text = tool == null ? "Numeric" : tool.Name, FontWeight = FontWeight.Bold, FontSize = 14, Foreground = Look.Text });
+        _title.Text = tool == null ? "Numeric" : tool.Name;
+        Mark();
         if (tool == null)
         {
             _rows.Children.Add(Note("Pick a tool to see and type its numbers here."));
             return;
         }
+        // A requester does nothing until Apply, which is in here.
+        if (tool.Kind == ToolKind.Requester && _collapsed) Collapsed = false;
         if (tool.Help != "") _rows.Children.Add(Note(tool.Help));
         foreach (var p in tool.Parameters) _rows.Children.Add(Editor(p));
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };

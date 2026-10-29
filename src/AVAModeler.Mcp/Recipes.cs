@@ -164,7 +164,7 @@ public static class Recipes
         object animation = m == "none"
             ? new { folder = "turntable", name = "turntable", first = 1, last = n, width = w, samples = 1 }
             : new { folder = "turntable", name = "turntable", first = 1, last = n, width = w, samples = 1, movie = m };
-        recipe.Step("Render every frame into the turntable folder" + (m == "none" ? "" : $", and join them into turntable/turntable.{(m == "both" ? "mp4 and turntable/turntable.gif" : m)}") + ". render_animation does at most 20 million rays (width × height × samples × frames) a call: render bigger in parts if you need to.", "render_animation", animation);
+        recipe.Step("Render every frame into the turntable folder" + (m == "none" ? "" : $", and join them into turntable/turntable.{(m == "both" ? "mp4 and turntable/turntable.gif" : m)}") + ". render_animation does at most 20 million rays (width × height × samples × frames) a call: render bigger or longer in parts, then join them with make_movie.", "render_animation", animation);
         return recipe.Text("Save the scene with save_scene (e.g. \"turntable.avascene\") to keep it.");
     }
 

@@ -199,7 +199,7 @@ public sealed class LiveTests : IDisposable
     {
         await using var agent = await Agent(TimeSpan.FromMilliseconds(300));
         // The tools are listed even before the app is there.
-        Assert.Equal(61, (await agent.Client.ListToolsAsync(cancellationToken: Cancel)).Count);
+        Assert.Equal(62, (await agent.Client.ListToolsAsync(cancellationToken: Cancel)).Count);
         // So are the recipes, which need no app.
         var recipe = await agent.Client.GetPromptAsync("table", cancellationToken: Cancel);
         Assert.Contains("→ run_tool", Assert.IsType<ModelContextProtocol.Protocol.TextContentBlock>(Assert.Single(recipe.Messages).Content).Text);

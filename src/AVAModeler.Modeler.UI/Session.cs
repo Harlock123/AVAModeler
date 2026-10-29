@@ -18,6 +18,8 @@ public sealed class Preferences
     public DisplayStyle PerspectiveStyle { get; set; } = DisplayStyle.ShadedWireframe;
     public ActionCenter ActionCenter { get; set; } = ActionCenter.Selection;
     public int SubdivisionLevel { get; set; } = 2;
+    /// <summary>Whether the numeric panel is folded to a strip.</summary>
+    public bool NumericCollapsed { get; set; }
     /// <summary>
     /// Whether AI agents may drive the open document through MCP (<c>AVAModeler --mcp --attach</c>), over a local
     /// pipe only this user can open. Off unless turned on.
@@ -85,7 +87,7 @@ public sealed class Keymap
         ["Undo"] = "Ctrl+Z", ["Redo"] = "Ctrl+Shift+Z", ["Cut"] = "X", ["Copy"] = "C", ["Paste"] = "Ctrl+V",
         ["Cycle Selection Mode"] = "Space", ["Commit"] = "Enter", ["Cancel"] = "Escape", ["Deselect"] = "OemQuestion",
         ["Invert Selection"] = "OemQuotes", ["Select Connected"] = "OemCloseBrackets", ["Fit All"] = "A", ["Fit Selected"] = "Shift+A",
-        ["Maximize View"] = "D0", ["UV View"] = "U", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
+        ["Maximize View"] = "D0", ["Numeric Panel"] = "N", ["UV View"] = "U", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
         ["New"] = "Ctrl+N", ["Open"] = "Ctrl+O", ["Save"] = "Ctrl+S", ["Quit"] = "Ctrl+Q",
     };
 

@@ -695,7 +695,7 @@ public sealed partial class ModelerTools
     }
 
     [McpServerTool(Name = "render_animation", Destructive = true)]
-    [Description("Ray-traces a run of frames into numbered PNG files in a folder inside the working folder (e.g. frames/frame0001.png, numbered by frame), and returns a contact sheet of them (up to eight a row) and the list of files. With movie (mp4, gif or both) it then joins this run's frames, in order, into frames/frame.mp4 (H.264) and/or a looping frames/frame.gif (at most 640 across), playing at the scene's frames per second divided by step, so it runs at the scene's speed; that needs ffmpeg installed (without it the frames are still saved and the reply says so). Bounded so it can't run away: at most 120 frames, 960 pixels each way and 4 samples a pixel, and width × height × samples × frames at most 20 million; it stops after 5 minutes. For a longer movie, render the frames in parts and make the movie in the last call, which joins only that call's frames. An existing file is only replaced when overwrite is true.")]
+    [Description("Ray-traces a run of frames into numbered PNG files in a folder inside the working folder (e.g. frames/frame0001.png, numbered by frame), and returns a contact sheet of them (up to eight a row) and the list of files. With movie (mp4, gif or both) it then joins this run's frames, in order, into frames/frame.mp4 (H.264) and/or a looping frames/frame.gif (at most 640 across), playing at the scene's frames per second divided by step, so it runs at the scene's speed; that needs ffmpeg installed (without it the frames are still saved and the reply says so). Bounded so it can't run away: at most 120 frames, 960 pixels each way and 4 samples a pixel, and width × height × samples × frames at most 20 million; it stops after 5 minutes. For a longer movie, render the frames in parts (first/last) into one folder, then join them all with make_movie. An existing file is only replaced when overwrite is true.")]
     public async Task<CallToolResult> RenderAnimation(
         [Description("The folder for the files, relative to the working folder (default \"frames\"); made if needed.")] string folder = "frames",
         [Description("The files' names before the frame number (default \"frame\").")] string name = "frame",
@@ -762,12 +762,73 @@ public sealed partial class ModelerTools
         };
         if (formats.Count > 0)
         {
-            var (made, problem) = await MakeMovies(job.paths, job.movies, formats, job.fps, job.pw, job.ph, job.files, cancel).ConfigureAwait(false);
+            var (made, problem) = await MakeMovies(job.paths, job.movies, formats, job.fps, job.pw, job.ph, job.files, RenderTimeLimit, cancel).ConfigureAwait(false);
             info["movies"] = Strings(made);
             info["movie_fps"] = Census.Round(job.fps, 3);
             if (problem != null) info["movie_problem"] = problem;
         }
         return new CallToolResult { Content = [ImageContentBlock.FromBytes(sheet, "image/png"), new TextContentBlock { Text = info.ToJsonString() }] };
+    }
+
+    [McpServerTool(Name = "make_movie", Destructive = true)]
+    [Description("Joins numbered PNG frames already in a folder inside the working folder (as render_animation writes them: frames/frame0001.png, numbered by frame) into an MP4 (H.264) and/or a looping GIF (at most 640 across), saved beside them as name.mp4 and name.gif. It renders nothing, so it has no frame limit: render a long animation in parts with render_animation (each call within its limit, into the same folder), then call this once to join every frame from first to last. Every frame in the range must be there, all the same size. It plays at the scene's frames per second divided by step unless fps is given. Needs ffmpeg installed. An existing movie is only replaced when overwrite is true.")]
+    public async Task<CallToolResult> MakeMovie(
+        [Description("The folder the frames are in, relative to the working folder (default \"frames\").")] string folder = "frames",
+        [Description("The frames' names before the frame number (default \"frame\"); the movies are named after it too.")] string name = "frame",
+        [Description("The first frame (default: the scene's first).")] int? first = null,
+        [Description("The last frame (default: the scene's last).")] int? last = null,
+        [Description("Use every step-th frame (default 1), as rendered with the same step.")] int step = 1,
+        [Description("mp4, gif or both (default mp4).")] string movie = "mp4",
+        [Description("Frames per second to play at (default: the scene's, divided by step).")] double? fps = null,
+        [Description("Replace movies that already exist.")] bool overwrite = false,
+        CancellationToken cancel = default)
+    {
+        var formats = MovieFormats(movie);
+        if (formats.Count == 0) throw new McpException("movie must be mp4, gif or both.");
+        if (step < 1) throw new McpException("step must be 1 or more.");
+        if (fps is { } given && (!double.IsFinite(given) || given <= 0 || given > 240)) throw new McpException("fps must be more than 0 and at most 240.");
+        if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains('/') || name.Contains('\\'))
+            throw new McpException("name must be a plain file name, such as \"frame\".");
+        var job = await DoScene("made a movie", (c, l) =>
+        {
+            var s = l.Scene;
+            int a = first ?? s.FirstFrame, b = last ?? s.LastFrame;
+            if (a < 0) throw new ArgumentException($"first ({a}) can't be below 0.");
+            if (b < a) throw new ArgumentException($"last ({b}) can't be before first ({a}).");
+            var files = Files(c);
+            string dir = Path.GetDirectoryName(files.Resolve(Path.Combine(folder, "frame.png")))!;
+            var paths = Enumerable.Range(0, (b - a) / step + 1).Select(i => Path.Combine(dir, FormattableString.Invariant($"{name}{a + i * step:0000}.png"))).ToList();
+            var missing = paths.Where(p => !File.Exists(p)).Select(Path.GetFileName).ToList();
+            if (missing.Count > 0)
+                throw new ArgumentException($"{missing.Count} of the {paths.Count} frames aren't in {folder}: {string.Join(", ", missing.Take(5))}{(missing.Count > 5 ? "…" : "")}. Render them with render_animation first.");
+            var movies = formats.Select(f => MovieEncoder.MoviePath(dir, name, f)).ToList();
+            files.CheckWritable(movies, overwrite);
+            return (paths, movies, files, fps: fps ?? s.FramesPerSecond / step);
+        }, cancel, changes: false).ConfigureAwait(false);
+        var (w, h) = PngSize(job.paths[0]);
+        var odd = job.paths.Skip(1).FirstOrDefault(p => PngSize(p) != (w, h));
+        if (odd != null) throw new McpException($"{Path.GetFileName(odd)} isn't {w}×{h} like {Path.GetFileName(job.paths[0])}; every frame of a movie must be the same size.");
+        var (made, problem) = await MakeMovies(job.paths, job.movies, formats, job.fps, w, h, job.files, AnimationTimeLimit, cancel).ConfigureAwait(false);
+        var info = new JsonObject
+        {
+            ["frames"] = job.paths.Count,
+            ["movies"] = Strings(made),
+            ["movie_fps"] = Census.Round(job.fps, 3),
+            ["seconds_long"] = Census.Round(job.paths.Count / job.fps, 2),
+            ["size"] = new JsonArray(w, h),
+        };
+        if (problem != null) info["movie_problem"] = problem;
+        return new CallToolResult { Content = [new TextContentBlock { Text = info.ToJsonString() }], IsError = made.Count == 0 };
+    }
+
+    /// <summary>A PNG's width and height, from its header.</summary>
+    private static (int W, int H) PngSize(string path)
+    {
+        Span<byte> head = stackalloc byte[24];
+        using (var f = File.OpenRead(path))
+            if (f.ReadAtLeast(head, 24, throwOnEndOfStream: false) < 24 || head[12] != (byte)'I' || head[13] != (byte)'H')
+                throw new McpException($"{Path.GetFileName(path)} isn't a PNG.");
+        return (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(head[16..]), System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(head[20..]));
     }
 
     private MovieEncoder? _movies;
@@ -797,7 +858,7 @@ public sealed partial class ModelerTools
     /// and <see cref="MovieEncoder"/> reads name0001.png onwards, so copies numbered 1, 2, 3… go in a temporary folder
     /// outside the working folder, which is deleted afterwards; the movies are then copied into place.
     /// </summary>
-    private async Task<(List<string> Made, string? Problem)> MakeMovies(List<string> frames, List<string> targets, List<MovieFormat> formats, double fps, int width, int height, Workspace files, CancellationToken cancel)
+    private async Task<(List<string> Made, string? Problem)> MakeMovies(List<string> frames, List<string> targets, List<MovieFormat> formats, double fps, int width, int height, Workspace files, TimeSpan limit, CancellationToken cancel)
     {
         if (!Movies.Available) return ([], MovieEncoder.NotInstalled);
         string temp = Path.Combine(Path.GetTempPath(), "avamodeler-movie-" + Guid.NewGuid().ToString("N"));
@@ -806,7 +867,7 @@ public sealed partial class ModelerTools
         {
             for (int i = 0; i < frames.Count; i++) File.Copy(frames[i], Path.Combine(temp, FormattableString.Invariant($"frame{i + 1:0000}.png")));
             using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-            timer.CancelAfter(RenderTimeLimit);
+            timer.CancelAfter(limit);
             var result = await Movies.EncodeAsync(temp, "frame", fps, frames.Count, width, height, formats, "movie", timer.Token).ConfigureAwait(false);
             cancel.ThrowIfCancellationRequested();
             List<string> made = [];

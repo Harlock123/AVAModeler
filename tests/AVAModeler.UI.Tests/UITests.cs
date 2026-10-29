@@ -209,6 +209,29 @@ public class WindowTests
     }
 
     [AvaloniaFact]
+    public void The_numeric_panel_folds_to_a_strip_and_a_requester_opens_it()
+    {
+        var w = Ui.Open();
+        var numeric = w.Modeler.Numeric;
+        Assert.False(numeric.Collapsed);
+        double wide = Ui.View(w, ViewKind.Top).Bounds.Width;
+        Ui.Key(w, Key.N);
+        Ui.Pump();
+        Assert.True(numeric.Collapsed);
+        Assert.True(w.Session.Preferences.NumericCollapsed);
+        Assert.Equal(NumericPanel.CollapsedWidth, numeric.Bounds.Width);
+        Assert.True(Ui.View(w, ViewKind.Top).Bounds.Width > wide);
+        // An armed tool leaves it folded; a requester, whose Apply is in it, opens it.
+        w.Session.Commands.Run("Box");
+        w.Modeler.PickTool("Move");
+        Assert.True(numeric.Collapsed);
+        w.Modeler.PickTool("Subdivide");
+        Assert.False(numeric.Collapsed);
+        w.Modeler.Execute("Numeric Panel");
+        Assert.True(numeric.Collapsed);
+    }
+
+    [AvaloniaFact]
     public void Layers_switch_with_the_number_keys_and_show_the_background()
     {
         var w = Ui.Open();

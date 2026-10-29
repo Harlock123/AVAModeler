@@ -50,7 +50,7 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     one rule for Layout's controls and agents alike).
   - `AnimationRender.cs` (Render Animation's work: a run of frames from a `Scene.Copy` into numbered PNGs on a worker
     thread, with progress and cancelling) and `MovieEncoder.cs` (joins the frames into MP4 and GIF with the ffmpeg on
-    the PATH, using `carbon_atom.py`'s arguments; render_animation's movie parameter uses it too).
+    the PATH, using `carbon_atom.py`'s arguments; render_animation's movie parameter and make_movie use it too).
 - `src/AVAModeler.Mcp/`: the MCP server for AI agents (on the official C# SDK, `ModelContextProtocol.Core`). No UI.
   - `ModelerTools.cs` is every Modeler tool, `LayoutTools.cs` every Layout (scene) tool and `DeformTools.cs` the
     tools that deform scene objects (`copy_layer`, morphs, displacements, `skelegons_to_bones`), one partial class in
@@ -66,7 +66,7 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     `ILiveModeler.Layout`, and waits while `ILiveModeler.Busy` says the person is busy.
   - `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
     proxy to that pipe), `McpCommandLine.cs` (`--mcp`), `Workspace.cs` (the working folder's file rules),
-    `Pictures.cs` (render_view and render), `ScenePictures.cs` (render_scene_view, render_scene, render_animation).
+    `Pictures.cs` (render_view and render), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
 - `src/AVAModeler.Chat/`: the AI Chat panel's logic, no UI, on the official Anthropic C# SDK (NuGet `Anthropic`).
   - `ChatSession.cs` is the conversation and the agent loop: a streamed Messages API request with the MCP server's
     tools, each `tool_use` run through the bridge, results back (pictures as image blocks, failures as `is_error`),

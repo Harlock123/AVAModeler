@@ -374,4 +374,39 @@ public class DeformHandlerTests
         Assert.Null(JsonNode.Parse(Text(await b.Tools.RenderAnimation("out", "f", 1, 2, width: 32, cancel: Cancel)))!["movie_problem"]);
         Assert.Contains("movie must be mp4, gif or both", await Error(b.Tools.RenderAnimation(movie: "avi", cancel: Cancel)));
     }
+    [Fact]
+    public async Task Make_movie_joins_frames_rendered_in_parts()
+    {
+        using var b = await WithBox();
+        await b.Tools.RenderAnimation("out", "f", 1, 3, width: 32, cancel: Cancel);
+        await b.Tools.RenderAnimation("out", "f", 4, 6, width: 32, cancel: Cancel);
+        // Every frame must be there, and the same size.
+        Assert.Contains("1 of the 7 frames aren't in out: f0007.png", await Error(b.Tools.MakeMovie("out", "f", 1, 7, cancel: Cancel)));
+        File.Copy(b.Folder.File("out/f0001.png"), b.Folder.File("out/g0001.png"));
+        await b.Tools.RenderAnimation("out", "g", 2, 2, width: 48, cancel: Cancel);
+        Assert.Contains("g0002.png isn't 32×", await Error(b.Tools.MakeMovie("out", "g", 1, 2, cancel: Cancel)));
+        Assert.Contains("movie must be mp4, gif or both", await Error(b.Tools.MakeMovie(movie: "none", cancel: Cancel)));
+        Assert.Contains("fps must be", await Error(b.Tools.MakeMovie(fps: 0, cancel: Cancel)));
+
+        var saved = b.Tools.Movies;
+        b.Tools.Movies = new MovieEncoder(null);
+        var none = JsonNode.Parse(Text(await b.Tools.MakeMovie("out", "f", 1, 6, cancel: Cancel)))!;
+        Assert.Equal(MovieEncoder.NotInstalled, (string?)none["movie_problem"]);
+        b.Tools.Movies = saved;
+        if (MovieEncoder.Find() == null) Assert.Skip("ffmpeg isn't installed.");
+
+        var info = JsonNode.Parse(Text(await b.Tools.MakeMovie("out", "f", 1, 6, movie: "both", cancel: Cancel)))!;
+        Assert.Null(info["movie_problem"]);
+        Assert.Equal(6, (int)info["frames"]!);
+        Assert.Equal(30, (double)info["movie_fps"]!);
+        Assert.Equal([b.Folder.File("out/f.mp4"), b.Folder.File("out/f.gif")], info["movies"]!.AsArray().Select(x => (string?)x));
+        Assert.Equal("GIF89a"u8.ToArray(), File.ReadAllBytes(b.Folder.File("out/f.gif"))[..6]);
+        // Its own movies are replaced; someone else's only with overwrite.
+        Assert.Equal(12, (double)JsonNode.Parse(Text(await b.Tools.MakeMovie("out", "f", 1, 6, fps: 12, cancel: Cancel)))!["movie_fps"]!);
+        File.Copy(b.Folder.File("out/f0001.png"), b.Folder.File("out/theirs0001.png"));
+        File.WriteAllBytes(b.Folder.File("out/theirs.mp4"), [1]);
+        Assert.Contains("theirs.mp4 already exists", await Error(b.Tools.MakeMovie("out", "theirs", 1, 1, cancel: Cancel)));
+        await b.Tools.MakeMovie("out", "theirs", 1, 1, overwrite: true, cancel: Cancel);
+        Assert.True(new FileInfo(b.Folder.File("out/theirs.mp4")).Length > 100);
+    }
 }

@@ -44,6 +44,9 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     scene, loading and saving scenes (with an object loader passed in), the modified flag.
   - `SceneDrawing.cs` (what Layout's views draw, and looking through a scene camera) and `Keying.cs` (how values become keys:
     one rule for Layout's controls and agents alike).
+  - `AnimationRender.cs` (Render Animation's work: a run of frames from a `Scene.Copy` into numbered PNGs on a worker
+    thread, with progress and cancelling) and `MovieEncoder.cs` (joins the frames into MP4 and GIF with the ffmpeg on
+    the PATH, using `carbon_atom.py`'s arguments; the MCP server could write movies through it too).
 - `src/AVAModeler.Mcp/`: the MCP server for AI agents (on the official C# SDK, `ModelContextProtocol.Core`). No UI.
   - `ModelerTools.cs` is every Modeler tool and `LayoutTools.cs` every Layout (scene) tool, one partial class in the
     SDK's attribute model; `ModelerServer.cs` builds the server and its instructions to agents. `ToolCatalog.cs`
@@ -58,6 +61,7 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     `Pictures.cs` (render_view and render), `ScenePictures.cs` (render_scene_view, render_scene, render_animation).
 - `src/AVAModeler.Modeler.UI/` and `src/AVAModeler.Layout.UI/`: the two workspaces. `Session.cs` holds
   `Preferences`. The Layout workspace shows a `LayoutSession` (from `AVAModeler.Layout`) and keeps no state of its own.
+  - `AnimationWindow.cs` is Render › Render Animation (F10), a thin window over `AnimationRender` and `MovieEncoder`.
 - `src/AVAModeler/`: the application, one window hosting both workspaces. `Program.cs` sends `--mcp` to the MCP
   server before Avalonia starts; `LiveAgents.cs` is the app's side of live mode (it hands the live host both the
   Modeler's session and the window's `LayoutSession`, which exists before Layout is first shown).

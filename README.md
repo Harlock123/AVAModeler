@@ -155,12 +155,18 @@ Modeler and Layout shows the change at once.
     textures don't shimmer, and bump maps that tilt the shading by the image's slope.
   - Lights and backdrop: ray-traced shadows with soft-edged spots, ambient light, a gradient backdrop, and fog.
   - Antialiasing, and saving to PNG with or without alpha.
+  - Render › Render Animation (F10) renders a run of frames, with a step, into numbered PNGs (`frame0001.png`…), in
+    `<scene>_frames` beside the saved scene by default. Each frame shows as it finishes, with the time left and a
+    Cancel button; you can go on working while it renders, as it renders a copy of the scene. If
+    [ffmpeg](https://ffmpeg.org) is on the PATH, it also joins the frames into an MP4 (H.264) and a looping GIF.
 - **Deformation**: bones bend objects, weighted by distance as classic LightWave's were. Skelegons in the Modeler
   turn into bones. Morph targets blend by envelope, and there is wave and ripple displacement.
 
 ![Layout](Images/AVAModeler-layout.png)
 
 ![A ray-traced frame](Images/AVAModeler-render.png)
+
+![Rendering an animation](Images/AVAModeler-animation.png)
 
 ![A ray-traced still life: a cubic-mapped, bump-mapped crate, a UV-mapped planet and a tiled floor](Images/AVAModeler-textured-render.png)
 
@@ -193,7 +199,7 @@ On Windows, unzip and run `AVAModeler.exe`. On macOS, if Gatekeeper refuses to o
 | Navigate | Wheel zooms; middle-drag or Alt-drag pans; drag the perspective view to turn it; double-click to maximize | A fit all, Shift+A fit selected, `.` and `,` zoom, 0 maximize, U the UV view |
 | Layers | The layer buttons (top half foreground, bottom half background) | 1–9 foreground, Shift adds, Alt background, `\` swaps |
 | Edit | | Ctrl+Z undo, Ctrl+Shift+Z redo, X cut, C copy, Ctrl+V paste, Delete remove |
-| Workspaces | | F1 Modeler, F2 Layout, F9 render (in Layout) |
+| Workspaces | | F1 Modeler, F2 Layout, F9 render a frame and F10 an animation (in Layout) |
 | Files | | Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Q quit (File › Quit) |
 
 The default tool keys follow the classic layout: T Move, Y Rotate, H Size, Shift+H Stretch, Shift+X Box, Shift+O
@@ -353,9 +359,9 @@ It needs the .NET 10 SDK. 512 tests cover every layer:
 | Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
 | Tools | 62 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
 | Scene | 143 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots and copies, aiming an item at a point, object paths relative to the scene |
-| Layout | 7 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw |
+| Layout | 20 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed) |
 | Mcp | 41 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was, undo_scene, the look-at maths, keys read between frames); whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
-| UI | 40 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, an AI agent working in the open window and in its Layout scene, and the screenshots |
+| UI | 46 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout and its Render Animation window, an AI agent working in the open window and in its Layout scene, and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -376,9 +382,9 @@ Layout reuses them.
 | `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp), plugins, SkiaSharp image reading |
 | `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing, the view cameras, picking |
 | `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones, LWS and JSON scenes, the ray tracer |
-| `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, scene files, what the views draw), shared by the Layout workspace and the MCP server |
+| `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, scene files, what the views draw, rendering animations and joining them into movies with ffmpeg), shared by the Layout workspace and the MCP server |
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, layers, surface editor, preferences |
-| `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render window |
+| `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render and animation windows |
 | `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
 | `AVAModeler` | The application: one window hosting both workspaces |
 
@@ -401,6 +407,10 @@ Layout reuses them.
   procedural, gradient and front-projection layers are skipped. LWOB has nowhere for a layer's blending mode, so it
   isn't saved there (the native .avascene keeps it). Tools that make new geometry from nothing (Box, Text and so on)
   leave it without UVs, and a swept wall takes its edge's UVs at both ends rather than new ones.
+
+- **Render Animation** needs ffmpeg on the PATH for MP4 and GIF (it isn't bundled); without it, the PNG frames are
+  still written. Frames are numbered from 1 in the order rendered, not by scene frame. It renders frames one after
+  another (each one multithreaded), with no motion blur or field rendering.
 
 - **AI agents (MCP)**: Points and Drag work only with the mouse, so agents use `add_points` and Move instead.
   Layout has no undo of its own: `undo_scene` takes back only an agent's own scene changes, and only while nobody

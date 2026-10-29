@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.LogicalTree;
 using AVAModeler.Core;
 using AVAModeler.Layout;
 using AVAModeler.Layout.UI;
@@ -208,6 +209,17 @@ public class ScreenshotTests
     public void Layout_with_the_ship_animated()
     {
         var w = WithMacro("spaceship.lua");
+        var layout = AnimatedShip(w);
+        layout.View.Mode = LayoutViewMode.Perspective;
+        layout.View.Fit();
+        layout.View.Camera.Heading = 20;
+        layout.View.Camera.Pitch = 18;
+        Shot(w, "layout");
+    }
+
+    /// <summary>The spaceship in Layout, flying across from frame 1 to 60.</summary>
+    private static LayoutWorkspace AnimatedShip(MainWindow w)
+    {
         var doc = w.Session.Document;
         doc.Surfaces[0].Color = new Rgb(180, 190, 205);
         doc.Surfaces[doc.SurfaceIndex("Engine")].Color = new Rgb(255, 120, 40);
@@ -226,11 +238,43 @@ public class ScreenshotTests
         s.SetVector(ship, 0, new Vec3(3, 1.5, 1));
         s.SetVector(ship, 3, new Vec3(45, -20, 0));
         s.SetFrame(24);
-        layout.View.Mode = LayoutViewMode.Perspective;
-        layout.View.Fit();
-        layout.View.Camera.Heading = 20;
-        layout.View.Camera.Pitch = 18;
-        Shot(w, "layout");
+        return layout;
+    }
+
+    [AvaloniaFact]
+    public void Rendering_the_ships_animation()
+    {
+        var w = WithMacro("spaceship.lua");
+        var layout = AnimatedShip(w);
+        var scene = layout.Session.Scene;
+        scene.CurrentCamera!.SetPosition(1, new Vec3(0, 1, -9));
+        scene.CurrentCamera.SetRotation(1, new Vec3(0, 6, 0));
+        scene.GradientBackground = true;
+        scene.GradientTop = new Vec3(0.05, 0.08, 0.2);
+        scene.GradientBottom = new Vec3(0.35, 0.3, 0.45);
+        var folder = Path.Combine(Path.GetTempPath(), "avamodeler-shots", "ship_frames");
+        try
+        {
+            var a = new AnimationWindow(layout.Session) { Width = 860, Height = 720 };
+            a.Show();
+            void Set(string name, string text) => a.GetLogicalDescendants().OfType<TextBox>().First(b => b.Name == name).Text = text;
+            Set("Last", "60");
+            Set("Step", "12");
+            Set("Width", "480");
+            Set("Height", "270");
+            Set("Folder", folder);
+            foreach (var c in a.GetLogicalDescendants().OfType<CheckBox>().Where(c => c.Name is "Mp4" or "Gif")) c.IsChecked = false;
+            var run = a.Start();
+            for (int i = 0; i < 30000 && !run.IsCompleted; i++) { Ui.Pump(); Thread.Sleep(2); }
+            Assert.True(run.IsCompleted);
+            Assert.Equal(5, a.Result!.Files.Count);
+            Shot(a, "animation");
+            a.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(Path.GetDirectoryName(folder))) Directory.Delete(Path.GetDirectoryName(folder)!, true);
+        }
     }
 
     [AvaloniaFact]

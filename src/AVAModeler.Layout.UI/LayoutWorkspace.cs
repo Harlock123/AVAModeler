@@ -136,6 +136,23 @@ public sealed class LayoutWorkspace : DockPanel
         if (Owner != null) w.Show(Owner); else w.Show();
     }
 
+    private AnimationWindow? _animation;
+
+    /// <summary>Render › Render Animation (F10): the animation window, or the one already open brought forward.</summary>
+    public AnimationWindow RenderAnimation()
+    {
+        _player.Stop();
+        if (_animation is { IsVisible: true })
+        {
+            _animation.Activate();
+            return _animation;
+        }
+        var w = _animation = new AnimationWindow(Session);
+        w.Closed += (_, _) => { if (_animation == w) _animation = null; };
+        if (Owner != null) w.Show(Owner); else w.Show();
+        return w;
+    }
+
     // ───────────────────────────── the item list and properties ─────────────────────────────
 
     private void RefreshItems()
@@ -313,7 +330,7 @@ public sealed class LayoutWorkspace : DockPanel
                     Item("_Point Light", () => Session.Select(Session.Scene.AddLight("Point Light", LightType.Point))),
                     Item("_Spot Light", () => Session.Select(Session.Scene.AddLight("Spot Light", LightType.Spot))),
                     Item("_Camera", () => Session.Select(Session.Scene.AddCamera("Camera")))),
-                Group("_Render", Item("_Render Frame", Render)),
+                Group("_Render", Item("_Render Frame", Render), Item("Render _Animation…", () => RenderAnimation())),
                 Group("_Help", Item("_Layout", () => _ = Dialogs.Message(Owner, "Layout", Help))),
             },
         };
@@ -329,7 +346,8 @@ public sealed class LayoutWorkspace : DockPanel
         The graph editor shows the chosen item's channels as curves; click a key to set its value, tension, continuity and
         bias (TCB, as classic LightWave), and what happens before the first key and after the last.
 
-        Render › Render Frame ray-traces the frame through the current camera. Scenes save as .avascene (everything) or as
+        Render › Render Frame (F9) ray-traces the frame through the current camera. Render › Render Animation (F10) renders
+        a run of frames into numbered PNGs, and joins them into an MP4 or a looping GIF if ffmpeg is installed. Scenes save as .avascene (everything) or as
         LightWave .lws (for other programs); .lws scenes from LightWave 4 and 5 (and later) load.
         """;
 

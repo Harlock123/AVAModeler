@@ -21,7 +21,8 @@ public class EndToEndTests
     private static async Task BuildATable(McpClient client, string folder)
     {
         var tools = await client.ListToolsAsync(cancellationToken: Cancel);
-        Assert.Equal(53, tools.Count);
+        Assert.Equal(61, tools.Count);
+        Assert.Equal(9, (await client.ListPromptsAsync(cancellationToken: Cancel)).Count);
         Assert.All(tools, t => Assert.False(string.IsNullOrWhiteSpace(t.Description), $"{t.Name} has no description"));
         var listed = await client.Json("list_tools");
         Assert.Contains(listed["tools"]!.AsArray(), t => (string?)t!["name"] == "Lathe");
@@ -149,6 +150,8 @@ public class EndToEndTests
         await StageTheTable(session.Client, folder.Path);
         Assert.Contains("undo_scene", session.Client.ServerInstructions ?? "");
         Assert.Contains("add_object", session.Client.ServerInstructions ?? "");
+        Assert.Contains("skelegons_to_bones", session.Client.ServerInstructions ?? "");
+        Assert.Contains("morph.<name>", session.Client.ServerInstructions ?? "");
     }
 
     [Fact]

@@ -7,8 +7,10 @@ namespace AVAModeler.Scene;
 /// settings and current camera, which items it held and in what order, and each item's name, parent, pivot,
 /// visibility, channels and own settings (a light's, a camera's, an object's, a bone's). Items are kept by reference,
 /// so restoring brings back the very items that were removed since, takes away those added since, and leaves anything
-/// that holds an item (a selection) pointing at the right one. Objects' documents aren't copied (their geometry has the
-/// Modeler's own undo), and their morph targets and displacements are kept as lists, not their settings.
+/// that holds an item (a selection) pointing at the right one. An object's morph targets and displacements are kept by
+/// reference too, with their settings: a morph's name, target and weight envelope, a displacement's shape, axes,
+/// centre, wavelength, speed, phase and amplitude envelope. Objects' documents aren't copied (their geometry has the
+/// Modeler's own undo), and nor are morph target meshes: replace a target's mesh rather than editing it in place.
 /// </summary>
 public sealed class SceneSnapshot
 {
@@ -122,12 +124,38 @@ public sealed class SceneSnapshot
             List<Bone> bones = [.. o.BoneList];
             List<MorphTarget> morphs = [.. o.MorphList];
             List<WaveDisplacement> displacements = [.. o.DisplacementList];
+            var morphStates = morphs.Select(Morph).ToArray();
+            var displacementStates = displacements.Select(Displacement).ToArray();
             return () =>
             {
                 (o.Document, o.Layer, o.SourcePath, o.CastShadows, o.ReceiveShadows, o.BoneFalloffExponent) = (doc, layer, source, cast, receive, falloff);
                 Replace(o.BoneList, bones);
                 Replace(o.MorphList, morphs);
                 Replace(o.DisplacementList, displacements);
+                foreach (var m in morphStates) m();
+                foreach (var d in displacementStates) d();
+            };
+        }
+
+        private static Action Morph(MorphTarget m)
+        {
+            var (name, target) = (m.Name, m.Target);
+            var weight = new EnvelopeState(m.Weight);
+            return () =>
+            {
+                (m.Name, m.Target) = (name, target);
+                weight.Restore();
+            };
+        }
+
+        private static Action Displacement(WaveDisplacement d)
+        {
+            var (shape, direction, along, center, wavelength, speed, phase) = (d.Shape, d.Direction, d.Along, d.Center, d.Wavelength, d.Speed, d.Phase);
+            var amplitude = new EnvelopeState(d.Amplitude);
+            return () =>
+            {
+                (d.Shape, d.Direction, d.Along, d.Center, d.Wavelength, d.Speed, d.Phase) = (shape, direction, along, center, wavelength, speed, phase);
+                amplitude.Restore();
             };
         }
 

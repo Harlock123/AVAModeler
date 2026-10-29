@@ -158,9 +158,17 @@ public sealed class LiveTests : IDisposable
         Assert.True(Pngs.Inspect(Pngs.Of(view)).Colours > 4);
         var frame = await agent.Client.Call("render_scene", new { width = 32, samples = 1 });
         Assert.True(Pngs.Inspect(Pngs.Of(frame)).Colours > 2);
-        // The person changes the scene: the agent's earlier steps aren't undone over it.
-        await _ui.InvokeAsync(() => _app.LayoutUnchecked.Scene.AddNull("The person's"));
-        Assert.Contains("has changed since", await agent.Client.Fails("undo_scene"));
+        // One history for the scene: the person's Ctrl+Z (Layout's Undo) takes back the agent's last step...
+        var undone = await _ui.InvokeAsync(() => _app.LayoutUnchecked.Undo());
+        Assert.Equal("Agent: moved an item", undone);
+        Assert.Equal(0, await _ui.InvokeAsync(() => _app.LayoutUnchecked.Scene.CurrentCamera!.PositionAt(10).X));
+        var history = await agent.Client.Json("get_scene");
+        Assert.Equal("Agent: added a light", (string?)history["undo_scene"]!["next_undo"]);
+        Assert.Equal("Agent: moved an item", (string?)history["undo_scene"]!["next_redo"]);
+        // ...and the agent's undo_scene takes back the person's.
+        await _ui.InvokeAsync(() => _app.LayoutUnchecked.Add(new AVAModeler.Scene.NullItem("The person's")));
+        Assert.Equal("Add Null", (string?)(await agent.Client.Json("undo_scene"))["undone"]);
+        Assert.Null(await _ui.InvokeAsync(() => _app.LayoutUnchecked.Scene.Find("The person's")));
         // While the person is busy, scene calls wait too.
         _app.BusyWith = "a dialog box is open in the app";
         Assert.Contains("a dialog box is open", await agent.Client.Fails("add_null", new { }));
@@ -191,7 +199,7 @@ public sealed class LiveTests : IDisposable
     {
         await using var agent = await Agent(TimeSpan.FromMilliseconds(300));
         // The tools are listed even before the app is there.
-        Assert.Equal(52, (await agent.Client.ListToolsAsync(cancellationToken: Cancel)).Count);
+        Assert.Equal(53, (await agent.Client.ListToolsAsync(cancellationToken: Cancel)).Count);
         var message = await agent.Client.Fails("get_document");
         Assert.Contains("No AVA Modeler is taking AI agents", message);
         Assert.Contains("Allow AI Agents", message);

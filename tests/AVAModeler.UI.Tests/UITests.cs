@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AVAModeler.Core;
 using AVAModeler.Layout;
 using AVAModeler.Layout.UI;
@@ -326,6 +327,80 @@ public class LayoutTests
         w.ShowModeler();
         w.Session.Commands.Run("Box", new Dictionary<string, object?> { ["Center"] = new[] { 2.0, 0, 0 } });
         Assert.Equal(before + 6, obj.BaseMesh().Polygons.Count);
+    }
+
+    [AvaloniaFact]
+    public void Ctrl_z_undoes_the_scene_and_the_edit_menu_names_the_step()
+    {
+        var w = Ui.Open();
+        w.Session.Commands.Run("Box");
+        w.ShowLayout();
+        var layout = (LayoutWorkspace)w.Content!;
+        var session = layout.Session;
+        var obj = session.Scene.Objects.Single();
+        Assert.Equal(obj, session.Selected);
+        Assert.Equal("_Undo Add Modeler Object", layout.UndoItem.Header);
+        Assert.True(layout.UndoItem.IsEnabled);
+        Assert.Equal("_Redo", layout.RedoItem.Header);
+        Assert.False(layout.RedoItem.IsEnabled);
+        int modelerSteps = w.Session.Document.Undo.Count;
+
+        // A drag in the view, press to release, is one step.
+        layout.View.Mode = LayoutViewMode.Front;
+        layout.View.Fit();
+        Ui.Pump();
+        var c = Ui.Mid(layout.View);
+        Ui.Drag(w, Ui.In(w, layout.View, c.X, c.Y), Ui.In(w, layout.View, c.X + 60, c.Y));
+        Assert.True(obj.PositionAt(session.Frame).X > 0.1);
+        Assert.Equal(2, session.History.Count);
+        Assert.Equal("_Undo Move Modeler object", layout.UndoItem.Header);
+
+        // Ctrl+Z undoes it (the scene only: the Modeler's history is its own), Ctrl+Shift+Z and Ctrl+Y redo.
+        Ui.Key(w, Key.Z, RawInputModifiers.Control);
+        Assert.Equal(0, obj.PositionAt(session.Frame).X, 9);
+        Assert.Equal(modelerSteps, w.Session.Document.Undo.Count);
+        Assert.Equal("_Redo Move Modeler object", layout.RedoItem.Header);
+        Assert.True(layout.RedoItem.IsEnabled);
+        Ui.Key(w, Key.Z, RawInputModifiers.Control | RawInputModifiers.Shift);
+        Assert.True(obj.PositionAt(session.Frame).X > 0.1);
+        Assert.False(layout.RedoItem.IsEnabled);
+        Ui.Key(w, Key.Z, RawInputModifiers.Control);
+        Ui.Key(w, Key.Y, RawInputModifiers.Control);
+        Assert.True(obj.PositionAt(session.Frame).X > 0.1);
+        Ui.Key(w, Key.Z, RawInputModifiers.Control);
+        Ui.Key(w, Key.Z, RawInputModifiers.Control);
+        Assert.Empty(session.Scene.Objects);
+        Assert.Equal("_Undo", layout.UndoItem.Header);
+        Assert.False(layout.UndoItem.IsEnabled);
+        Ui.Key(w, Key.Y, RawInputModifiers.Control);
+        Assert.Same(obj, session.Scene.Objects.Single());
+
+        // The menu items do the same.
+        layout.UndoItem.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+        Assert.Empty(session.Scene.Objects);
+        layout.RedoItem.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+        Assert.Same(obj, session.Scene.Objects.Single());
+
+        // Typing a value and pressing Enter is one step; Ctrl+Z in a text box is the text box's, not the scene's.
+        session.Select(obj);
+        Ui.Pump();
+        var x = layout.GetVisualDescendants().OfType<TextBox>().First(t => t.Text == "0" && t.Parent is Grid);
+        x.Focus();
+        x.Text = "2";
+        Ui.Key(w, Key.Enter);
+        Assert.Equal(2, obj.PositionAt(session.Frame).X, 9);
+        Assert.Equal("_Undo Move Modeler object", layout.UndoItem.Header);
+        int depth = session.History.Count;
+        x.Focus();
+        Ui.Key(w, Key.Z, RawInputModifiers.Control);
+        Assert.Equal(depth, session.History.Count);
+        Assert.Equal(2, obj.PositionAt(session.Frame).X, 9);
+        // Leaving the box without changing it isn't another step.
+        layout.View.Focus();
+        Ui.Pump();
+        Assert.Equal(depth, session.History.Count);
+        Ui.Key(w, Key.Z, RawInputModifiers.Control);
+        Assert.Equal(0, obj.PositionAt(session.Frame).X, 9);
     }
 
     [AvaloniaFact]

@@ -16,13 +16,12 @@ namespace AVAModeler.Mcp;
 
 /// <summary>
 /// The Layout tools: staging, lighting, animating and rendering a scene, on Layout's session (its scene, frame and
-/// auto-key) through <see cref="IModelerHost.RunSceneAsync{T}"/>. Layout has no undo, so every call that changes the
-/// scene takes a <see cref="SceneSnapshot"/> first and puts it back if the call fails part way (all or nothing), and
-/// keeps it for undo_scene (<see cref="SceneHistory"/>).
+/// auto-key) through <see cref="IModelerHost.RunSceneAsync{T}"/>. Every call that changes the scene is one step on
+/// Layout's undo history (<see cref="LayoutSession.Edit"/>), the one the person's Ctrl+Z works on, and a call that fails
+/// part way is put back as it was (all or nothing) and leaves no step.
 /// </summary>
 public sealed partial class ModelerTools
 {
-    private readonly SceneHistory _sceneHistory = new();
 
     /// <summary>The biggest render_scene picture, each way.</summary>
     public const int MaxRenderSize = 1920;
@@ -41,11 +40,11 @@ public sealed partial class ModelerTools
     // ───────────────────────────── reading the scene ─────────────────────────────
 
     [McpServerTool(Name = "get_scene", ReadOnly = true, Idempotent = true)]
-    [Description("Describes Layout's scene: the frame range, frames per second, current frame, current camera, auto-key, ambient light, background and fog; then every item (object, null, light, camera, bone) with its #index, kind, name, parent, visibility, position (metres), rotation [heading, pitch, bank] (degrees), scale, which channels are animated, and its own settings (a light's type, colour, intensity, direction; a camera's zoom, field of view and frame size; an object's source, point and polygon counts and world bounds), all at one frame. Also any warnings (files that couldn't be loaded, missing images) and what undo_scene can undo.")]
+    [Description("Describes Layout's scene: the frame range, frames per second, current frame, current camera, auto-key, ambient light, background and fog; then every item (object, null, light, camera, bone) with its #index, kind, name, parent, visibility, position (metres), rotation [heading, pitch, bank] (degrees), scale, which channels are animated, and its own settings (a light's type, colour, intensity, direction; a camera's zoom, field of view and frame size; an object's source, point and polygon counts and world bounds), all at one frame. Also any warnings (files that couldn't be loaded, missing images) and the scene's undo history (undo_scene: its depth, and what undo_scene and redo_scene would do next).")]
     public Task<string> GetScene(
         [Description("The frame to describe positions and values at (default: the current frame).")] double? frame = null,
         CancellationToken cancel = default) =>
-        DoScene("read the scene", (c, l) => SceneCensus.Scene(l, c.Document, SceneCensus.Frame(l, frame), _sceneHistory), cancel, changes: false);
+        DoScene("read the scene", (c, l) => SceneCensus.Scene(l, c.Document, SceneCensus.Frame(l, frame)), cancel, changes: false);
 
     [McpServerTool(Name = "get_keys", ReadOnly = true, Idempotent = true)]
     [Description("Lists an item's keys, channel by channel: each key's frame, value, and tension, continuity and bias (Kochanek–Bartels TCB, -1 to 1; left out when 0) and linear flag, plus what the channel does before its first key and after its last (pre and post). A channel never keyed shows its constant value. Channels: position.x/y/z (metres), heading, pitch, bank (degrees), scale.x/y/z, and a light's intensity or a camera's zoom.")]
@@ -68,7 +67,7 @@ public sealed partial class ModelerTools
     // ───────────────────────────── scene files ─────────────────────────────
 
     [McpServerTool(Name = "new_scene", Destructive = true)]
-    [Description("Starts a new scene as Layout does: a camera at [0, 0, -5] looking along +Z and a distant light, frames 1 to 60 at 30 frames a second, nothing else (add the object with add_object). Refuses if the scene has changes that haven't been saved, unless discard_changes is true. undo_scene can't take this back.")]
+    [Description("Starts a new scene as Layout does: a camera at [0, 0, -5] looking along +Z and a distant light, frames 1 to 60 at 30 frames a second, nothing else (add the object with add_object). Refuses if the scene has changes that haven't been saved, unless discard_changes is true. It clears the scene's undo history, so undo_scene can't take this back.")]
     public Task<string> NewScene(
         [Description("Throw away the scene's unsaved changes.")] bool discard_changes = false,
         CancellationToken cancel = default) =>
@@ -77,11 +76,11 @@ public sealed partial class ModelerTools
             CheckDiscard(l, discard_changes);
             l.Replace(SceneModel.CreateDefault());
             l.Warnings.Clear();
-            return SceneCensus.Scene(l, c.Document, l.Frame, _sceneHistory);
+            return SceneCensus.Scene(l, c.Document, l.Frame);
         }, cancel);
 
     [McpServerTool(Name = "open_scene", Destructive = true)]
-    [Description("Opens a scene in place of the current one: .avascene (AVA Modeler's own, keeps everything, meshes usually inside it) or LightWave .lws (LightWave 4 and 5, and later). The path is relative to the working folder and must stay inside it; objects the scene names are loaded from inside the working folder too (one that can't be is a placeholder, and a warning says why). Refuses if the scene has unsaved changes, unless discard_changes is true. undo_scene can't take this back.")]
+    [Description("Opens a scene in place of the current one: .avascene (AVA Modeler's own, keeps everything, meshes usually inside it) or LightWave .lws (LightWave 4 and 5, and later). The path is relative to the working folder and must stay inside it; objects the scene names are loaded from inside the working folder too (one that can't be is a placeholder, and a warning says why). Refuses if the scene has unsaved changes, unless discard_changes is true. It clears the scene's undo history, so undo_scene can't take this back.")]
     public Task<string> OpenScene(
         [Description("The scene file, relative to the working folder, e.g. \"scenes/table.avascene\".")] string path,
         [Description("Throw away the current scene's unsaved changes.")] bool discard_changes = false,
@@ -95,7 +94,7 @@ public sealed partial class ModelerTools
             var notes = new List<string>();
             l.LoadScene(full, p => files.LoadForScene(p, notes));
             l.Warnings.AddRange(notes);
-            return SceneCensus.Scene(l, c.Document, l.Frame, _sceneHistory);
+            return SceneCensus.Scene(l, c.Document, l.Frame);
         }, cancel);
 
     [McpServerTool(Name = "save_scene", Destructive = true)]
@@ -572,7 +571,7 @@ public sealed partial class ModelerTools
             if (frame is { } fr && (!double.IsFinite(fr) || fr < first || fr > last)) throw new ArgumentException($"frame must be within the frames, {first} to {last}.");
             bool settings = first_frame != null || last_frame != null || fps != null || ambient_color != null || ambient_intensity != null || background_color != null
                 || gradient != null || gradient_top != null || gradient_bottom != null || fog != null || fog_min != null || fog_max != null || fog_color != null || camera != null;
-            // Only the frame: that isn't a change to the scene (nor an undo_scene step).
+            // Only the frame: that isn't a change to the scene (nor an undo step).
             if (settings) s.Batch(() =>
             {
                 (s.FirstFrame, s.LastFrame) = (first, last);
@@ -590,19 +589,32 @@ public sealed partial class ModelerTools
                 s.Notify();
             });
             l.SetFrame(frame ?? l.Frame);
-            var result = SceneCensus.Scene(l, c.Document, l.Frame, _sceneHistory);
+            var result = SceneCensus.Scene(l, c.Document, l.Frame);
             result.Remove("items");
             return result;
         }, cancel);
 
     [McpServerTool(Name = "undo_scene", Destructive = true)]
-    [Description("Takes back your last change to the scene (Layout has no undo of its own, so this covers only your scene calls, one call at a time, up to 50). It works while your changes are the latest: once the person changes the scene in the app, or it's replaced (new_scene, open_scene), the earlier steps are forgotten rather than undone over their work. It doesn't touch the object (that's undo) or the current frame.")]
+    [Description("Undoes the last change to the scene, as Ctrl+Z does in Layout: yours or, in the live app, the person's (they share one history, up to 100 steps; each of your scene calls is one step, named \"Agent: …\"). Returns what was undone. It doesn't touch the object (that's undo) or the current frame, and can't go back past new_scene or open_scene, which clear the history.")]
     public Task<string> UndoScene(CancellationToken cancel = default) =>
         DoScene("undid a scene change", (c, l) =>
         {
-            string label = _sceneHistory.Undo(l);
-            var result = SceneCensus.Scene(l, c.Document, l.Frame, _sceneHistory);
+            string? label = l.Undo();
+            var result = SceneCensus.Scene(l, c.Document, l.Frame);
             result["undone"] = label;
+            if (label == null) result["note"] = "There was nothing to undo in the scene.";
+            return result;
+        }, cancel, changes: false);
+
+    [McpServerTool(Name = "redo_scene", Destructive = true)]
+    [Description("Redoes the last scene change undone (by undo_scene or the person's Ctrl+Z), as Ctrl+Shift+Z does in Layout. Returns what was redone. A new change to the scene clears what can be redone.")]
+    public Task<string> RedoScene(CancellationToken cancel = default) =>
+        DoScene("redid a scene change", (c, l) =>
+        {
+            string? label = l.Redo();
+            var result = SceneCensus.Scene(l, c.Document, l.Frame);
+            result["redone"] = label;
+            if (label == null) result["note"] = "There was nothing to redo in the scene.";
             return result;
         }, cancel, changes: false);
 
@@ -735,8 +747,9 @@ public sealed partial class ModelerTools
 
     /// <summary>
     /// Runs a Layout handler's work on the host, as <see cref="Do{T}"/> does. When it <paramref name="changes"/> the
-    /// scene, a snapshot is taken first: if the work fails part way the scene is put back as it was (Layout has no undo
-    /// to lean on), and if it succeeds the snapshot becomes an undo_scene step.
+    /// scene, the work is one step on Layout's shared undo history, named "Agent: " and the action
+    /// (<see cref="LayoutSession.Edit"/>, apart from any drag the person is in the middle of): if it fails part way the
+    /// scene is put back as it was and no step is left.
     /// </summary>
     private async Task<T> DoScene<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel, bool changes = true)
     {
@@ -747,27 +760,9 @@ public sealed partial class ModelerTools
                 using (Files(c).Confine(c))
                 {
                     if (!changes) return work(c, l);
-                    var scene = l.Scene;
-                    var before = scene.Snapshot();
-                    try
-                    {
-                        var result = work(c, l);
-                        _sceneHistory.Done(before, l, action);
-                        if (result is JsonObject json) json["undo_scene"] = _sceneHistory.State(l);
-                        return result;
-                    }
-                    catch
-                    {
-                        // Some settings (a name, a pivot) are plain fields that don't bump the version, so put it back
-                        // whether or not the version moved: only what changed is copied back.
-                        if (ReferenceEquals(l.Scene, scene))
-                        {
-                            before.Restore();
-                            l.Revalidate();
-                            _sceneHistory.Restored(before, l);
-                        }
-                        throw;
-                    }
+                    var result = l.Edit(AgentStep(action), () => work(c, l), apart: true);
+                    if (result is JsonObject json) json["undo_scene"] = SceneCensus.UndoState(l);
+                    return result;
                 }
             }, cancel).ConfigureAwait(false);
         }
@@ -776,6 +771,9 @@ public sealed partial class ModelerTools
             throw new McpException(Explain(e), e);
         }
     }
+
+    /// <summary>An agent's scene call's name on the undo history ("Agent: added a light").</summary>
+    public static string AgentStep(string action) => "Agent: " + action;
 
     private async Task<string> DoScene(string action, Func<Commands, LayoutSession, JsonObject> work, CancellationToken cancel, bool changes = true) =>
         (await DoScene<JsonObject>(action, work, cancel, changes).ConfigureAwait(false)).ToJsonString();
@@ -799,7 +797,7 @@ public sealed partial class ModelerTools
         }
     }
 
-    /// <summary>An item at a frame, as get_scene describes it (what undo_scene can do is added once the step is recorded).</summary>
+    /// <summary>An item at a frame, as get_scene describes it (the undo history is added once the step is recorded).</summary>
     private static JsonObject ItemNow(Commands c, LayoutSession l, SceneItem item, double frame) =>
         SceneCensus.Item(l, item, l.Scene.Evaluate(frame), c.Document);
 

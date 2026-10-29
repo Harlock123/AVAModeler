@@ -121,7 +121,7 @@ public sealed class MainWindow : Window
         if (e.Key == Key.F1) { ShowModeler(); e.Handled = true; return; }
         if (e.Key == Key.F2) { ShowLayout(); e.Handled = true; return; }
         if (Content == Modeler) e.Handled = Modeler.HandleKey(e);
-        else if (Content == _layout && e.Key == Key.F9) { _layout!.Render(); e.Handled = true; }
+        else if (Content == _layout) e.Handled = _layout!.HandleKey(e);
     }
 
     // ───────────────────────────── starting, auto-save and recovery ─────────────────────────────

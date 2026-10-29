@@ -67,12 +67,18 @@ public sealed class GraphEditor : DockPanel
         void Field(string label, double value, Func<EnvelopeKey, double, EnvelopeKey> set)
         {
             var box = new TextBox { Text = value.ToString("0.####", CultureInfo.InvariantCulture), FontSize = 11 };
+            var shown = box.Text;
             void Apply()
             {
-                if (!double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) return;
+                // Only a value changed is a change (and an undo step).
+                if (box.Text == shown || !double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) return;
+                shown = box.Text;
                 if (_chosen is not { } ch || Env(ch.Channel) is not { } e || ch.Index >= e.Keys.Count) return;
-                _chosen = (ch.Channel, e.SetKey(ch.Index, set(e.Keys[ch.Index], v)));
-                _session.Scene.Notify();
+                _session.Edit($"Set Key {label}", () =>
+                {
+                    _chosen = (ch.Channel, e.SetKey(ch.Index, set(e.Keys[ch.Index], v)));
+                    _session.Scene.Notify();
+                });
             }
             box.LostFocus += (_, _) => Apply();
             box.KeyDown += (_, e) => { if (e.Key == Key.Enter) Apply(); };
@@ -87,21 +93,23 @@ public sealed class GraphEditor : DockPanel
         linear.IsCheckedChanged += (_, _) =>
         {
             if (_chosen is not { } ch || Env(ch.Channel) is not { } e || ch.Index >= e.Keys.Count) return;
-            _chosen = (ch.Channel, e.SetKey(ch.Index, e.Keys[ch.Index] with { Linear = linear.IsChecked == true }));
-            _session.Scene.Notify();
+            _session.Edit("Linear Key", () =>
+            {
+                _chosen = (ch.Channel, e.SetKey(ch.Index, e.Keys[ch.Index] with { Linear = linear.IsChecked == true }));
+                _session.Scene.Notify();
+            });
         };
         _key.Children.Add(linear);
         _key.Children.Add(Look.MakeButton("Delete key", () =>
         {
             if (_chosen is not { } ch || Env(ch.Channel) is not { } e || ch.Index >= e.Keys.Count || e.Keys.Count <= 1) return;
-            e.RemoveKey(ch.Index);
             _chosen = null;
-            _session.Scene.Notify();
+            _session.Edit("Delete Key", () => e.RemoveKey(ch.Index));
         }));
         var pre = new ComboBox { ItemsSource = Enum.GetNames<EndBehavior>(), SelectedItem = env.PreBehavior.ToString(), FontSize = 11 };
         var post = new ComboBox { ItemsSource = Enum.GetNames<EndBehavior>(), SelectedItem = env.PostBehavior.ToString(), FontSize = 11 };
-        pre.SelectionChanged += (_, _) => { if (Enum.TryParse<EndBehavior>(pre.SelectedItem as string, out var b)) { env.PreBehavior = b; _session.Scene.Notify(); } };
-        post.SelectionChanged += (_, _) => { if (Enum.TryParse<EndBehavior>(post.SelectedItem as string, out var b)) { env.PostBehavior = b; _session.Scene.Notify(); } };
+        pre.SelectionChanged += (_, _) => { if (Enum.TryParse<EndBehavior>(pre.SelectedItem as string, out var b)) _session.Edit("Pre Behavior", () => { env.PreBehavior = b; _session.Scene.Notify(); }); };
+        post.SelectionChanged += (_, _) => { if (Enum.TryParse<EndBehavior>(post.SelectedItem as string, out var b)) _session.Edit("Post Behavior", () => { env.PostBehavior = b; _session.Scene.Notify(); }); };
         _key.Children.Add(new TextBlock { Text = "Before / after the keys", Foreground = Look.Text, FontSize = 11, Margin = new Thickness(0, 6, 0, 0) });
         _key.Children.Add(pre);
         _key.Children.Add(post);
@@ -184,6 +192,8 @@ public sealed class GraphEditor : DockPanel
             else
             {
                 _dragging = true;
+                // Dragging a key, press to release, is one undo step.
+                editor._session.BeginEdit("Drag Key");
                 e.Pointer.Capture(this);
             }
             editor.ShowKey();
@@ -202,10 +212,22 @@ public sealed class GraphEditor : DockPanel
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);
-            _dragging = false;
+            EndDrag();
             e.Pointer.Capture(null);
             editor.ShowKey();
             InvalidateVisual();
+        }
+
+        protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+        {
+            base.OnPointerCaptureLost(e);
+            EndDrag();
+        }
+
+        private void EndDrag()
+        {
+            if (_dragging) editor._session.EndEdit();
+            _dragging = false;
         }
     }
 }

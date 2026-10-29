@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using AVAModeler.Core;
 using ModelContextProtocol;
 
@@ -37,6 +38,35 @@ internal static class Json
     {
         if (a is not { Length: 3 } || a.Any(x => !double.IsFinite(x))) throw new McpException($"{what} must be three numbers [x, y, z].");
         return new Vec3(a[0], a[1], a[2]);
+    }
+
+    /// <summary>
+    /// A colour [r, g, b]: three whole numbers from 0 to 255, as surfaces and LightWave's panels give them, for every
+    /// tool. Fractions are refused (with a hint when they look like 0 to 1), so a colour can't quietly come out black.
+    /// </summary>
+    public static Rgb Colour(double[]? c, string what)
+    {
+        if (c is not { Length: 3 } || c.Any(v => !double.IsFinite(v) || v < 0 || v > 255))
+            throw new ArgumentException($"{what} is [r, g, b], three whole numbers from 0 to 255.");
+        if (c.Any(v => v != Math.Floor(v)))
+            throw new ArgumentException(c.All(v => v <= 1)
+                ? FormattableString.Invariant($"{what} is [r, g, b] from 0 to 255, not 0 to 1: [{c[0]}, {c[1]}, {c[2]}] would be [{Math.Round(c[0] * 255)}, {Math.Round(c[1] * 255)}, {Math.Round(c[2] * 255)}].")
+                : $"{what} is [r, g, b], three whole numbers from 0 to 255.");
+        return new Rgb((byte)c[0], (byte)c[1], (byte)c[2]);
+    }
+
+    /// <summary>A Layout colour (0 to 1 inside) from [r, g, b] 0 to 255.</summary>
+    public static Vec3 SceneColour(double[]? c, string what)
+    {
+        var rgb = Colour(c, what);
+        return new Vec3(rgb.R / 255.0, rgb.G / 255.0, rgb.B / 255.0);
+    }
+
+    /// <summary>A Layout colour as [r, g, b], whole numbers from 0 to 255.</summary>
+    public static JsonArray ColourJson(Vec3 v)
+    {
+        static int C(double x) => (int)Math.Round(Math.Clamp(x, 0, 1) * 255);
+        return new JsonArray(C(v.X), C(v.Y), C(v.Z));
     }
 
     /// <summary>One of an enum's names (any case), with the choices listed if it isn't one.</summary>

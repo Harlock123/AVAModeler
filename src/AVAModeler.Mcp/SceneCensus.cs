@@ -88,13 +88,8 @@ internal static class SceneCensus
         return f;
     }
 
-    /// <summary>A colour [r, g, b], each from 0 to 1 (as Layout keeps colours).</summary>
-    public static Vec3 Colour(double[]? c, string what)
-    {
-        if (c is not { Length: 3 } || c.Any(v => !double.IsFinite(v) || v < 0 || v > 1))
-            throw new ArgumentException($"{what} is [r, g, b], three numbers from 0 to 1 (Layout's colours aren't 0 to 255).");
-        return new Vec3(c[0], c[1], c[2]);
-    }
+    /// <summary>A colour [r, g, b], whole numbers from 0 to 255 like every tool's (Layout keeps it as 0 to 1).</summary>
+    public static Vec3 Colour(double[]? c, string what) => Json.SceneColour(c, what);
 
     /// <summary>A vector [x, y, z].</summary>
     public static Vec3 Vector(double[]? a, string what)
@@ -120,12 +115,12 @@ internal static class SceneCensus
             },
             ["auto_key"] = l.AutoKey,
             ["camera"] = s.CurrentCamera?.Name,
-            ["ambient"] = new JsonObject { ["color"] = Vec(s.AmbientColor), ["intensity"] = Round(s.AmbientIntensity) },
+            ["ambient"] = new JsonObject { ["color"] = Json.ColourJson(s.AmbientColor), ["intensity"] = Round(s.AmbientIntensity) },
             ["background"] = s.GradientBackground
-                ? new JsonObject { ["gradient"] = true, ["top"] = Vec(s.GradientTop), ["bottom"] = Vec(s.GradientBottom) }
-                : new JsonObject { ["gradient"] = false, ["color"] = Vec(s.BackgroundColor) },
+                ? new JsonObject { ["gradient"] = true, ["top"] = Json.ColourJson(s.GradientTop), ["bottom"] = Json.ColourJson(s.GradientBottom) }
+                : new JsonObject { ["gradient"] = false, ["color"] = Json.ColourJson(s.BackgroundColor) },
             ["fog"] = s.Fog == FogType.Off ? new JsonObject { ["type"] = "off" }
-                : new JsonObject { ["type"] = "linear", ["min_distance"] = Round(s.FogMinDistance), ["max_distance"] = Round(s.FogMaxDistance), ["color"] = Vec(s.FogColor) },
+                : new JsonObject { ["type"] = "linear", ["min_distance"] = Round(s.FogMinDistance), ["max_distance"] = Round(s.FogMaxDistance), ["color"] = Json.ColourJson(s.FogColor) },
             ["file"] = l.ScenePath,
             ["modified"] = l.Modified,
             ["items"] = new JsonArray(s.Items.Select(i => (JsonNode)Item(l, i, sf, modelerDocument)).ToArray()),
@@ -158,7 +153,7 @@ internal static class SceneCensus
         {
             case LightItem light:
                 o["type"] = light.Type.ToString().ToLowerInvariant();
-                o["color"] = Vec(light.Color);
+                o["color"] = Json.ColourJson(light.Color);
                 o["intensity"] = Round(light.Intensity.Evaluate(frame));
                 if (light.Type != LightType.Point) o["shines_toward"] = Vec(light.Direction(frame));
                 if (light.Type == LightType.Spot) { o["cone_angle"] = Round(light.ConeAngle); o["edge_angle"] = Round(light.EdgeAngle); }
@@ -178,7 +173,7 @@ internal static class SceneCensus
                     : ReferenceEquals(obj.Document, modelerDocument) ? "the Modeler's object (live)"
                     : obj.SourcePath != null ? "file" : "embedded";
                 if (obj.SourcePath != null) o["file"] = obj.SourcePath;
-                if (obj.Layer is int layer) o["layer"] = layer;
+                if (obj.Layer is int layer) o["layer"] = layer + 1;
                 var of = sf.Objects.First(x => x.Item == obj);
                 o["points"] = of.Mesh.Points.Count;
                 o["polygons"] = of.Mesh.Polygons.Count;

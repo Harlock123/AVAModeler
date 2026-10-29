@@ -110,10 +110,11 @@ public class LayoutHandlerTests
         Assert.Equal(4, V(file["world_bounds"]!["size"])[0], 9);
 
         // One layer of the Modeler's object.
-        await b.Tools.SetLayers([1], cancel: Cancel);
+        await b.Tools.SetLayers([2], cancel: Cancel);
         await b.Tools.RunTool("Ball", null, Cancel);
-        var layer = await Parse(b.Tools.AddObject(layer: 1, name: "Ball", cancel: Cancel));
-        Assert.Equal(1, (int)layer["layer"]!);
+        var layer = await Parse(b.Tools.AddObject(layer: 2, name: "Ball", cancel: Cancel));
+        Assert.Equal(2, (int)layer["layer"]!);
+        Assert.Equal(1, ((ObjectItem)b.Scene.Find("Ball")!).Layer);
         Assert.True((int)layer["points"]! > 8);
 
         Assert.Contains("outside the working folder", await Error(b.Tools.AddObject("../box.lwo", cancel: Cancel)));
@@ -127,7 +128,7 @@ public class LayoutHandlerTests
     public async Task Lights_cameras_nulls_and_bones_are_added_with_their_settings()
     {
         using var b = await WithBox();
-        var spot = await Parse(b.Tools.AddLight("spot", "Key", [3, 4, -3], look_at: [0, 0, 0], color: [1, 0.8, 0.6], intensity: 1.5, cone_angle: 25, edge_angle: 8, range: 20, cancel: Cancel));
+        var spot = await Parse(b.Tools.AddLight("spot", "Key", [3, 4, -3], look_at: [0, 0, 0], color: [255, 204, 153], intensity: 1.5, cone_angle: 25, edge_angle: 8, range: 20, cancel: Cancel));
         Assert.Equal("spot", (string?)spot["type"]);
         var d = new Vec3(-3, -4, 3).Normalized();
         Near([d.X, d.Y, d.Z], V(spot["shines_toward"]));
@@ -136,7 +137,11 @@ public class LayoutHandlerTests
         Assert.Equal(20, light.Range);
         Assert.Equal(1.5, light.Intensity.Evaluate(30));
         Assert.Contains("type must be one of distant, point, spot", await Error(b.Tools.AddLight("sun", cancel: Cancel)));
-        Assert.Contains("0 to 1", await Error(b.Tools.AddLight(color: [255, 200, 100], cancel: Cancel)));
+        // Colours are 0 to 255 as surfaces' are; Layout keeps them as 0 to 1.
+        Assert.Equal([255, 204, 153], spot["color"]!.AsArray().Select(v => (int)v!));
+        Near([1, 0.8, 0.6], [light.Color.X, light.Color.Y, light.Color.Z]);
+        Assert.Contains("not 0 to 1", await Error(b.Tools.AddLight(color: [1, 0.8, 0.6], cancel: Cancel)));
+        Assert.Contains("0 to 255", await Error(b.Tools.AddLight(color: [256, 0, 0], cancel: Cancel)));
         Assert.Contains("cone_angle must be from 0.1 to 90", await Error(b.Tools.AddLight("spot", cone_angle: 120, cancel: Cancel)));
         Assert.Contains("rotation or look_at, not both", await Error(b.Tools.AddLight(rotation: [0, 0, 0], look_at: [1, 1, 1], cancel: Cancel)));
 
@@ -175,7 +180,7 @@ public class LayoutHandlerTests
     public async Task Set_item_changes_settings_and_says_which_belong_to_which_kind()
     {
         using var b = await WithBox();
-        var r = await Parse(b.Tools.SetItem("Light", name: "Sun", type: "point", color: [1, 1, 0.9], intensity: 0.5, range: 30, shadows: false, cancel: Cancel));
+        var r = await Parse(b.Tools.SetItem("Light", name: "Sun", type: "point", color: [255, 255, 230], intensity: 0.5, range: 30, shadows: false, cancel: Cancel));
         Assert.Equal("Sun", (string?)r["name"]);
         Assert.Equal("point", (string?)r["type"]);
         Assert.Equal(30, (double)r["range"]!);
@@ -214,7 +219,7 @@ public class LayoutHandlerTests
         await b.Tools.AddLight("spot", "Spot", cancel: Cancel);
         var before = SceneJson.Write(b.Scene, embedMeshes: true);
         // The name, pivot, visibility and colour are set before the bad cone angle is reached: all are put back.
-        Assert.Contains("cone_angle must be from 0.1 to 90", await Error(b.Tools.SetItem("Spot", name: "Renamed", pivot: [1, 1, 1], visible: false, color: [0, 0, 1], cone_angle: 500, cancel: Cancel)));
+        Assert.Contains("cone_angle must be from 0.1 to 90", await Error(b.Tools.SetItem("Spot", name: "Renamed", pivot: [1, 1, 1], visible: false, color: [0, 0, 255], cone_angle: 500, cancel: Cancel)));
         Assert.Contains("cycle", await Error(b.Tools.SetItem("Modeler object", name: "Renamed", parent: "Modeler object", cancel: Cancel)));
         Assert.Equal(before, SceneJson.Write(b.Scene, embedMeshes: true));
         Assert.Equal("Spot", b.Scene.Lights.Last().Name);
@@ -338,14 +343,15 @@ public class LayoutHandlerTests
     {
         using var b = await WithBox();
         await b.Tools.AddCamera("Second", make_current: false, cancel: Cancel);
-        var r = await Parse(b.Tools.SetScene(first_frame: 0, last_frame: 90, fps: 24, ambient_color: [0.9, 0.9, 1], ambient_intensity: 0.1,
-            gradient: true, gradient_top: [0.2, 0.3, 0.6], gradient_bottom: [0.1, 0.1, 0.1], fog: "linear", fog_min: 5, fog_max: 40, fog_color: [0.5, 0.5, 0.5],
+        var r = await Parse(b.Tools.SetScene(first_frame: 0, last_frame: 90, fps: 24, ambient_color: [230, 230, 255], ambient_intensity: 0.1,
+            gradient: true, gradient_top: [51, 77, 153], gradient_bottom: [26, 26, 26], fog: "linear", fog_min: 5, fog_max: 40, fog_color: [128, 128, 128],
             camera: "Second", frame: 45, cancel: Cancel));
         Assert.Equal(90, (int)r["frames"]!["last"]!);
         Assert.Equal(45, (double)r["frames"]!["current"]!);
         Assert.Equal("Second", (string?)r["camera"]);
         Assert.True((bool)r["background"]!["gradient"]!);
         Assert.Equal("linear", (string?)r["fog"]!["type"]);
+        Assert.Equal([51, 77, 153], r["background"]!["top"]!.AsArray().Select(v => (int)v!));
         Assert.Null(r["items"]);
         Assert.Equal(45, b.Layout.Frame);
         var s = b.Scene;
@@ -400,7 +406,7 @@ public class LayoutHandlerTests
     public async Task Scenes_save_and_open_inside_the_working_folder()
     {
         using var b = await WithBox();
-        await b.Tools.AddLight("spot", "Key", [2, 3, -2], look_at: [0, 0, 0], color: [1, 0.9, 0.7], cancel: Cancel);
+        await b.Tools.AddLight("spot", "Key", [2, 3, -2], look_at: [0, 0, 0], color: [255, 230, 178], cancel: Cancel);
         await b.Tools.SetTransform("Camera", 1, position: [0, 1, -6], key: true, cancel: Cancel);
         await b.Tools.SetTransform("Camera", 60, position: [6, 1, 0], key: true, cancel: Cancel);
         var saved = await Parse(b.Tools.SaveScene("scenes/box.avascene", cancel: Cancel));
@@ -445,7 +451,7 @@ public class LayoutHandlerTests
     public async Task Render_scene_ray_traces_a_frame_through_the_camera()
     {
         using var b = await WithBox();
-        await b.Tools.SetScene(background_color: [0, 0, 0.2], cancel: Cancel);
+        await b.Tools.SetScene(background_color: [0, 0, 51], cancel: Cancel);
         var r = await b.Tools.RenderScene(1, 64, cancel: Cancel);
         var png = Pngs.Of(r);
         var image = TextureImages.Decode(png)!;

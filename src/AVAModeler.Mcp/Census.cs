@@ -21,7 +21,7 @@ internal static class Census
         for (int i = 0; i < after.Length; i++)
         {
             var b = i < before.Length ? before[i] : (0, 0);
-            if (b != after[i]) layers.Add(new JsonObject { ["layer"] = i, ["points"] = Pair(b.Item1, after[i].Points), ["polygons"] = Pair(b.Item2, after[i].Polygons) });
+            if (b != after[i]) layers.Add(new JsonObject { ["layer"] = i + 1, ["points"] = Pair(b.Item1, after[i].Points), ["polygons"] = Pair(b.Item2, after[i].Polygons) });
         }
         return new JsonObject
         {
@@ -97,10 +97,10 @@ internal static class Census
         for (int i = 0; i < doc.Layers.Count; i++)
         {
             var layer = doc.Layers[i];
-            if (layer.State == LayerState.Off && layer.Mesh.IsEmpty) { quiet.Add(i); continue; }
+            if (layer.State == LayerState.Off && layer.Mesh.IsEmpty) { quiet.Add(i + 1); continue; }
             var o = new JsonObject
             {
-                ["layer"] = i,
+                ["layer"] = i + 1,
                 ["state"] = layer.State.ToString().ToLowerInvariant(),
                 ["points"] = layer.Mesh.Points.Count,
                 ["polygons"] = layer.Mesh.Polygons.Count,
@@ -113,7 +113,7 @@ internal static class Census
         {
             ["file"] = doc.FilePath,
             ["modified"] = doc.Modified,
-            ["current_layer"] = doc.CurrentLayer,
+            ["current_layer"] = doc.CurrentLayer + 1,
             ["layers"] = layers,
         };
         if (quiet.Count > 0) result["empty_layers_off"] = Ranges(quiet);
@@ -169,11 +169,11 @@ internal static class Census
         return o;
     }
 
-    /// <summary>A layer by number (the current one if none is given).</summary>
+    /// <summary>A layer by its number from 1, as the app shows it (the current one if none is given); returns its index from 0.</summary>
     public static (int Layer, Mesh Mesh) Layer(Document doc, int? layer)
     {
-        int l = layer ?? doc.CurrentLayer;
-        if (l < 0 || l >= doc.Layers.Count) throw new ArgumentException($"There's no layer {l}: layers are numbered 0 to {doc.Layers.Count - 1}.");
+        if (layer is int n && (n < 1 || n > doc.Layers.Count)) throw new ArgumentException($"There's no layer {n}: layers are numbered 1 to {doc.Layers.Count}.");
+        int l = layer is int k ? k - 1 : doc.CurrentLayer;
         return (l, doc.Layers[l].Mesh);
     }
 

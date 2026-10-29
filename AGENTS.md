@@ -91,6 +91,10 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   every Layout tool that changes the scene runs through `DoScene`, which takes a `SceneSnapshot` first and restores it
   if the call throws (all or nothing); the snapshot then becomes an `undo_scene` step, kept only while the agent's
   changes are the latest. Errors go back as `McpException`s whose messages say what to do instead.
+- **Agents see the app's numbers.** MCP tools number layers 1 to 10, as the layer buttons and Lua macros do, and give
+  every colour as [r, g, b] whole numbers from 0 to 255, as surfaces and the Layout panel do (`Json.Colour`,
+  `Json.SceneColour` and `Json.ColourJson`). Convert at the MCP edge: inside, layers are indexed from 0 and Layout's
+  colours are 0 to 1. Points and polygons stay indexed from 0.
 - **Live mode runs on the UI thread.** `LiveHost` marshals every call through `IUiThread` (the Avalonia dispatcher in
   the app), so the views redraw through the usual `Document.Changed` and the person's Ctrl+Z undoes agents' steps. It
   waits while a tool is armed or a modal dialog is open (`Dialogs.ShowModal` counts them); pictures are drawn from a

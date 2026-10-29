@@ -123,10 +123,10 @@ public sealed partial class ModelerTools
     // ───────────────────────────── adding items ─────────────────────────────
 
     [McpServerTool(Name = "add_object", Destructive = true)]
-    [Description("Puts an object in the scene. With no file, the Modeler's object (in the live app, the one open in the Modeler) goes in live: the scene shows each change made to it later, as Layout's Add › The Modeler's Object does; if it's already there that item is returned, not added again. With file, an object file from the working folder (.lwo, .obj, .geo or a plugin format). layer (from 0, as the Modeler counts them) takes just that layer; otherwise every non-empty layer, merged. The object's own coordinates are kept: position, rotation and scale (constants, not keys) then place it. Returns the item, with its world bounds.")]
+    [Description("Puts an object in the scene. With no file, the Modeler's object (in the live app, the one open in the Modeler) goes in live: the scene shows each change made to it later, as Layout's Add › The Modeler's Object does; if it's already there that item is returned, not added again. With file, an object file from the working folder (.lwo, .obj, .geo or a plugin format). layer (1 to 10, as the app's layer buttons number them) takes just that layer; otherwise every non-empty layer, merged. The object's own coordinates are kept: position, rotation and scale (constants, not keys) then place it. Returns the item, with its world bounds.")]
     public Task<string> AddObject(
         [Description("An object file relative to the working folder, e.g. \"table.lwo\". Leave out for the Modeler's object.")] string? file = null,
-        [Description("Just this layer, from 0. Default: every non-empty layer.")] int? layer = null,
+        [Description("Just this layer, 1 to 10 as the app's layer buttons number them. Default: every non-empty layer.")] int? layer = null,
         [Description("The item's name (default: the file's name, or \"Modeler object\"). Made unique if taken.")] string? name = null,
         [Description("Where it goes [x, y, z], metres (default [0, 0, 0]).")] double[]? position = null,
         [Description("[heading, pitch, bank] in degrees (default [0, 0, 0]).")] double[]? rotation = null,
@@ -143,13 +143,13 @@ public sealed partial class ModelerTools
             {
                 var doc = Files(c).Load(file);
                 CheckLayer(doc, layer);
-                obj = s.AddObject(FreeName(s, name, Path.GetFileNameWithoutExtension(file)), doc, layer);
+                obj = s.AddObject(FreeName(s, name, Path.GetFileNameWithoutExtension(file)), doc, layer - 1);
                 obj.SourcePath = doc.FilePath;
             }
             else if (layer != null)
             {
                 CheckLayer(c.Document, layer);
-                obj = s.AddObject(FreeName(s, name, $"Modeler layer {layer}"), c.Document, layer);
+                obj = s.AddObject(FreeName(s, name, $"Modeler layer {layer}"), c.Document, layer - 1);
                 obj.SourcePath = c.Document.FilePath;
             }
             else
@@ -165,14 +165,14 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "add_light", Destructive = true)]
-    [Description("Adds a light. distant: parallel rays along its +Z axis from infinitely far (like the sun; its position doesn't matter). point: shines every way from its position. spot: shines along its +Z axis inside a cone. Unrotated, +Z points forward (away from the viewer in the Front view); turn it with rotation [heading, pitch, bank] in degrees (heading 90 shines along +X, pitch 90 straight down), or give look_at to aim it at a point. Colour is [r, g, b] from 0 to 1; intensity 1 is LightWave's 100% (more is brighter). Shadows are ray-traced. Values are constants, not keys.")]
+    [Description("Adds a light. distant: parallel rays along its +Z axis from infinitely far (like the sun; its position doesn't matter). point: shines every way from its position. spot: shines along its +Z axis inside a cone. Unrotated, +Z points forward (away from the viewer in the Front view); turn it with rotation [heading, pitch, bank] in degrees (heading 90 shines along +X, pitch 90 straight down), or give look_at to aim it at a point. Colour is [r, g, b], whole numbers from 0 to 255 like surfaces'; intensity 1 is LightWave's 100% (more is brighter). Shadows are ray-traced. Values are constants, not keys.")]
     public Task<string> AddLight(
         [Description("distant (default), point or spot.")] string type = "distant",
         [Description("The light's name (default: \"Distant Light\", \"Point Light\" or \"Spot Light\"). Made unique if taken.")] string? name = null,
         [Description("[x, y, z] in metres (default [0, 0, 0]).")] double[]? position = null,
         [Description("[heading, pitch, bank] in degrees (default [0, 0, 0]: shining along +Z).")] double[]? rotation = null,
         [Description("A point [x, y, z] to aim at (sets heading and pitch; instead of rotation).")] double[]? look_at = null,
-        [Description("[r, g, b], each 0 to 1 (default white [1, 1, 1]).")] double[]? color = null,
+        [Description("[r, g, b], each 0 to 255 (default white [255, 255, 255]).")] double[]? color = null,
         [Description("Brightness: 1 is 100% (default 1).")] double? intensity = null,
         [Description("Spot only: the cone's half-angle in degrees, 0.1 to 90 (default 30).")] double? cone_angle = null,
         [Description("Spot only: the soft edge in degrees, inside the rim, over which it fades (default 5).")] double? edge_angle = null,
@@ -286,7 +286,7 @@ public sealed partial class ModelerTools
     // ───────────────────────────── arranging items ─────────────────────────────
 
     [McpServerTool(Name = "set_item", Destructive = true)]
-    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position) and visibility. A light's type, colour (0 to 1), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none) and shadows. A camera's zoom or fov (vertical, degrees), width and height (pixels), and make_current. An object's cast_shadows and receive_shadows. A bone's rest_length, strength and active. Intensity and zoom set the value throughout; when they're animated, use set_key.")]
+    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position) and visibility. A light's type, colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none) and shadows. A camera's zoom or fov (vertical, degrees), width and height (pixels), and make_current. An object's cast_shadows and receive_shadows. A bone's rest_length, strength and active. Intensity and zoom set the value throughout; when they're animated, use set_key.")]
     public Task<string> SetItem(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("A new name.")] string? name = null,
@@ -294,7 +294,7 @@ public sealed partial class ModelerTools
         [Description("[x, y, z] in the item's own coordinates.")] double[]? pivot = null,
         [Description("Shown and rendered.")] bool? visible = null,
         [Description("Light: distant, point or spot.")] string? type = null,
-        [Description("Light: [r, g, b], each 0 to 1.")] double[]? color = null,
+        [Description("Light: [r, g, b], each 0 to 255.")] double[]? color = null,
         [Description("Light: brightness, 1 is 100%.")] double? intensity = null,
         [Description("Spot light: the cone's half-angle in degrees.")] double? cone_angle = null,
         [Description("Spot light: the soft edge in degrees.")] double? edge_angle = null,
@@ -533,21 +533,21 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "set_scene", Destructive = true)]
-    [Description("Changes the scene's settings, leaving out what you don't give: the frame range (first_frame, last_frame, whole frames; 1 to 60 by default) and frames per second; ambient light (colour 0 to 1, intensity as a fraction, 0.25 by default); the backdrop: a colour, or a gradient from gradient_bottom (straight down) to gradient_top (straight up); fog (linear: none up to fog_min metres from the camera, full at fog_max); the current camera (the one render_scene uses); and the current frame (where Layout's timeline stands, and the default for the other tools).")]
+    [Description("Changes the scene's settings, leaving out what you don't give: the frame range (first_frame, last_frame, whole frames; 1 to 60 by default) and frames per second; ambient light (colour 0 to 255, intensity as a fraction, 0.25 by default); the backdrop: a colour, or a gradient from gradient_bottom (straight down) to gradient_top (straight up); fog (linear: none up to fog_min metres from the camera, full at fog_max); the current camera (the one render_scene uses); and the current frame (where Layout's timeline stands, and the default for the other tools).")]
     public Task<string> SetScene(
         [Description("The first frame, 0 or more.")] int? first_frame = null,
         [Description("The last frame, not before the first.")] int? last_frame = null,
         [Description("Frames per second, more than 0 (default 30).")] double? fps = null,
-        [Description("[r, g, b], each 0 to 1.")] double[]? ambient_color = null,
+        [Description("[r, g, b], each 0 to 255.")] double[]? ambient_color = null,
         [Description("0 or more (default 0.25).")] double? ambient_intensity = null,
-        [Description("The backdrop colour [r, g, b], 0 to 1 (used when gradient is false).")] double[]? background_color = null,
+        [Description("The backdrop colour [r, g, b], 0 to 255 (used when gradient is false).")] double[]? background_color = null,
         [Description("Use the gradient backdrop instead of the colour.")] bool? gradient = null,
-        [Description("The gradient's colour straight up [r, g, b], 0 to 1.")] double[]? gradient_top = null,
-        [Description("The gradient's colour straight down [r, g, b], 0 to 1.")] double[]? gradient_bottom = null,
+        [Description("The gradient's colour straight up [r, g, b], 0 to 255.")] double[]? gradient_top = null,
+        [Description("The gradient's colour straight down [r, g, b], 0 to 255.")] double[]? gradient_bottom = null,
         [Description("off or linear.")] string? fog = null,
         [Description("Where fog starts, metres from the camera.")] double? fog_min = null,
         [Description("Where fog is full, metres from the camera.")] double? fog_max = null,
-        [Description("The fog's colour [r, g, b], 0 to 1.")] double[]? fog_color = null,
+        [Description("The fog's colour [r, g, b], 0 to 255.")] double[]? fog_color = null,
         [Description("The camera to render through, by name.")] string? camera = null,
         [Description("The current frame.")] double? frame = null,
         CancellationToken cancel = default) =>
@@ -811,9 +811,9 @@ public sealed partial class ModelerTools
 
     private static void CheckLayer(Document doc, int? layer)
     {
-        if (layer is int n && (n < 0 || n >= doc.Layers.Count))
-            throw new ArgumentException($"There's no layer {n}: the object's layers are 0 to {doc.Layers.Count - 1}.");
-        if (layer is int m && doc.Layers[m].Mesh.IsEmpty) throw new ArgumentException($"Layer {m} is empty.");
+        if (layer is int n && (n < 1 || n > doc.Layers.Count))
+            throw new ArgumentException($"There's no layer {n}: the object's layers are 1 to {doc.Layers.Count}.");
+        if (layer is int m && doc.Layers[m - 1].Mesh.IsEmpty) throw new ArgumentException($"Layer {m} is empty.");
     }
 
     /// <summary>A new item's place: constants for position, rotation (or a direction to face) and scale, and its parent.</summary>

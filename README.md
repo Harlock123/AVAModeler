@@ -278,8 +278,9 @@ The Layout tools:
 | `render_scene`, `render_animation` | A ray-traced frame through a camera; or a run of frames written as numbered PNGs in the working folder, with a contact sheet back. Both are bounded in size and time. |
 
 The agent is told the conventions when it connects: metres; LightWave's left-handed space with +X right, +Y up and +Z
-away from you in the Front view; faces seen from the side where their points run clockwise; layers, points and
-polygons counted from 0. A mistake (an unknown tool, a bad value, an index that isn't there) comes back as an error
+away from you in the Front view; faces seen from the side where their points run clockwise; layers numbered 1 to 10
+as the app's buttons show them, and points and polygons counted from 0; colours as [r, g, b] from 0 to 255
+everywhere, for surfaces, lights and the scene alike. A mistake (an unknown tool, a bad value, an index that isn't there) comes back as an error
 that says what was wrong, and changes nothing.
 
 A short session, as an agent might run it (the table in the picture above):
@@ -301,7 +302,7 @@ And then a scene: the table under a warm spotlight, the camera swinging half rou
 ```text
 add_object        {"name": "Table"}                                                    # the Modeler's object, live
 add_light         {"type": "spot", "name": "Warm", "position": [2,3,-2], "look_at": [0,0.4,0],
-                   "color": [1,0.8,0.55], "intensity": 1.3, "cone_angle": 35}
+                   "color": [255,204,140], "intensity": 1.3, "cone_angle": 35}
 set_item          {"item": "Light", "intensity": 0.4}                                 # the default light as a fill
 set_transform     {"item": "Camera", "frame": 1, "position": [0,1.5,-4], "key": true}
 look_at           {"item": "Camera", "target": "Table", "frame": 1, "key": true}

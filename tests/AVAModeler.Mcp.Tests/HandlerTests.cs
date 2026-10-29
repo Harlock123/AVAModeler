@@ -92,7 +92,7 @@ public class HandlerTests
         Assert.Equal(0, (int)r["points"]!["before"]!);
         Assert.Equal(12, (int)r["points"]!["after"]!);
         Assert.Equal(10, (int)r["polygons"]!["after"]!);
-        Assert.Equal(0, (int)r["changed_layers"]![0]!["layer"]!);
+        Assert.Equal(1, (int)r["changed_layers"]![0]!["layer"]!);
         Assert.Equal(1, (int)r["undo"]!["depth"]!);
         Assert.Equal("Box", (string?)r["undo"]!["next_undo"]);
         Assert.Equal(2, b.Doc.Bounds().Size.X, 9);
@@ -206,15 +206,17 @@ public class HandlerTests
     {
         using var b = new Bench();
         await b.Tools.RunTool("Box", null, Cancel);
-        var doc = await Parse(b.Tools.SetLayers([2], [0], Cancel));
-        Assert.Equal(2, (int)doc["current_layer"]!);
-        Assert.Equal("background", (string?)doc["layers"]!.AsArray().Single(l => (int)l!["layer"]! == 0)!["state"]);
+        // Layers are numbered from 1, as the app's buttons show them.
+        var doc = await Parse(b.Tools.SetLayers([3], [1], Cancel));
+        Assert.Equal(3, (int)doc["current_layer"]!);
+        Assert.Equal("background", (string?)doc["layers"]!.AsArray().Single(l => (int)l!["layer"]! == 1)!["state"]);
         await b.Tools.RunTool("Ball", P(new { Radius = new[] { 0.2, 0.2, 0.2 } }), Cancel);
         Assert.NotEmpty(b.Doc.Layers[2].Mesh.Points);
         Assert.Equal(8, b.Doc.Layers[0].Mesh.Points.Count);
         Assert.Contains("both the foreground and the background", await Error(b.Tools.SetLayers([1], [1], Cancel)));
         Assert.Contains("at least one foreground", await Error(b.Tools.SetLayers([], null, Cancel)));
-        Assert.Contains("no layer 100", await Error(b.Tools.SetLayers([100], null, Cancel)));
+        Assert.Contains("no layer 101", await Error(b.Tools.SetLayers([101], null, Cancel)));
+        Assert.Contains("no layer 0: layers are numbered from 1", await Error(b.Tools.SetLayers([0], null, Cancel)));
     }
 
     [Fact]
@@ -285,6 +287,7 @@ public class HandlerTests
         Assert.All(b.Doc.Current.Mesh.Polygons, p => Assert.Equal(0, p.Surface));
 
         Assert.Contains("0 to 255", await Error(b.Tools.SetSurface("X", color: [300, 0, 0], cancel: Cancel)));
+        Assert.Contains("not 0 to 1: [1, 0.5, 0] would be [255, 128, 0]", await Error(b.Tools.SetSurface("X", color: [1, 0.5, 0], cancel: Cancel)));
         Assert.Contains("from 0 to 1", await Error(b.Tools.SetSurface("X", transparency: 2, cancel: Cancel)));
         Assert.Contains("glossiness", await Error(b.Tools.SetSurface("X", glossiness: 0, cancel: Cancel)));
         Assert.DoesNotContain(b.Doc.Surfaces, s => s.Name == "X");
@@ -351,14 +354,14 @@ public class HandlerTests
     {
         using var b = new Bench();
         await b.Tools.RunTool("Box", P(new { SegmentsX = 4, Surface = "Grey" }), Cancel);
-        await b.Tools.SetLayers([0], [1], Cancel);
+        await b.Tools.SetLayers([1], [2], Cancel);
         var doc = await Parse(b.Tools.GetDocument(Cancel));
-        Assert.Equal(0, (int)doc["current_layer"]!);
+        Assert.Equal(1, (int)doc["current_layer"]!);
         var layer0 = doc["layers"]![0]!;
         Assert.Equal("foreground", (string?)layer0["state"]);
         Assert.Equal(20, (int)layer0["points"]!);
         Assert.Equal(-0.5, (double)layer0["bounds"]!["min"]![0]!);
-        Assert.Equal("2-9", (string?)doc["empty_layers_off"]);
+        Assert.Equal("3-10", (string?)doc["empty_layers_off"]);
         Assert.Equal(1, (double)doc["visible_bounds"]!["size"]![1]!);
         Assert.Contains(doc["surfaces"]!.AsArray(), s => (string?)s!["name"] == "Grey" && (int)s["polygons"]! == 18);
         Assert.Equal(1, (int)doc["undo"]!["depth"]!);

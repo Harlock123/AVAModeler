@@ -198,13 +198,13 @@ public sealed class LiveTests : IDisposable
 
         var listener = Listen();
         var doc = await agent.Client.Json("get_document");
-        Assert.Equal(0, (int)doc["current_layer"]!);
+        Assert.Equal(1, (int)doc["current_layer"]!);
         await listener.DisposeAsync();
         // The app went away: the next call says so, and once it's back the bridge reconnects.
         var lost = await agent.Client.Fails("get_document");
         Assert.True(lost.Contains("lost") || lost.Contains("No AVA Modeler"), lost);
         await using var again = Listen();
-        Assert.Equal(0, (int)(await agent.Client.Json("get_document"))["current_layer"]!);
+        Assert.Equal(1, (int)(await agent.Client.Json("get_document"))["current_layer"]!);
     }
 
     [Fact]
@@ -216,7 +216,7 @@ public sealed class LiveTests : IDisposable
         Assert.Contains("Another AVA Modeler", e.Message);
         // The first still answers (the probe's knock didn't upset it).
         await using var agent = await Agent();
-        Assert.Equal(0, (int)(await agent.Client.Json("get_document"))["current_layer"]!);
+        Assert.Equal(1, (int)(await agent.Client.Json("get_document"))["current_layer"]!);
     }
 
     [Fact]
@@ -228,7 +228,7 @@ public sealed class LiveTests : IDisposable
         await using var second = Listen();
         await first.DisposeAsync();
         await using var agent = await Agent();
-        Assert.Equal(0, (int)(await agent.Client.Json("get_document"))["current_layer"]!);
+        Assert.Equal(1, (int)(await agent.Client.Json("get_document"))["current_layer"]!);
     }
 
     [Fact]

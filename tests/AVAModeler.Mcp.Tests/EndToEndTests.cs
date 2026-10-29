@@ -83,10 +83,10 @@ public class EndToEndTests
         var obj = await client.Json("add_object", new { name = "Table" });
         Assert.Equal("Table", (string?)obj["name"]);
         Assert.Equal("the Modeler's object (live)", (string?)obj["source"]);
-        var spot = await client.Json("add_light", new { type = "spot", name = "Warm", position = new[] { 2.0, 3, -2 }, look_at = new[] { 0, 0.4, 0 }, color = new[] { 1, 0.8, 0.55 }, intensity = 1.3, cone_angle = 35 });
+        var spot = await client.Json("add_light", new { type = "spot", name = "Warm", position = new[] { 2.0, 3, -2 }, look_at = new[] { 0, 0.4, 0 }, color = new[] { 255, 204, 140 }, intensity = 1.3, cone_angle = 35 });
         Assert.Equal("spot", (string?)spot["type"]);
         await client.Json("set_item", new { item = "Light", intensity = 0.4 });
-        await client.Json("set_scene", new { background_color = new[] { 0.05, 0.05, 0.1 } });
+        await client.Json("set_scene", new { background_color = new[] { 13, 13, 26 } });
         double[][] path = [[0, 1.5, -4], [4, 2, 0], [0, 1.5, 4]];
         int[] frames = [1, 30, 60];
         for (int i = 0; i < 3; i++)

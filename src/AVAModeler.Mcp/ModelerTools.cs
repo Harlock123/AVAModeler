@@ -72,7 +72,7 @@ public sealed partial class ModelerTools(IModelerHost host)
             var before = Census.Of(c.Document);
             var added = c.AddPoints(points.Select(p => new Vec3(p[0], p[1], p[2])));
             var result = Census.Changes(c.Document, before, "Add points");
-            result["layer"] = c.Document.CurrentLayer;
+            result["layer"] = c.Document.CurrentLayer + 1;
             result["indices"] = Census.Range(added);
             return result;
         }, cancel);
@@ -89,7 +89,7 @@ public sealed partial class ModelerTools(IModelerHost host)
             var before = Census.Of(c.Document);
             var added = c.AddPolygons(polygons, string.IsNullOrWhiteSpace(surface) ? null : surface);
             var result = Census.Changes(c.Document, before, polygons.Length == 1 ? "Add polygon" : "Add polygons");
-            result["layer"] = c.Document.CurrentLayer;
+            result["layer"] = c.Document.CurrentLayer + 1;
             result["indices"] = Census.Range(added);
             return result;
         }, cancel);
@@ -172,19 +172,19 @@ public sealed partial class ModelerTools(IModelerHost host)
         Do("selected connected", c => { SelectionOps.Connected(c.Document); return Census.Selection(c.Document); }, cancel);
 
     [McpServerTool(Name = "set_layers", Idempotent = true)]
-    [Description("Chooses the foreground layers (being edited; new geometry goes into the lowest-numbered one) and the background layers (shown dimmed, and the other operand for Boolean, Drill, Path Extrude and Rail Extrude). The rest are turned off. Layers are numbered from 0 (the app's layer buttons show them from 1). Not an undo step.")]
+    [Description("Chooses the foreground layers (being edited; new geometry goes into the lowest-numbered one) and the background layers (shown dimmed, and the other operand for Boolean, Drill, Path Extrude and Rail Extrude). The rest are turned off. Layers are numbered 1 to 10, as the app's layer buttons show them. Not an undo step.")]
     public Task<string> SetLayers(
-        [Description("Foreground layer numbers, from 0, e.g. [0]. At least one.")] int[] foreground,
-        [Description("Background layer numbers, from 0, e.g. [1]. Optional.")] int[]? background = null,
+        [Description("Foreground layer numbers, from 1, e.g. [1]. At least one.")] int[] foreground,
+        [Description("Background layer numbers, from 1, e.g. [2]. Optional.")] int[]? background = null,
         CancellationToken cancel = default) =>
         Do("set the layers", c =>
         {
             if (foreground.Length == 0) throw new ArgumentException("Give at least one foreground layer.");
             var bg = background ?? [];
             foreach (int l in foreground.Concat(bg))
-                if (l < 0 || l >= 100) throw new ArgumentException($"There's no layer {l}: layers are numbered from 0 (and at most 99).");
-            if (foreground.Intersect(bg).FirstOrDefault(-1) is var both and >= 0) throw new ArgumentException($"Layer {both} can't be in both the foreground and the background.");
-            c.SetLayers(foreground, bg);
+                if (l < 1 || l > 100) throw new ArgumentException($"There's no layer {l}: layers are numbered from 1 (and at most 100).");
+            if (foreground.Intersect(bg).FirstOrDefault(-1) is var both and >= 1) throw new ArgumentException($"Layer {both} can't be in both the foreground and the background.");
+            c.SetLayers(foreground.Select(l => l - 1), bg.Select(l => l - 1));
             return Census.Document(c.Document, brief: true);
         }, cancel);
 
@@ -215,7 +215,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "new", Destructive = true)]
-    [Description("Starts a new, empty object (ten empty layers, layer 0 in the foreground, one surface \"Default\"), clearing the undo history. Refuses if the object has unsaved changes, unless discard_changes is true.")]
+    [Description("Starts a new, empty object (ten empty layers, layer 1 in the foreground, one surface \"Default\"), clearing the undo history. Refuses if the object has unsaved changes, unless discard_changes is true.")]
     public Task<string> New(
         [Description("Throw away unsaved changes.")] bool discard_changes = false,
         CancellationToken cancel = default) =>
@@ -256,7 +256,7 @@ public sealed partial class ModelerTools(IModelerHost host)
     [Description("Sets how a surface looks, making it if new, and (unless assign is false) gives it to the selected polygons in the foreground layers — to every polygon there if none are selected. One undo step. Leave out what you don't want to change. Colour is [r, g, b], 0 to 255; diffuse, specular, luminosity, reflection and transparency are fractions from 0 to 1.")]
     public Task<string> SetSurface(
         [Description("The surface's name, e.g. \"Wood\".")] string name,
-        [Description("Colour [r, g, b], 0 to 255 each.")] int[]? color = null,
+        [Description("Colour [r, g, b], whole numbers from 0 to 255.")] double[]? color = null,
         [Description("How much light it scatters, 0 to 1 (default 1).")] double? diffuse = null,
         [Description("Strength of highlights, 0 to 1.")] double? specular = null,
         [Description("Highlight tightness as LightWave stores it: 16 low, 64 medium, 256 high, 1024 very high.")] double? glossiness = null,
@@ -274,8 +274,7 @@ public sealed partial class ModelerTools(IModelerHost host)
             Rgb? rgb = null;
             if (color != null)
             {
-                if (color.Length != 3 || color.Any(v => v < 0 || v > 255)) throw new ArgumentException("color is [r, g, b], three whole numbers from 0 to 255.");
-                rgb = new Rgb((byte)color[0], (byte)color[1], (byte)color[2]);
+                rgb = Json.Colour(color, "color");
             }
             Json.Fraction(diffuse, "diffuse");
             Json.Fraction(specular, "specular");
@@ -430,7 +429,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "run_lua", Destructive = true)]
-    [Description("Runs a Lua macro, as Macros › Run Macro does, as one undo step: if it fails, everything it did is put back. Macros number layers, points and polygons from 1 (unlike these tools). Functions: tool(name, {Param = value}), addpoint(x, y, z), addpolygon({p1, p2, ...}, surface), pointcount(), polycount(), getpoint(n), polypoints(n), selmode(\"points\"|\"polygons\"|\"edges\"|\"volume\"), selpoints({...}), selpolygons({...}), selbox(x0, y0, z0, x1, y1, z1), selectall(), deselect(), invert(), setlayers({fg}, {bg}), makeuvs(map, projection, axis), uvmap(name), uvmaps(), setuv(n, u, v), getuv(n), texture(surface, image, {options}), notexture(surface, channel), new(), load(path), save(path) (paths inside the working folder; save won't replace a file it didn't write), print(...). undo() and redo() can't be used here. Returns what it printed.")]
+    [Description("Runs a Lua macro, as Macros › Run Macro does, as one undo step: if it fails, everything it did is put back. Macros number points and polygons from 1 (these tools number them from 0); layers are 1 to 10 in both. Functions: tool(name, {Param = value}), addpoint(x, y, z), addpolygon({p1, p2, ...}, surface), pointcount(), polycount(), getpoint(n), polypoints(n), selmode(\"points\"|\"polygons\"|\"edges\"|\"volume\"), selpoints({...}), selpolygons({...}), selbox(x0, y0, z0, x1, y1, z1), selectall(), deselect(), invert(), setlayers({fg}, {bg}), makeuvs(map, projection, axis), uvmap(name), uvmaps(), setuv(n, u, v), getuv(n), texture(surface, image, {options}), notexture(surface, channel), new(), load(path), save(path) (paths inside the working folder; save won't replace a file it didn't write), print(...). undo() and redo() can't be used here. Returns what it printed.")]
     public Task<string> RunLua(
         [Description("The Lua source.")] string script,
         [Description("Stop the macro after this many seconds (default 30, at most 300).")] double time_limit_seconds = 30,
@@ -465,7 +464,7 @@ public sealed partial class ModelerTools(IModelerHost host)
     [McpServerTool(Name = "get_points", ReadOnly = true, Idempotent = true)]
     [Description("Lists a layer's points as rows [index, x, y, z] (metres), a page at a time. With selected_only, only the points the selection makes active (selected points, or the points of selected polygons, edges or volume).")]
     public Task<string> GetPoints(
-        [Description("The layer, from 0. Default: the current layer.")] int? layer = null,
+        [Description("The layer, from 1. Default: the current layer.")] int? layer = null,
         [Description("The first index to list (default 0).")] int offset = 0,
         [Description("How many to list, 1 to 5000 (default 500).")] int limit = 500,
         [Description("Only the selected ones.")] bool selected_only = false,
@@ -482,13 +481,13 @@ public sealed partial class ModelerTools(IModelerHost host)
                 var p = mesh.Points[i];
                 rows.Add(new JsonArray(i, Census.Round(p.X), Census.Round(p.Y), Census.Round(p.Z)));
             }
-            return new JsonObject { ["layer"] = l, ["total"] = all.Count, ["offset"] = offset, ["count"] = rows.Count, ["points"] = rows, ["more"] = offset + rows.Count < all.Count };
+            return new JsonObject { ["layer"] = l + 1, ["total"] = all.Count, ["offset"] = offset, ["count"] = rows.Count, ["points"] = rows, ["more"] = offset + rows.Count < all.Count };
         }, cancel);
 
     [McpServerTool(Name = "get_polygons", ReadOnly = true, Idempotent = true)]
     [Description("Lists a layer's polygons, a page at a time: each with its index, its point indices (in winding order: clockwise seen from the side it faces), its surface and its normal (unit vector out of its visible side; [0, 0, 0] for dots and lines). With selected_only, only the polygons the selection makes active.")]
     public Task<string> GetPolygons(
-        [Description("The layer, from 0. Default: the current layer.")] int? layer = null,
+        [Description("The layer, from 1. Default: the current layer.")] int? layer = null,
         [Description("The first index to list (default 0).")] int offset = 0,
         [Description("How many to list, 1 to 5000 (default 500).")] int limit = 500,
         [Description("Only the selected ones.")] bool selected_only = false,
@@ -513,7 +512,7 @@ public sealed partial class ModelerTools(IModelerHost host)
                     ["normal"] = new JsonArray(Census.Round(n.X, 4), Census.Round(n.Y, 4), Census.Round(n.Z, 4)),
                 });
             }
-            return new JsonObject { ["layer"] = l, ["total"] = all.Count, ["offset"] = offset, ["count"] = rows.Count, ["polygons"] = rows, ["more"] = offset + rows.Count < all.Count };
+            return new JsonObject { ["layer"] = l + 1, ["total"] = all.Count, ["offset"] = offset, ["count"] = rows.Count, ["polygons"] = rows, ["more"] = offset + rows.Count < all.Count };
         }, cancel);
 
     [McpServerTool(Name = "render_view", ReadOnly = true, Idempotent = true)]

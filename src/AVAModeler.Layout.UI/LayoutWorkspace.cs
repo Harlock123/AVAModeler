@@ -209,7 +209,8 @@ public sealed class LayoutWorkspace : DockPanel
                 var type = new ComboBox { ItemsSource = Enum.GetNames<LightType>(), SelectedItem = light.Type.ToString() };
                 type.SelectionChanged += (_, _) => { if (Enum.TryParse<LightType>(type.SelectedItem as string, out var t)) { light.Type = t; Session.Scene.Notify(); } };
                 _properties.Children.Add(type);
-                Vector3Row("Colour (0–1)", light.Color, v => { light.Color = v; Session.Scene.Notify(); });
+                // 0 to 255 like surface colours (and LightWave's light panel); kept as 0 to 1.
+                Vector3Row("Colour (0–255)", light.Color * 255, v => { light.Color = Vec3.Min(Vec3.Max(v / 255, Vec3.Zero), Vec3.One); Session.Scene.Notify(); });
                 NumberRow("Intensity", light.Intensity.Evaluate(Session.Frame), v => { light.Intensity.AddKey(Session.Frame, v); Session.Scene.Notify(); });
                 NumberRow("Cone angle °", light.ConeAngle, v => { light.ConeAngle = v; Session.Scene.Notify(); });
                 NumberRow("Soft edge °", light.EdgeAngle, v => { light.EdgeAngle = v; Session.Scene.Notify(); });

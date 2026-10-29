@@ -1,6 +1,7 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -28,6 +29,7 @@ public sealed class LayoutWorkspace : DockPanel
     private readonly TextBlock _status = new() { Foreground = Look.ButtonOn, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0) };
     private readonly KeyMarks _marks;
     private readonly DispatcherTimer _player = new();
+    private readonly MenuItem _undo = new(), _redo = new();
     private bool _refreshing;
 
     /// <summary>Raised to switch to the Modeler workspace.</summary>
@@ -88,6 +90,7 @@ public sealed class LayoutWorkspace : DockPanel
             Session.SetFrame(Session.Frame + 1 > s.LastFrame ? s.FirstFrame : Session.Frame + 1);
         };
         session.Changed += Refresh;
+        session.History.Changed += UpdateUndoItems;
         session.SceneReplaced += () => { RefreshItems(); View.Fit(); };
         session.ChangedElsewhere += () =>
         {
@@ -98,9 +101,61 @@ public sealed class LayoutWorkspace : DockPanel
         AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(View.Fit, DispatcherPriority.Background);
         RefreshItems();
         Refresh();
+        UpdateUndoItems();
     }
 
     private Window? Owner => TopLevel.GetTopLevel(this) as Window;
+
+    /// <summary>Edit › Undo, which names the step it would take back ("Undo Move Camera").</summary>
+    public MenuItem UndoItem => _undo;
+    /// <summary>Edit › Redo, which names the step it would do again.</summary>
+    public MenuItem RedoItem => _redo;
+
+    // ───────────────────────────── undo and the keyboard ─────────────────────────────
+
+    /// <summary>Undoes the last step to the scene (Ctrl+Z, Edit › Undo): the person's or an agent's.</summary>
+    public void Undo() => AfterStep(Session.Undo());
+
+    /// <summary>Redoes the last step undone (Ctrl+Shift+Z or Ctrl+Y, Edit › Redo).</summary>
+    public void Redo() => AfterStep(Session.Redo());
+
+    private void AfterStep(string? label)
+    {
+        if (label == null) return;
+        // Names, parents and settings may all have gone back: show them afresh.
+        RefreshItems();
+        ShowProperties();
+    }
+
+    private void UpdateUndoItems()
+    {
+        var h = Session.History;
+        // A step's name is shown as it is: underscores aren't access keys.
+        _undo.Header = h.UndoLabel is { } u ? "_Undo " + u.Replace("_", "__") : "_Undo";
+        _redo.Header = h.RedoLabel is { } r ? "_Redo " + r.Replace("_", "__") : "_Redo";
+        _undo.IsEnabled = h.CanUndo;
+        _redo.IsEnabled = h.CanRedo;
+    }
+
+    /// <summary>
+    /// A key pressed anywhere in Layout (not in a text box, which keeps its own Ctrl+Z): F9 renders, Ctrl+Z undoes the
+    /// scene, Ctrl+Shift+Z and Ctrl+Y redo. Returns whether it was used.
+    /// </summary>
+    public bool HandleKey(KeyEventArgs e)
+    {
+        if (e.Key == Key.F9) { Render(); return true; }
+        if (e.Key == Key.F10) { RenderAnimation(); return true; }
+        if (e.Source is TextBox) return false;
+        var mods = e.KeyModifiers;
+        if (!mods.HasFlag(KeyModifiers.Control) && !mods.HasFlag(KeyModifiers.Meta) || mods.HasFlag(KeyModifiers.Alt)) return false;
+        bool shift = mods.HasFlag(KeyModifiers.Shift);
+        if (e.Key == Key.Z && !shift) { Undo(); return true; }
+        if (e.Key == Key.Z && shift || e.Key == Key.Y && !shift) { Redo(); return true; }
+        return false;
+    }
+
+    /// <summary>Makes a change from Layout's controls one undo step.</summary>
+    private void Change(string label, Action change) => Session.Edit(label, change);
 
     /// <summary>The item list as shown (kind and name, indented under parents).</summary>
     public IReadOnlyList<string> ListedItems => _items.ItemsSource as IReadOnlyList<string> ?? [];
@@ -200,12 +255,19 @@ public sealed class LayoutWorkspace : DockPanel
         if (Session.Selected is not { } item) return;
         _properties.Children.Add(new TextBlock { Text = $"{item.Kind}: {item.Name}", FontWeight = FontWeight.Bold, Foreground = Look.Text });
         var name = new TextBox { Text = item.Name };
-        name.LostFocus += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) { item.Name = name.Text; Session.Scene.Notify(); RefreshItems(); } };
+        void Rename()
+        {
+            if (string.IsNullOrWhiteSpace(name.Text) || name.Text == item.Name) return;
+            Change($"Rename {item.Name}", () => { item.Name = name.Text; Session.Scene.Notify(); });
+            RefreshItems();
+        }
+        name.LostFocus += (_, _) => Rename();
+        name.KeyDown += (_, e) => { if (e.Key == Key.Enter) Rename(); };
         _properties.Children.Add(name);
         Vector3Row("Position", item.PositionAt(Session.Frame), v => Session.SetVector(item, 0, v));
         Vector3Row("Rotation (H P B)", item.RotationAt(Session.Frame), v => Session.SetVector(item, 3, v));
         Vector3Row("Scale", item.ScaleAt(Session.Frame), v => Session.SetVector(item, 6, v));
-        Vector3Row("Pivot", item.Pivot, v => { item.Pivot = v; Session.Scene.Notify(); });
+        Vector3Row("Pivot", item.Pivot, v => Change($"Move {item.Name}'s Pivot", () => { item.Pivot = v; Session.Scene.Notify(); }));
 
         var parents = new List<SceneItem?> { null };
         parents.AddRange(Session.Scene.Items.Where(i => i != item && !i.Ancestors().Contains(item)));
@@ -213,7 +275,7 @@ public sealed class LayoutWorkspace : DockPanel
         parent.SelectionChanged += (_, _) =>
         {
             if (parent.SelectedIndex < 0) return;
-            try { item.Parent = parents[parent.SelectedIndex]; RefreshItems(); }
+            try { Change($"Parent {item.Name}", () => item.Parent = parents[parent.SelectedIndex]); RefreshItems(); }
             catch (InvalidOperationException e) { Session.SetStatus(e.Message); }
         };
         _properties.Children.Add(Label("Parent"));
@@ -224,39 +286,39 @@ public sealed class LayoutWorkspace : DockPanel
             case LightItem light:
                 _properties.Children.Add(Label("Light type"));
                 var type = new ComboBox { ItemsSource = Enum.GetNames<LightType>(), SelectedItem = light.Type.ToString() };
-                type.SelectionChanged += (_, _) => { if (Enum.TryParse<LightType>(type.SelectedItem as string, out var t)) { light.Type = t; Session.Scene.Notify(); } };
+                type.SelectionChanged += (_, _) => { if (Enum.TryParse<LightType>(type.SelectedItem as string, out var t)) Change("Light Type", () => { light.Type = t; Session.Scene.Notify(); }); };
                 _properties.Children.Add(type);
                 // 0 to 255 like surface colours (and LightWave's light panel); kept as 0 to 1.
-                Vector3Row("Colour (0–255)", light.Color * 255, v => { light.Color = Vec3.Min(Vec3.Max(v / 255, Vec3.Zero), Vec3.One); Session.Scene.Notify(); });
-                NumberRow("Intensity", light.Intensity.Evaluate(Session.Frame), v => { light.Intensity.AddKey(Session.Frame, v); Session.Scene.Notify(); });
-                NumberRow("Cone angle °", light.ConeAngle, v => { light.ConeAngle = v; Session.Scene.Notify(); });
-                NumberRow("Soft edge °", light.EdgeAngle, v => { light.EdgeAngle = v; Session.Scene.Notify(); });
-                NumberRow("Range (0: none)", light.Range, v => { light.Range = v; Session.Scene.Notify(); });
+                Vector3Row("Colour (0–255)", light.Color * 255, v => Change("Light Colour", () => { light.Color = Vec3.Min(Vec3.Max(v / 255, Vec3.Zero), Vec3.One); Session.Scene.Notify(); }));
+                NumberRow("Intensity", light.Intensity.Evaluate(Session.Frame), v => Change("Light Intensity", () => { light.Intensity.AddKey(Session.Frame, v); Session.Scene.Notify(); }));
+                NumberRow("Cone angle °", light.ConeAngle, v => Change("Cone Angle", () => { light.ConeAngle = v; Session.Scene.Notify(); }));
+                NumberRow("Soft edge °", light.EdgeAngle, v => Change("Soft Edge", () => { light.EdgeAngle = v; Session.Scene.Notify(); }));
+                NumberRow("Range (0: none)", light.Range, v => Change("Light Range", () => { light.Range = v; Session.Scene.Notify(); }));
                 var shadows = new CheckBox { Content = "Shadows", IsChecked = light.Shadows, Foreground = Look.Text };
-                shadows.IsCheckedChanged += (_, _) => { light.Shadows = shadows.IsChecked == true; Session.Scene.Notify(); };
+                shadows.IsCheckedChanged += (_, _) => Change("Shadows", () => { light.Shadows = shadows.IsChecked == true; Session.Scene.Notify(); });
                 _properties.Children.Add(shadows);
                 break;
             case CameraItem cam:
-                NumberRow("Zoom factor", cam.Zoom.Evaluate(Session.Frame), v => { cam.Zoom.AddKey(Session.Frame, Math.Max(0.01, v)); Session.Scene.Notify(); });
+                NumberRow("Zoom factor", cam.Zoom.Evaluate(Session.Frame), v => Change("Zoom", () => { cam.Zoom.AddKey(Session.Frame, Math.Max(0.01, v)); Session.Scene.Notify(); }));
                 _properties.Children.Add(new TextBlock { Text = $"{cam.HorizontalFov(Session.Frame):0.#}° across, {cam.VerticalFov(Session.Frame):0.#}° high", Foreground = Look.Text, FontSize = 11 });
-                NumberRow("Width (pixels)", cam.Width, v => { cam.Width = Math.Max(1, (int)v); Session.Scene.Notify(); });
-                NumberRow("Height (pixels)", cam.Height, v => { cam.Height = Math.Max(1, (int)v); Session.Scene.Notify(); });
-                _properties.Children.Add(Look.MakeButton("Use this camera", () => { Session.Scene.CurrentCamera = cam; Session.Scene.Notify(); }));
+                NumberRow("Width (pixels)", cam.Width, v => Change("Camera Width", () => { cam.Width = Math.Max(1, (int)v); Session.Scene.Notify(); }));
+                NumberRow("Height (pixels)", cam.Height, v => Change("Camera Height", () => { cam.Height = Math.Max(1, (int)v); Session.Scene.Notify(); }));
+                _properties.Children.Add(Look.MakeButton("Use this camera", () => Change("Use Camera", () => Session.Scene.CurrentCamera = cam)));
                 break;
             case Bone bone:
-                NumberRow("Rest length", bone.RestLength, v => { bone.RestLength = Math.Max(1e-3, v); Session.Scene.Notify(); });
-                NumberRow("Strength", bone.Strength, v => { bone.Strength = v; Session.Scene.Notify(); });
+                NumberRow("Rest length", bone.RestLength, v => Change("Rest Length", () => { bone.RestLength = Math.Max(1e-3, v); Session.Scene.Notify(); }));
+                NumberRow("Strength", bone.Strength, v => Change("Bone Strength", () => { bone.Strength = v; Session.Scene.Notify(); }));
                 var active = new CheckBox { Content = "Active", IsChecked = bone.Active, Foreground = Look.Text };
-                active.IsCheckedChanged += (_, _) => { bone.Active = active.IsChecked == true; Session.Scene.Notify(); };
+                active.IsCheckedChanged += (_, _) => Change("Bone Active", () => { bone.Active = active.IsChecked == true; Session.Scene.Notify(); });
                 _properties.Children.Add(active);
-                _properties.Children.Add(Look.MakeButton("Rest here", () => { bone.RestFromPose(Session.Frame); Session.Scene.Notify(); }, "Make the current pose the rest pose"));
+                _properties.Children.Add(Look.MakeButton("Rest here", () => Change("Rest Here", () => { bone.RestFromPose(Session.Frame); Session.Scene.Notify(); }), "Make the current pose the rest pose"));
                 break;
             case ObjectItem obj:
                 _properties.Children.Add(new TextBlock { Text = obj.IsPlaceholder ? "(couldn't load: a placeholder)" : $"{obj.BaseMesh().Points.Count} points, {obj.BaseMesh().Polygons.Count} polygons", Foreground = Look.Text, FontSize = 11 });
-                _properties.Children.Add(Look.MakeButton("Add Bone", () => { Session.Select(Session.Scene.AddBone(obj, $"Bone {obj.Bones.Count + 1}")); }));
+                _properties.Children.Add(Look.MakeButton("Add Bone", () => Session.Select(Session.Edit("Add Bone", () => Session.Scene.AddBone(obj, $"Bone {obj.Bones.Count + 1}")))));
                 _properties.Children.Add(Look.MakeButton("Skelegons → Bones", () =>
                 {
-                    var made = Skelegons.CreateBones(Session.Scene, obj);
+                    var made = Session.Edit("Skelegons → Bones", () => Skelegons.CreateBones(Session.Scene, obj));
                     Session.SetStatus(made.Count > 0 ? $"Made {made.Count} bones from skelegons." : "No skelegons (2-point polygons on a \"Skelegon…\" surface) in this object.");
                 }));
                 break;
@@ -271,7 +333,14 @@ public sealed class LayoutWorkspace : DockPanel
     private void NumberRow(string label, double value, Action<double> set)
     {
         var box = new TextBox { Text = F(value), FontSize = 11 };
-        void Apply() { if (double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) set(v); }
+        var applied = box.Text;
+        // Only a value changed is a change (and an undo step): Enter, then leaving the box, is one.
+        void Apply()
+        {
+            if (box.Text == applied || !double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) return;
+            applied = box.Text;
+            set(v);
+        }
         box.LostFocus += (_, _) => Apply();
         box.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Enter) Apply(); };
         _properties.Children.Add(Label(label));
@@ -288,11 +357,15 @@ public sealed class LayoutWorkspace : DockPanel
             Grid.SetColumn(boxes[i], i);
             grid.Children.Add(boxes[i]);
         }
+        string Texts() => string.Join(" ", boxes.Select(b => b.Text));
+        var applied = Texts();
         void Apply()
         {
+            if (Texts() == applied) return;
             var v = new double[3];
             for (int i = 0; i < 3; i++)
                 if (!double.TryParse(boxes[i].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out v[i])) return;
+            applied = Texts();
             set(new Vec3(v[0], v[1], v[2]));
         }
         foreach (var b in boxes)
@@ -315,6 +388,10 @@ public sealed class LayoutWorkspace : DockPanel
             return i;
         }
         MenuItem Group(string header, params MenuItem[] items) => new() { Header = header, ItemsSource = items };
+        _undo.Click += (_, _) => Undo();
+        _redo.Click += (_, _) => Redo();
+        _undo.InputGesture = new KeyGesture(Key.Z, KeyModifiers.Control);
+        _redo.InputGesture = new KeyGesture(Key.Z, KeyModifiers.Control | KeyModifiers.Shift);
         return new Menu
         {
             Background = Look.PanelDark,
@@ -324,12 +401,13 @@ public sealed class LayoutWorkspace : DockPanel
                 Group("_Scene", Item("_New Scene", NewScene), Item("_Load Scene…", () => _ = LoadScene()), Item("_Save Scene…", () => _ = SaveScene(".avascene")),
                     Item("Save as _LWS…", () => _ = SaveScene(".lws")), Item("Scene _Settings…", () => _ = SceneSettings()),
                     Item("_Quit", () => Owner?.Close())),
+                Group("_Edit", _undo, _redo),
                 Group("_Add", Item("The _Modeler's Object", () => Session.ShowModelerObject(_modelerDocument())), Item("_Object from a File…", () => _ = LoadObject()),
-                    Item("_Null", () => Session.Select(Session.Scene.AddNull("Null"))),
-                    Item("_Distant Light", () => Session.Select(Session.Scene.AddLight("Distant Light"))),
-                    Item("_Point Light", () => Session.Select(Session.Scene.AddLight("Point Light", LightType.Point))),
-                    Item("_Spot Light", () => Session.Select(Session.Scene.AddLight("Spot Light", LightType.Spot))),
-                    Item("_Camera", () => Session.Select(Session.Scene.AddCamera("Camera")))),
+                    Item("_Null", () => Session.Add(new NullItem("Null"))),
+                    Item("_Distant Light", () => Session.Add(new LightItem("Distant Light"))),
+                    Item("_Point Light", () => Session.Add(new LightItem("Point Light", LightType.Point))),
+                    Item("_Spot Light", () => Session.Add(new LightItem("Spot Light", LightType.Spot))),
+                    Item("_Camera", () => Session.Add(new CameraItem("Camera")))),
                 Group("_Render", Item("_Render Frame", Render), Item("Render _Animation…", () => RenderAnimation())),
                 Group("_Help", Item("_Layout", () => _ = Dialogs.Message(Owner, "Layout", Help))),
             },
@@ -343,6 +421,9 @@ public sealed class LayoutWorkspace : DockPanel
         Choose an item by clicking it in the view or the list. Drag it in the view to move it, right-drag to turn it; with Auto
         key on, each change is a key at the current frame. Create Key keys every channel at once.
 
+        Ctrl+Z (Edit › Undo) takes back the last change to the scene, an AI agent's included; Ctrl+Shift+Z or Ctrl+Y redoes
+        it. A drag, a value typed and entered, or a key made is one step. The object's geometry has the Modeler's own undo.
+
         The graph editor shows the chosen item's channels as curves; click a key to set its value, tension, continuity and
         bias (TCB, as classic LightWave), and what happens before the first key and after the last.
 
@@ -353,8 +434,7 @@ public sealed class LayoutWorkspace : DockPanel
 
     private void NewScene()
     {
-        Session.Replace(AVAModeler.Scene.Scene.CreateDefault());
-        Session.ShowModelerObject(_modelerDocument());
+        Session.NewScene(_modelerDocument());
     }
 
     private async Task LoadScene()
@@ -420,7 +500,7 @@ public sealed class LayoutWorkspace : DockPanel
                 Children = { Label("First frame"), first, Label("Last frame"), last, Label("Frames per second"), fps, Label("Ambient intensity"), ambient, gradient, ok },
             },
         };
-        ok.Click += (_, _) =>
+        ok.Click += (_, _) => Change("Scene Settings", () =>
         {
             if (int.TryParse(first.Text, out int f)) s.FirstFrame = f;
             if (int.TryParse(last.Text, out int l)) s.LastFrame = Math.Max(l, s.FirstFrame);
@@ -429,7 +509,7 @@ public sealed class LayoutWorkspace : DockPanel
             s.GradientBackground = gradient.IsChecked == true;
             s.Notify();
             w.Close();
-        };
+        });
         if (Owner != null) await Dialogs.ShowModal(w, Owner);
     }
 

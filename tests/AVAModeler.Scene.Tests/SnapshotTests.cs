@@ -63,6 +63,46 @@ public class SnapshotTests
     }
 
     [Fact]
+    public void A_snapshot_puts_back_morphs_and_displacements_with_their_settings()
+    {
+        var scene = Scene.CreateDefault();
+        var doc = Cube();
+        var obj = scene.AddObject("Ball", doc);
+        var target = doc.Current.Mesh.Clone();
+        var morph = obj.AddMorph(new MorphTarget("Squash", target));
+        morph.Weight.AddKey(1, 0);
+        morph.Weight.AddKey(30, 1);
+        var wave = obj.AddDisplacement(new WaveDisplacement { Shape = WaveShape.Ripple, Center = new Vec3(1, 0, 0), Wavelength = 2, Speed = 0.1, Phase = 45 });
+        wave.Amplitude.SetConstant(0.3);
+        var before = SceneJson.Write(scene, embedMeshes: true);
+        var snap = scene.Snapshot();
+
+        // Every setting a morph and a displacement have, and the lists themselves.
+        morph.Name = "Stretch";
+        morph.Target = new Mesh();
+        morph.Weight.SetConstant(0.5);
+        (wave.Shape, wave.Direction, wave.Along, wave.Center) = (WaveShape.Wave, Axis.X, Axis.Z, Vec3.Zero);
+        (wave.Wavelength, wave.Speed, wave.Phase) = (9, 2, 0);
+        wave.Amplitude.AddKey(10, 4);
+        obj.AddMorph(new MorphTarget("Extra", target));
+        obj.RemoveDisplacement(wave);
+        obj.AddDisplacement(new WaveDisplacement());
+        scene.Notify();
+
+        snap.Restore();
+        Assert.Equal(before, SceneJson.Write(scene, embedMeshes: true));
+        Assert.Same(morph, obj.Morphs.Single());
+        Assert.Same(target, morph.Target);
+        Assert.Equal("Squash", morph.Name);
+        Assert.Equal([0.0, 1.0, 30.0], morph.Weight.Keys.Select(k => k.Frame));
+        Assert.Same(wave, obj.Displacements.Single());
+        Assert.Equal((WaveShape.Ripple, Axis.Y, Axis.X, new Vec3(1, 0, 0), 2.0, 0.1, 45.0),
+            (wave.Shape, wave.Direction, wave.Along, wave.Center, wave.Wavelength, wave.Speed, wave.Phase));
+        Assert.True(wave.Amplitude.IsConstant);
+        Assert.Equal(0.3, wave.Amplitude.Evaluate(10));
+    }
+
+    [Fact]
     public void Batch_raises_changed_once_and_only_if_something_changed()
     {
         var scene = Scene.CreateDefault();

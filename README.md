@@ -144,6 +144,12 @@ Modeler and Layout shows the change at once.
   - The timeline plays, steps, and shows the chosen item's keys.
   - The graph editor shows the channels as curves. Choose a key to set its value, tension, continuity, bias and
     linear flag, and set what happens before the first key and after the last.
+- **Undo**: Ctrl+Z (Edit › Undo) takes back the last change to the scene, and Ctrl+Shift+Z or Ctrl+Y (Edit › Redo)
+  does it again, up to 100 steps. The Edit menu names the step ("Undo Move Camera"). A drag in the view or the graph
+  editor is one step, as are a value typed and entered, Create Key, Delete Key, adding or removing an item, Skelegons →
+  Bones, parenting and the scene settings. AI agents' scene changes are steps on the same history ("Agent: added a
+  light"), so your Ctrl+Z takes them back too. New Scene and Load Scene clear it. The object's geometry has the
+  Modeler's own undo.
 - **Cameras and lights**: the camera view with its picture shape and its action- and title-safe areas; zoom factor
   and field of view. Distant, point and spot lights have colour, intensity, cone, soft edge, range and shadows.
 - **Scene files**: classic LightWave .lws scenes (LightWave 4 and 5, and later versions) are read and written, and
@@ -198,7 +204,7 @@ On Windows, unzip and run `AVAModeler.exe`. On macOS, if Gatekeeper refuses to o
 | Use a tool | Pick it from the tab (or its key), then drag in a view; Shift keeps to one axis | Enter keeps the result, Esc throws it away |
 | Navigate | Wheel zooms; middle-drag or Alt-drag pans; drag the perspective view to turn it; double-click to maximize | A fit all, Shift+A fit selected, `.` and `,` zoom, 0 maximize, U the UV view |
 | Layers | The layer buttons (top half foreground, bottom half background) | 1–9 foreground, Shift adds, Alt background, `\` swaps |
-| Edit | | Ctrl+Z undo, Ctrl+Shift+Z redo, X cut, C copy, Ctrl+V paste, Delete remove |
+| Edit | | Ctrl+Z undo, Ctrl+Shift+Z redo, X cut, C copy, Ctrl+V paste, Delete remove; in Layout, Ctrl+Z undoes the scene, Ctrl+Shift+Z or Ctrl+Y redoes |
 | Workspaces | | F1 Modeler, F2 Layout, F9 render a frame and F10 an animation (in Layout) |
 | Files | | Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Q quit (File › Quit) |
 
@@ -220,7 +226,7 @@ There are two ways to run it, both from the same program:
   command; it has an object and a scene of its own and saves files in its working folder.
 - **Live**: `AVAModeler --mcp --attach` connects the agent to the AVA Modeler open on your desktop. Everything it
   does happens in the open object and in Layout's scene: you watch it appear in the views, your edits and its edits
-  to the object share one undo history, and Ctrl+Z undoes its steps. Its scene changes go to Layout's scene whether or
+  to the object share one undo history, and Ctrl+Z undoes its steps (in Layout, its scene steps). Its scene changes go to Layout's scene whether or
   not Layout is on screen (the window isn't switched for you; F2 shows it), and Layout's item list follows them. Turn it on with **Macros › Allow AI Agents (MCP)** (or in Edit › Preferences;
   it's off until you do). The app then listens on a local pipe (a Unix domain socket on Linux and macOS, a named pipe
   on Windows) that only your own user account can open, so nothing on the network or from another account can
@@ -281,7 +287,7 @@ The Layout tools:
 | `set_transform`, `look_at` | Position, rotation and scale at a frame, as keys or as plain values (the rule is in the tool's description); turning anything to face a point or another item. |
 | `set_key`, `delete_key`, `set_end_behavior` | One key on one channel with tension, continuity, bias and the linear flag; removing keys; what a channel does before its first key and after its last. |
 | `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame. |
-| `undo_scene` | Takes back the agent's own scene changes, one call at a time (Layout has no undo of its own). |
+| `undo_scene`, `redo_scene` | Layout's undo and redo, on the history the person's Ctrl+Z uses: each scene call is one step ("Agent: …"), and the person's steps can be undone too. |
 | `render_scene_view` | A quick picture as Layout's view draws it, through the camera or from above, the front, the side or an orbit, with the lights, cameras, nulls and bones drawn; it also says where each item landed in the picture. |
 | `render_scene`, `render_animation` | A ray-traced frame through a camera; or a run of frames written as numbered PNGs in the working folder, with a contact sheet back. Both are bounded in size and time. |
 
@@ -349,7 +355,7 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 512 tests cover every layer:
+It needs the .NET 10 SDK. 541 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
@@ -358,10 +364,10 @@ It needs the .NET 10 SDK. 512 tests cover every layer:
 | Geometry | 79 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation |
 | Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
 | Tools | 62 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
-| Scene | 143 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots and copies, aiming an item at a point, object paths relative to the scene |
-| Layout | 20 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed) |
-| Mcp | 41 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was, undo_scene, the look-at maths, keys read between frames); whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
-| UI | 46 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout and its Render Animation window, an AI agent working in the open window and in its Layout scene, and the screenshots |
+| Scene | 144 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
+| Layout | 27 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed) |
+| Mcp | 42 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
+| UI | 47 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -382,7 +388,7 @@ Layout reuses them.
 | `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp), plugins, SkiaSharp image reading |
 | `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing, the view cameras, picking |
 | `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones, LWS and JSON scenes, the ray tracer |
-| `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, scene files, what the views draw, rendering animations and joining them into movies with ffmpeg), shared by the Layout workspace and the MCP server |
+| `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, its undo history, scene files, what the views draw, rendering animations and joining them into movies with ffmpeg), shared by the Layout workspace and the MCP server |
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render and animation windows |
 | `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
@@ -412,11 +418,13 @@ Layout reuses them.
   still written. Frames are numbered from 1 in the order rendered, not by scene frame. It renders frames one after
   another (each one multithreaded), with no motion blur or field rendering.
 
+- **Layout's undo** covers the scene only: not the object's geometry (that's the Modeler's undo), the current frame or
+  which item is chosen. A morph target's mesh is kept by reference, so to be undoable it is replaced rather than
+  edited in place. The depth is a fixed 100 steps (the Undo Levels preference is the Modeler's).
 - **AI agents (MCP)**: Points and Drag work only with the mouse, so agents use `add_points` and Move instead.
-  Layout has no undo of its own: `undo_scene` takes back only an agent's own scene changes, and only while nobody
-  else has changed the scene since (not across `new_scene` or `open_scene`); the person's Ctrl+Z doesn't reach the
-  scene. Agents can't make morphs, displacements or skelegon bones, and `render_scene_view`'s camera view, like
-  Layout's, doesn't show the camera's bank. `render` uses a fixed camera rig and
+  `undo_scene` can't go back across `new_scene` or `open_scene`, which clear the scene's history. Agents can't make
+  morphs, displacements or skelegon bones, and `render_scene_view`'s camera view, like Layout's, doesn't show the
+  camera's bank. `render` uses a fixed camera rig and
   lights round the object. Only one AVA Modeler per user takes agents at a time. Inside `run_lua`, `undo()` and
   `redo()` aren't allowed (the macro is one undo step) and a macro stops after 30 seconds unless given longer. Texture
   image paths may point outside the working folder (they're only read). The live pipe is tested on Linux; Windows and

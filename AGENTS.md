@@ -37,11 +37,14 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - `src/AVAModeler.Rendering/`: `IRenderer` with the software and OpenGL (Silk.NET) renderers, view cameras and
   picking.
 - `src/AVAModeler.Scene/`: Layout's model: items, envelopes, bones, LWS and JSON scenes, and the ray tracer.
-  - `SceneSnapshot.cs` (`Scene.Snapshot()`) puts a scene back as it was, items by reference; `Scene.Copy` makes one
+  - `SceneSnapshot.cs` (`Scene.Snapshot()`) puts a scene back as it was, items by reference (with every setting an
+    edit can change, morphs' and displacements' included: extend it when you add one); `Scene.Copy` makes one
     that shares nothing that changes, to render on another thread; `Scene.Batch` raises `Changed` once for many edits.
 - `src/AVAModeler.Layout/`: Layout's state without its controls, so the workspace and the MCP server share it.
   - `LayoutSession.cs`: the scene being worked on, its frame, chosen item and auto-key, the Modeler's object in the
-    scene, loading and saving scenes (with an object loader passed in), the modified flag.
+    scene, loading and saving scenes (with an object loader passed in), the modified flag, and the scene's undo
+    (`Edit`, `BeginEdit`/`EndEdit`, `Undo`, `Redo`).
+  - `SceneUndo.cs`: Layout's undo history (`LayoutSession.History`), `SceneSnapshot`s shared by the person and agents.
   - `SceneDrawing.cs` (what Layout's views draw, and looking through a scene camera) and `Keying.cs` (how values become keys:
     one rule for Layout's controls and agents alike).
   - `AnimationRender.cs` (Render Animation's work: a run of frames from a `Scene.Copy` into numbered PNGs on a worker
@@ -51,7 +54,7 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   - `ModelerTools.cs` is every Modeler tool and `LayoutTools.cs` every Layout (scene) tool, one partial class in the
     SDK's attribute model; `ModelerServer.cs` builds the server and its instructions to agents. `ToolCatalog.cs`
     describes the Modeler's tools from the registry and `[Param]`s; `SceneCensus.cs` describes the scene and reads
-    agents' item and channel names; `SceneHistory.cs` is undo_scene's steps.
+    agents' item and channel names.
   - `ModelerHost.cs`: `IModelerHost` runs the handlers' work on the document's thread, with the command API
     (`RunAsync`) or with Layout's `LayoutSession` beside it (`RunSceneAsync`). `HeadlessHost` owns a document and a
     `LayoutSession`; `LiveHost` runs on the app's UI thread through `IUiThread`, against `ILiveModeler.Commands` and
@@ -92,17 +95,24 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   `IModelerHost.RunAsync` and `Commands` (tools by name, `Macros`), and the scene only through
   `IModelerHost.RunSceneAsync` and `LayoutSession`, so the same handlers serve headless and live mode. Every change an
   agent makes to the object is one undo step, and a failed call leaves the document as it was: `Commands.Run` cancels
-  a tool that throws, and `Document.Group` makes several edits one step (or none, if they fail). Layout has no undo, so
-  every Layout tool that changes the scene runs through `DoScene`, which takes a `SceneSnapshot` first and restores it
-  if the call throws (all or nothing); the snapshot then becomes an `undo_scene` step, kept only while the agent's
-  changes are the latest. Errors go back as `McpException`s whose messages say what to do instead.
+  a tool that throws, and `Document.Group` makes several edits one step (or none, if they fail). Every Layout tool that
+  changes the scene runs through `DoScene`, which makes the call one step on Layout's shared history
+  (`LayoutSession.Edit`, named "Agent: …"): if the call throws, the scene is put back as it was and no step is left
+  (all or nothing). `undo_scene` and `redo_scene` work on that same history, as the person's Ctrl+Z does. Errors go
+  back as `McpException`s whose messages say what to do instead.
 - **Agents see the app's numbers.** MCP tools number layers 1 to 10, as the layer buttons and Lua macros do, and give
   every colour as [r, g, b] whole numbers from 0 to 255, as surfaces and the Layout panel do (`Json.Colour`,
   `Json.SceneColour` and `Json.ColourJson`). Convert at the MCP edge: inside, layers are indexed from 0 and Layout's
   colours are 0 to 1. Points and polygons stay indexed from 0.
+- **Scene edits are undo steps.** Change the scene inside `LayoutSession.Edit(label, …)` (or between `BeginEdit` and
+  `EndEdit` for a drag, press to release), or through the session's own methods (`SetVector`, `CreateKey`,
+  `DeleteKey`, `Add`, `Remove`, which are steps already), so the change is one named step on `History` and undo stays
+  consistent: a change made straight on the `Scene` isn't a step, and undoing an older step would take it back too.
+  Edits nest (an inner one is part of the outer), a failed one is put back, and new or loaded scenes clear the history.
 - **Live mode runs on the UI thread.** `LiveHost` marshals every call through `IUiThread` (the Avalonia dispatcher in
-  the app), so the views redraw through the usual `Document.Changed` and the person's Ctrl+Z undoes agents' steps. It
-  waits while a tool is armed or a modal dialog is open (`Dialogs.ShowModal` counts them); pictures are drawn from a
+  the app), so the views redraw through the usual `Document.Changed` and the person's Ctrl+Z undoes agents' steps (in
+  Layout, their scene steps). It waits while a tool is armed or a modal dialog is open (`Dialogs.ShowModal` counts
+  them); pictures are drawn from a
   `Document.Copy` (or, for the scene, a `Scene.Copy` with copied documents) off that thread. Scene calls don't switch
   the window to Layout; `LiveAgents.Report` tells Layout to show its item list afresh (`ChangedElsewhere`).
 - **The live listener is local and per user.** It listens on a named pipe opened with `PipeOptions.CurrentUserOnly`

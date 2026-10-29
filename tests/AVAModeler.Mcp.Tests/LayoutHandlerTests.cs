@@ -55,7 +55,8 @@ public class LayoutHandlerTests
         Assert.Equal(8, (int)obj["points"]!);
         Near([2, 2, 2], V(obj["world_bounds"]!["size"]));
         Assert.Empty(obj["keyed"]!.AsArray());
-        Assert.Equal(1, (int)s["undo_scene"]!["steps"]!);
+        Assert.Equal(1, (int)s["undo_scene"]!["depth"]!);
+        Assert.Equal("Agent: added an object", (string?)s["undo_scene"]!["next_undo"]);
         Assert.Contains("Frame 70 is outside the scene's frames, 1 to 60", await Error(b.Tools.GetScene(70, Cancel)));
     }
 
@@ -233,7 +234,9 @@ public class LayoutHandlerTests
         Assert.Equal(0, b.Scene.CurrentCamera.PositionAt(20).X);
         // The failures aren't undo steps, and undo_scene carries on as before them.
         // (add_object, add_light and two set_keys.)
-        Assert.Equal(4, (int)(await Parse(b.Tools.GetScene(cancel: Cancel)))["undo_scene"]!["steps"]!);
+        Assert.Equal(4, b.Layout.History.Count);
+        Assert.Equal(4, (int)(await Parse(b.Tools.GetScene(cancel: Cancel)))["undo_scene"]!["depth"]!);
+        Assert.Equal("Agent: set a key", b.Layout.History.UndoLabel);
         await b.Tools.UndoScene(Cancel);
         Assert.True(b.Scene.CurrentCamera.Channels[2].Keys.Count == 1);
     }
@@ -366,38 +369,85 @@ public class LayoutHandlerTests
     }
 
     [Fact]
-    public async Task Undo_scene_steps_back_through_the_agents_own_changes_only()
+    public async Task Undo_and_redo_scene_step_through_the_shared_history()
     {
         using var b = await WithBox();
         await b.Tools.AddLight("point", "Bulb", [0, 3, 0], cancel: Cancel);
         await b.Tools.SetTransform("Bulb", 10, position: [1, 3, 0], key: true, cancel: Cancel);
-        await b.Tools.SetItem("Bulb", intensity: 2, cancel: Cancel);
-        // Moving the frame isn't a step.
+        var set = await Parse(b.Tools.SetItem("Bulb", intensity: 2, cancel: Cancel));
+        // Each call says where the history stands.
+        Assert.Equal(4, (int)set["undo_scene"]!["depth"]!);
+        Assert.Equal("Agent: changed an item", (string?)set["undo_scene"]!["next_undo"]);
+        // Moving the frame or reading isn't a step.
         await b.Tools.SetScene(frame: 20, cancel: Cancel);
+        await b.Tools.GetScene(cancel: Cancel);
+        Assert.Equal(4, b.Layout.History.Count);
         var u = await Parse(b.Tools.UndoScene(Cancel));
-        Assert.Equal("changed an item", (string?)u["undone"]);
+        Assert.Equal("Agent: changed an item", (string?)u["undone"]);
         Assert.Equal(1, ((LightItem)b.Scene.Find("Bulb")!).Intensity.Evaluate(1));
         Assert.Equal(20, b.Layout.Frame);
+        Assert.Equal("Agent: changed an item", (string?)u["undo_scene"]!["next_redo"]);
         u = await Parse(b.Tools.UndoScene(Cancel));
-        Assert.Equal("moved an item", (string?)u["undone"]);
+        Assert.Equal("Agent: moved an item", (string?)u["undone"]);
         Assert.Equal(0, b.Scene.Find("Bulb")!.PositionAt(10).X);
         var bulb = b.Scene.Find("Bulb")!;
         await b.Tools.UndoScene(Cancel);
         Assert.Null(b.Scene.Find("Bulb"));
         Assert.Null(bulb.Scene);
-        Assert.Equal(2, (int)u["undo_scene"]!["steps"]!);
-        await b.Tools.UndoScene(Cancel);
-        Assert.Empty(b.Scene.Objects);
-        Assert.Contains("nothing of yours to undo", await Error(b.Tools.UndoScene(Cancel)));
 
-        // Once someone else changes the scene, the steps before aren't undone over their work.
+        // Redo brings them back, the very item included.
+        var r = await Parse(b.Tools.RedoScene(Cancel));
+        Assert.Equal("Agent: added a light", (string?)r["redone"]);
+        Assert.Same(bulb, b.Scene.Find("Bulb"));
+        await b.Tools.RedoScene(Cancel);
+        await b.Tools.RedoScene(Cancel);
+        Assert.Equal(1, bulb.PositionAt(10).X);
+        Assert.Equal(2, ((LightItem)bulb).Intensity.Evaluate(1));
+        r = await Parse(b.Tools.RedoScene(Cancel));
+        Assert.Null((string?)r["redone"]);
+        Assert.Contains("nothing to redo", (string?)r["note"]);
+
+        // The person's steps are on the same history: undo_scene takes them back too.
+        b.Layout.Add(new NullItem("The person's"));
+        Assert.Equal("Add Null", b.Layout.History.UndoLabel);
+        u = await Parse(b.Tools.UndoScene(Cancel));
+        Assert.Equal("Add Null", (string?)u["undone"]);
+        Assert.Null(b.Scene.Find("The person's"));
+
+        // A new change clears what could be redone.
         await b.Tools.AddNull("Mine", cancel: Cancel);
-        await b.Tools.AddNull("Mine too", cancel: Cancel);
-        b.Scene.AddNull("The person's");
-        Assert.Contains("has changed since your last change", await Error(b.Tools.UndoScene(Cancel)));
-        Assert.Equal(0, (int)(await Parse(b.Tools.GetScene(cancel: Cancel)))["undo_scene"]!["steps"]!);
-        Assert.NotNull(b.Scene.Find("The person's"));
-        Assert.NotNull(b.Scene.Find("Mine too"));
+        Assert.False(b.Layout.History.CanRedo);
+        while (b.Layout.History.CanUndo) await b.Tools.UndoScene(Cancel);
+        Assert.Empty(b.Scene.Objects);
+        u = await Parse(b.Tools.UndoScene(Cancel));
+        Assert.Null((string?)u["undone"]);
+        Assert.Contains("nothing to undo", (string?)u["note"]);
+
+        // A new scene clears the history.
+        await b.Tools.AddNull("Again", cancel: Cancel);
+        await b.Tools.NewScene(discard_changes: true, cancel: Cancel);
+        Assert.Equal(0, b.Layout.History.Count);
+        Assert.False(b.Layout.History.CanRedo);
+    }
+
+    [Fact]
+    public async Task A_failed_call_leaves_no_step_and_undo_returns_to_the_saved_scene()
+    {
+        using var b = await WithBox();
+        await b.Tools.SaveScene("box.avascene", cancel: Cancel);
+        Assert.False(b.Layout.Modified);
+        int depth = b.Layout.History.Count;
+        await Error(b.Tools.SetItem("Camera", name: "Renamed", cone_angle: 10, cancel: Cancel));
+        await Error(b.Tools.SetTransform("Nobody", 1, position: [1, 2, 3], cancel: Cancel));
+        Assert.Equal(depth, b.Layout.History.Count);
+        // A failure that was put back leaves the scene as saved.
+        Assert.False(b.Layout.Modified);
+        await b.Tools.AddNull("N", cancel: Cancel);
+        Assert.True(b.Layout.Modified);
+        await b.Tools.UndoScene(Cancel);
+        Assert.False(b.Layout.Modified);
+        await b.Tools.RedoScene(Cancel);
+        Assert.True(b.Layout.Modified);
     }
 
     // ───────────────────────────── files ─────────────────────────────

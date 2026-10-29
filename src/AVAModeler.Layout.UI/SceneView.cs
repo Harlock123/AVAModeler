@@ -142,6 +142,8 @@ public sealed class SceneView : Control
             _rotateItem = props.IsRightButtonPressed;
             _startPosition = item.PositionAt(_session.Frame);
             _startRotation = item.RotationAt(_session.Frame);
+            // The whole drag, press to release, is one undo step (none if it doesn't move).
+            _session.BeginEdit($"{LayoutSession.VectorVerb(_dragItem ? 0 : 3)} {item.Name}");
         }
         e.Pointer.Capture(this);
     }
@@ -173,10 +175,24 @@ public sealed class SceneView : Control
     {
         base.OnPointerReleased(e);
         var p = e.GetPosition(this);
+        EndDrag();
         if (!_moved && !_pan) _session.Select(Pick(p));
-        _pan = _orbit = _dragItem = _rotateItem = false;
+        _pan = _orbit = false;
         e.Pointer.Capture(null);
         InvalidateVisual();
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        EndDrag();
+        _pan = _orbit = false;
+    }
+
+    private void EndDrag()
+    {
+        if (_dragItem || _rotateItem) _session.EndEdit();
+        _dragItem = _rotateItem = false;
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)

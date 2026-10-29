@@ -101,7 +101,7 @@ internal static class SceneCensus
     // ───────────────────────────── reporting ─────────────────────────────
 
     /// <summary>The whole scene at a frame, as get_scene gives it.</summary>
-    public static JsonObject Scene(LayoutSession l, Document modelerDocument, double frame, SceneHistory history)
+    public static JsonObject Scene(LayoutSession l, Document modelerDocument, double frame)
     {
         var s = l.Scene;
         var sf = s.Evaluate(frame);
@@ -125,9 +125,17 @@ internal static class SceneCensus
             ["modified"] = l.Modified,
             ["items"] = new JsonArray(s.Items.Select(i => (JsonNode)Item(l, i, sf, modelerDocument)).ToArray()),
             ["warnings"] = Strings(warnings),
-            ["undo_scene"] = history.State(l),
+            ["undo_scene"] = UndoState(l),
         };
     }
+
+    /// <summary>What undo_scene and redo_scene would do now: the scene's shared history (the person's steps and agents').</summary>
+    public static JsonObject UndoState(LayoutSession l) => new()
+    {
+        ["depth"] = l.History.Count,
+        ["next_undo"] = l.History.UndoLabel,
+        ["next_redo"] = l.History.RedoLabel,
+    };
 
     /// <summary>One item at a worked-out frame.</summary>
     public static JsonObject Item(LayoutSession l, SceneItem item, SceneFrame sf, Document modelerDocument)

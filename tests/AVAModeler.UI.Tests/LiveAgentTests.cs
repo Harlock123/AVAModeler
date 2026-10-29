@@ -158,13 +158,20 @@ public class LiveAgentTests
             Agent.Json(client, "set_item", new { item = "Light", name = "Fill", parent = "Table" });
             Assert.Contains("  Light: Fill", layout.ListedItems);
 
-            // The person changes the scene; then the agent's steps before can't be undone over it.
-            layout.Session.Scene.AddNull("Mine");
-            Assert.Contains("has changed since", Agent.Text(Agent.Call(client, "undo_scene")));
+            // The person's Ctrl+Z undoes the agent's scene step, and Edit › Undo names the next one.
+            Assert.Equal("_Undo Agent: changed an item", layout.UndoItem.Header);
+            Ui.Key(w, Key.Z, RawInputModifiers.Control);
+            Assert.Contains("Light: Light", layout.ListedItems);
+            Assert.Null(scene.Find("Fill"));
+            Assert.Equal("_Redo Agent: changed an item", layout.RedoItem.Header);
+            // The person changes the scene; the agent's undo_scene takes that back, on the same history.
+            layout.Session.Add(new AVAModeler.Scene.NullItem("Mine"));
+            Assert.Equal("Add Null", (string?)Agent.Json(client, "undo_scene")["undone"]);
+            Assert.Null(scene.Find("Mine"));
             // The agent's later changes still show at once.
             Agent.Json(client, "set_item", new { item = "Warm", intensity = 2.0 });
             Assert.Equal(2, ((AVAModeler.Scene.LightItem)scene.Find("Warm")!).Intensity.Evaluate(1));
-            Assert.Equal("changed an item", (string?)Agent.Json(client, "undo_scene")["undone"]);
+            Assert.Equal("Agent: changed an item", (string?)Agent.Json(client, "undo_scene")["undone"]);
             Wait(client.DisposeAsync().AsTask());
         }
         finally

@@ -24,9 +24,15 @@ public static class SceneJson
         Converters = { new JsonStringEnumConverter() },
     };
 
-    public static string Write(Scene scene, bool embedMeshes = false) => JsonSerializer.Serialize(ToDto(scene, embedMeshes), Options);
+    /// <summary>
+    /// Writes a scene. Object files in <paramref name="baseDirectory"/> or below it are written relative to it, so a
+    /// scene and its objects can be moved or shared together; others keep their full paths.
+    /// </summary>
+    public static string Write(Scene scene, bool embedMeshes = false, string? baseDirectory = null) =>
+        JsonSerializer.Serialize(ToDto(scene, embedMeshes, baseDirectory), Options);
 
-    public static void WriteFile(Scene scene, string path, bool embedMeshes = false) => File.WriteAllText(path, Write(scene, embedMeshes));
+    public static void WriteFile(Scene scene, string path, bool embedMeshes = false) =>
+        File.WriteAllText(path, Write(scene, embedMeshes, Path.GetDirectoryName(Path.GetFullPath(path))));
 
     public static SceneLoadResult ReadFile(string path, Func<string, Document?>? loadObject = null) =>
         Read(File.ReadAllText(path), loadObject, Path.GetDirectoryName(Path.GetFullPath(path)));
@@ -52,7 +58,7 @@ public static class SceneJson
         return new SceneLoadResult(FromDto(dto, loadObject, baseDirectory, warnings), warnings);
     }
 
-    private static SceneDto ToDto(Scene scene, bool embed)
+    private static SceneDto ToDto(Scene scene, bool embed, string? baseDir)
     {
         var docs = new List<Document>();
         var docDtos = new List<DocumentDto>();
@@ -100,14 +106,14 @@ public static class SceneJson
                         {
                             docs.Add(o.Document);
                             docDtos.Add(embed || o.SourcePath == null
-                                ? Embed(o.Document)
-                                : new DocumentDto { Path = o.SourcePath });
+                                ? Embed(o.Document, baseDir)
+                                : new DocumentDto { Path = Relative(o.SourcePath, baseDir) });
                             di = docs.Count - 1;
                         }
                         d.Document = di;
                     }
                     d.Layer = o.Layer;
-                    d.Source = o.SourcePath;
+                    d.Source = Relative(o.SourcePath, baseDir);
                     d.CastShadows = o.CastShadows;
                     d.ReceiveShadows = o.ReceiveShadows;
                     d.BoneFalloffExponent = o.BoneFalloffExponent;
@@ -175,7 +181,7 @@ public static class SceneJson
         {
             SceneItem? item = d.Type switch
             {
-                "Object" => MakeObject(d, docs),
+                "Object" => MakeObject(d, docs, baseDir),
                 "Null" => new NullItem(d.Name),
                 "Light" => MakeLight(d),
                 "Camera" => MakeCamera(d),
@@ -215,12 +221,12 @@ public static class SceneJson
         return scene;
     }
 
-    private static ObjectItem MakeObject(ItemDto d, List<Document?> docs)
+    private static ObjectItem MakeObject(ItemDto d, List<Document?> docs, string? baseDir)
     {
         var doc = d.Document is int i && i >= 0 && i < docs.Count ? docs[i] : null;
         var o = new ObjectItem(d.Name, doc, d.Layer)
         {
-            SourcePath = d.Source,
+            SourcePath = Absolute(d.Source, baseDir),
             CastShadows = d.CastShadows ?? true,
             ReceiveShadows = d.ReceiveShadows ?? true,
             BoneFalloffExponent = d.BoneFalloffExponent ?? 4,
@@ -287,11 +293,11 @@ public static class SceneJson
         {
             var doc = new Document { Layers = d.Layers.Select(l => l.ToLayer()).ToList() };
             if (d.Surfaces is { Count: > 0 }) doc.Surfaces = d.Surfaces.Select(x => x.ToSurface()).ToList();
-            doc.FilePath = d.Path;
+            doc.FilePath = Absolute(d.Path, baseDir);
             return doc;
         }
         if (d.Path == null) return null;
-        string path = baseDir != null && !Path.IsPathRooted(d.Path) ? Path.Combine(baseDir, d.Path) : d.Path;
+        string path = Absolute(d.Path, baseDir)!;
         if (load == null)
         {
             warnings.Add($"No object loader was given, so {d.Path} is a placeholder.");
@@ -310,9 +316,21 @@ public static class SceneJson
         }
     }
 
-    private static DocumentDto Embed(Document doc) => new()
+    /// <summary>A path relative to the scene's folder when the file is in it or below it; otherwise as it is.</summary>
+    private static string? Relative(string? path, string? baseDir)
     {
-        Path = doc.FilePath,
+        if (path == null || baseDir == null || !Path.IsPathRooted(path)) return path;
+        string rel = Path.GetRelativePath(baseDir, path);
+        return rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel) ? path : rel.Replace('\\', '/');
+    }
+
+    /// <summary>A path read from a scene, taken from the scene's folder if it's relative.</summary>
+    private static string? Absolute(string? path, string? baseDir) =>
+        path != null && baseDir != null && !Path.IsPathRooted(path) ? Path.Combine(baseDir, path) : path;
+
+    private static DocumentDto Embed(Document doc, string? baseDir) => new()
+    {
+        Path = Relative(doc.FilePath, baseDir),
         Layers = doc.Layers.Select(l => new LayerDto
         {
             Name = l.Name, State = l.State, Pivot = Arr(l.Pivot), Mesh = MeshDto.Of(l.Mesh),

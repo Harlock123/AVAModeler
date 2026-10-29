@@ -61,7 +61,8 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - `src/AVAModeler/`: the application, one window hosting both workspaces. `Program.cs` sends `--mcp` to the MCP
   server before Avalonia starts; `LiveAgents.cs` is the app's side of live mode (it hands the live host both the
   Modeler's session and the window's `LayoutSession`, which exists before Layout is first shown).
-- `samples/`: `StarPlugin` (an example plugin), Lua macro scripts and texture images.
+- `samples/`: `StarPlugin` (an example plugin), Lua macro scripts, texture images, and `mcp/carbon_atom.py` (a
+  scene built entirely through the MCP server, with its saved object, scene and render).
 - `tests/`: one xUnit v3 project per source project. `AVAModeler.UI.Tests` uses `Avalonia.Headless.XUnit` with
   Skia drawing, so it can capture screenshots.
 

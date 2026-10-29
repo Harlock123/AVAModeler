@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AVAModeler.Core;
 using static AVAModeler.Scene.Tests.TestData;
 
@@ -127,7 +128,7 @@ public class SceneJsonTests
         Assert.Empty(warnings);
         Assert.Equal([Path.Combine("/base", "Objects/Box.lwo")], asked);
         Assert.Same(doc, read.Objects.First().Document);
-        Assert.Equal("Objects/Box.lwo", read.Objects.First().SourcePath);
+        Assert.Equal(Path.Combine("/base", "Objects/Box.lwo"), read.Objects.First().SourcePath); // taken from the scene's folder
         // An object with no file is embedded anyway.
         Assert.Equal(4, read.Objects.Last().BaseMesh().Points.Count);
 
@@ -159,6 +160,31 @@ public class SceneJsonTests
         SceneJson.WriteFile(scene, path, embedMeshes: true);
         var (read, _) = SceneJson.ReadFile(path);
         Assert.Equal(SceneJson.Write(scene, true), SceneJson.Write(read, true));
+    }
+
+    [Fact]
+    public void ObjectsBesideTheSceneAreWrittenRelativeToIt()
+    {
+        using var dir = new TempDir();
+        string path = Path.Combine(dir.Path, "scene" + SceneJson.Extension);
+        string inside = Path.Combine(dir.Path, "objects", "box.lwo"), outside = Path.Combine(Path.GetTempPath(), "elsewhere", "ball.lwo");
+        var scene = new Scene();
+        var box = Doc(Square(Vec3.Zero, 1, Vec3.UnitZ));
+        box.FilePath = inside;
+        scene.AddObject("Box", box).SourcePath = inside;
+        var ball = Doc(Square(Vec3.One, 1, Vec3.UnitZ));
+        scene.AddObject("Ball", ball).SourcePath = outside;
+        SceneJson.WriteFile(scene, path);
+
+        string json = File.ReadAllText(path);
+        Assert.Contains("\"path\": \"objects/box.lwo\"", json);
+        Assert.Contains("\"source\": \"objects/box.lwo\"", json);
+        Assert.Contains(JsonSerializer.Serialize(outside), json); // outside the scene's folder: the full path
+        var asked = new List<string>();
+        var (read, warnings) = SceneJson.ReadFile(path, p => { asked.Add(p); return p == inside ? box : ball; });
+        Assert.Empty(warnings);
+        Assert.Equal([inside, outside], asked.Select(Path.GetFullPath));
+        Assert.Equal(inside, Path.GetFullPath(((ObjectItem)read.Find("Box")!).SourcePath!));
     }
 
     [Theory]

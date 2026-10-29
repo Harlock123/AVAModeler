@@ -318,6 +318,19 @@ render_animation  {"step": 6, "width": 160}                                     
 save_scene        {"path": "table.avascene"}
 ```
 
+A complete example is `samples/mcp/carbon_atom.py`: a stylized carbon atom, six white protons and six grey neutrons
+in a nucleus with six green electrons whizzing round it on three crossed orbits, modeled, staged, lit and animated
+entirely through MCP calls. It needs only Python, as it carries the little MCP client it uses.
+
+```bash
+python3 samples/mcp/carbon_atom.py                # headless: writes carbon.lwo, carbon.avascene and carbon.png
+python3 samples/mcp/carbon_atom.py --live         # in the open app, with Allow AI Agents on: watch it build
+```
+
+The files it writes are in `samples/mcp` too: open `carbon.avascene` in Layout and press Play.
+
+![The carbon atom sample, ray-traced at frame 10](samples/mcp/carbon.png)
+
 ## Building and testing
 
 ```bash
@@ -326,7 +339,7 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 510 tests cover every layer:
+It needs the .NET 10 SDK. 512 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
@@ -335,8 +348,8 @@ It needs the .NET 10 SDK. 510 tests cover every layer:
 | Geometry | 79 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation |
 | Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
 | Tools | 62 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
-| Scene | 142 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots and copies, aiming an item at a point |
-| Layout | 6 | Layout's session without its controls: how agents' values become keys, the modified flag, loading and saving scenes, looking through a camera, what the views draw |
+| Scene | 143 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots and copies, aiming an item at a point, object paths relative to the scene |
+| Layout | 7 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw |
 | Mcp | 41 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was, undo_scene, the look-at maths, keys read between frames); whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
 | UI | 40 | The window, mouse and keyboard driven through a headless window, the UV view, the texture panel, Layout, an AI agent working in the open window and in its Layout scene, and the screenshots |
 

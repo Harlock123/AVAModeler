@@ -1,0 +1,1979 @@
+{
+  "format": "avascene",
+  "version": 1,
+  "settings": {
+    "framesPerSecond": 30,
+    "firstFrame": 1,
+    "lastFrame": 120,
+    "frameStep": 1,
+    "ambientColor": [
+      1,
+      1,
+      1
+    ],
+    "ambientIntensity": 0.15,
+    "backgroundColor": [
+      0,
+      0,
+      0
+    ],
+    "gradientBackground": true,
+    "gradientTop": [
+      0.047058823529411764,
+      0.06274509803921569,
+      0.1568627450980392
+    ],
+    "gradientBottom": [
+      0,
+      0,
+      0
+    ],
+    "fog": "Off",
+    "fogMinDistance": 0,
+    "fogMaxDistance": 100,
+    "fogColor": [
+      0,
+      0,
+      0
+    ]
+  },
+  "currentCamera": 0,
+  "documents": [
+    {
+      "path": "carbon.lwo"
+    }
+  ],
+  "items": [
+    {
+      "type": "Camera",
+      "name": "Camera",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1.6,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": -6.8,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 13.240519915187205,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ],
+      "zoom": {
+        "keys": [
+          {
+            "frame": 0,
+            "value": 3.2,
+            "tension": 0,
+            "continuity": 0,
+            "bias": 0,
+            "linear": false
+          }
+        ],
+        "pre": "Constant",
+        "post": "Constant"
+      },
+      "width": 640,
+      "height": 480,
+      "pixelAspect": 1,
+      "actionSafe": 0.9,
+      "titleSafe": 0.8
+    },
+    {
+      "type": "Light",
+      "name": "Light",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": -2,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 2,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": -2,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 45,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 35,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ],
+      "lightType": "Distant",
+      "color": [
+        1,
+        0.9607843137254902,
+        0.9215686274509803
+      ],
+      "intensity": {
+        "keys": [
+          {
+            "frame": 0,
+            "value": 0.9,
+            "tension": 0,
+            "continuity": 0,
+            "bias": 0,
+            "linear": false
+          }
+        ],
+        "pre": "Constant",
+        "post": "Constant"
+      },
+      "range": 0,
+      "coneAngle": 30,
+      "edgeAngle": 5,
+      "shadows": true
+    },
+    {
+      "type": "Object",
+      "name": "Nucleus",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 1,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": true
+            },
+            {
+              "frame": 120,
+              "value": 90,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": true
+            }
+          ],
+          "pre": "Constant",
+          "post": "Repeat"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ],
+      "document": 0,
+      "layer": 0,
+      "source": "carbon.lwo",
+      "castShadows": true,
+      "receiveShadows": true,
+      "boneFalloffExponent": 4,
+      "morphs": [],
+      "displacements": []
+    },
+    {
+      "type": "Null",
+      "name": "Tilt 1",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 62,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ]
+    },
+    {
+      "type": "Null",
+      "name": "Spin 1",
+      "parent": 3,
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 1,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": true
+            },
+            {
+              "frame": 31,
+              "value": 360,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": true
+            }
+          ],
+          "pre": "Constant",
+          "post": "Repeat"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ]
+    },
+    {
+      "type": "Object",
+      "name": "Orbit 1",
+      "parent": 4,
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ],
+      "document": 0,
+      "layer": 1,
+      "source": "carbon.lwo",
+      "castShadows": true,
+      "receiveShadows": true,
+      "boneFalloffExponent": 4,
+      "morphs": [],
+      "displacements": []
+    },
+    {
+      "type": "Null",
+      "name": "Tilt 2",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 120,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 62,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ]
+    },
+    {
+      "type": "Null",
+      "name": "Spin 2",
+      "parent": 6,
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 1,
+              "value": 60,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": true
+            },
+            {
+              "frame": 25,
+              "value": 420,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": true
+            }
+          ],
+          "pre": "Constant",
+          "post": "Repeat"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ]
+    },
+    {
+      "type": "Object",
+      "name": "Orbit 2",
+      "parent": 7,
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ],
+      "document": 0,
+      "layer": 2,
+      "source": "carbon.lwo",
+      "castShadows": true,
+      "receiveShadows": true,
+      "boneFalloffExponent": 4,
+      "morphs": [],
+      "displacements": []
+    },
+    {
+      "type": "Null",
+      "name": "Tilt 3",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 240,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 62,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ]
+    },
+    {
+      "type": "Null",
+      "name": "Spin 3",
+      "parent": 9,
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 1,
+              "value": 120,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": true
+            },
+            {
+              "frame": 37,
+              "value": 480,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": true
+            }
+          ],
+          "pre": "Constant",
+          "post": "Repeat"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ]
+    },
+    {
+      "type": "Object",
+      "name": "Orbit 3",
+      "parent": 10,
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ],
+      "document": 0,
+      "layer": 3,
+      "source": "carbon.lwo",
+      "castShadows": true,
+      "receiveShadows": true,
+      "boneFalloffExponent": 4,
+      "morphs": [],
+      "displacements": []
+    },
+    {
+      "type": "Light",
+      "name": "Rim",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "visible": true,
+      "channels": [
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 200,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 25,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 0,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        },
+        {
+          "keys": [
+            {
+              "frame": 0,
+              "value": 1,
+              "tension": 0,
+              "continuity": 0,
+              "bias": 0,
+              "linear": false
+            }
+          ],
+          "pre": "Constant",
+          "post": "Constant"
+        }
+      ],
+      "lightType": "Distant",
+      "color": [
+        0.47058823529411764,
+        0.5882352941176471,
+        1
+      ],
+      "intensity": {
+        "keys": [
+          {
+            "frame": 0,
+            "value": 0.5,
+            "tension": 0,
+            "continuity": 0,
+            "bias": 0,
+            "linear": false
+          }
+        ],
+        "pre": "Constant",
+        "post": "Constant"
+      },
+      "range": 0,
+      "coneAngle": 30,
+      "edgeAngle": 5,
+      "shadows": true
+    }
+  ]
+}

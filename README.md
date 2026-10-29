@@ -325,15 +325,15 @@ entirely through MCP calls. It needs only Python, as it carries the little MCP c
 ```bash
 python3 samples/mcp/carbon_atom.py                # headless: writes carbon.lwo, carbon.avascene and carbon.png
 python3 samples/mcp/carbon_atom.py --live         # in the open app, with Allow AI Agents on: watch it build
-python3 samples/mcp/carbon_atom.py --movie        # also renders the animation as carbon.mp4 (needs ffmpeg)
+python3 samples/mcp/carbon_atom.py --movie        # also renders it as carbon.mp4 and carbon.gif (needs ffmpeg)
 ```
 
 The files it writes are in `samples/mcp` too: open `carbon.avascene` in Layout and press Play, or watch
 [`carbon.mp4`](samples/mcp/carbon.mp4), the 4-second animation, which loops without a jump.
 `--movie` ray-traces all 120 frames with `render_animation`, in batches that each fit its limit, then joins them with
-ffmpeg.
+ffmpeg into the MP4 and the looping GIF below.
 
-![The carbon atom sample, ray-traced at frame 10](samples/mcp/carbon.png)
+![The carbon atom sample: electrons whizzing round the nucleus on three crossed orbits, ray-traced](samples/mcp/carbon.gif)
 
 ## Building and testing
 

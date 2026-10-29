@@ -6,7 +6,7 @@ crossed orbits: modeled in the Modeler, then staged, lit and animated in Layout,
 
     python3 samples/mcp/carbon_atom.py            # headless: saves carbon.lwo, carbon.avascene and carbon.png here
     python3 samples/mcp/carbon_atom.py --live     # in the open app (Macros › Allow AI Agents on), to watch it build
-    python3 samples/mcp/carbon_atom.py --movie    # also renders the 4-second loop as carbon.mp4 (needs ffmpeg)
+    python3 samples/mcp/carbon_atom.py --movie    # also renders the 4-second loop as carbon.mp4 and carbon.gif (ffmpeg)
 
 Live, it works on the open object and scene, so it stops if the object already has work in it. Nothing is saved
 live unless --save is given; press F2 for Layout and Play to see the electrons go round.
@@ -145,8 +145,9 @@ def stage(s):
 
 def movie(s, out, width, height, samples):
     """
-    Renders every frame into frames/ and joins them into carbon.mp4 with ffmpeg. render_animation does a bounded
-    amount of work per call (width × height × samples × frames), so the frames go in batches that each fit.
+    Renders every frame into frames/ and joins them with ffmpeg into carbon.mp4 and a looping carbon.gif (640 across,
+    for the README). render_animation does a bounded amount of work per call (width × height × samples × frames), so
+    the frames go in batches that each fit.
     """
     budget = 20_000_000
     batch = max(1, budget // (width * height * samples))
@@ -155,23 +156,33 @@ def movie(s, out, width, height, samples):
         print(f"Rendering frames {first} to {last} of {FRAMES}...")
         s.call("render_animation", folder="frames", first=first, last=last, width=width, height=height,
                samples=samples, overwrite=True)
+    join(out)
+
+
+def join(out):
+    """Joins the frames in frames/ into carbon.mp4 and carbon.gif, if ffmpeg is installed."""
     frames = sorted(glob.glob(os.path.join(out, "frames", "frame*.png")))
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         print(f"The {len(frames)} frames are in {os.path.join(out, 'frames')}; install ffmpeg to join them into a movie.")
         return
-    subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-framerate", "30", "-start_number", "1",
-                    "-i", os.path.join(out, "frames", "frame%04d.png"),
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart",
-                    os.path.join(out, "carbon.mp4")], check=True)
-    print(f"Saved carbon.mp4 ({len(frames)} frames, {len(frames) / 30:.0f} seconds) in {out}")
+    frames_in = [ffmpeg, "-y", "-loglevel", "error", "-framerate", "30", "-start_number", "1",
+                 "-i", os.path.join(out, "frames", "frame%04d.png")]
+    subprocess.run(frames_in + ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart",
+                                os.path.join(out, "carbon.mp4")], check=True)
+    # The GIF: one 128-colour palette made from the whole run (dark backdrops band less with ordered dithering), and
+    # only the changed part of each frame stored, which keeps it near 1.5 MB. It loops forever.
+    palette = ("scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];"
+               "[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle")
+    subprocess.run(frames_in + ["-vf", palette, "-loop", "0", os.path.join(out, "carbon.gif")], check=True)
+    print(f"Saved carbon.mp4 and carbon.gif ({len(frames)} frames, {len(frames) / 30:.0f} seconds) in {out}")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--live", action="store_true", help="build in the open app (Macros › Allow AI Agents on)")
     parser.add_argument("--save", action="store_true", help="live: also save the object, scene and a render")
-    parser.add_argument("--movie", action="store_true", help="also render the animation as carbon.mp4 (needs ffmpeg)")
+    parser.add_argument("--movie", action="store_true", help="also render the animation as carbon.mp4 and carbon.gif (needs ffmpeg)")
     parser.add_argument("--movie-size", default="960x540", help="the movie's width x height (default 960x540)")
     parser.add_argument("--movie-samples", type=int, default=4, help="rays a pixel for the movie, 1 to 4 (default 4)")
     parser.add_argument("--out", default=".", help="the folder to save into (default: the current folder)")

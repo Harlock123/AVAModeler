@@ -27,6 +27,9 @@ public sealed class ModelerWorkspace : DockPanel
     /// <summary>Raised to switch to the Layout workspace.</summary>
     public event Action? ShowLayout;
 
+    /// <summary>Raised to show or hide the AI Chat panel (Macros › AI Chat, F4).</summary>
+    public event Action? ToggleChat;
+
     /// <summary>Raised when <see cref="Preferences.AllowAgents"/> may have changed (the app opens or closes its door to AI agents).</summary>
     public event Action? AgentsChanged;
 
@@ -146,6 +149,7 @@ public sealed class ModelerWorkspace : DockPanel
             ["Surface Editor"] = () => { var w = new SurfaceEditor(s); if (Owner != null) w.Show(Owner); else w.Show(); },
             ["Preferences"] = () => { var w = new PreferencesWindow(s, ApplyPreferences); if (Owner != null) _ = Dialogs.ShowModal(w, Owner); else w.Show(); },
             ["AI Agents"] = ToggleAgents,
+            ["AI Chat"] = () => ToggleChat?.Invoke(),
             ["Run Macro"] = () => _ = RunMacro(),
             ["Macro Reference"] = () => _ = Dialogs.Message(Owner, "Macros", MacroReference()),
             ["Load Plugin"] = () => _ = LoadPlugin(),
@@ -265,7 +269,8 @@ public sealed class ModelerWorkspace : DockPanel
         return "Mouse: click to select (Shift adds, Ctrl removes); drag a box, or right-drag a lasso. With a tool, drag in a view.\n" +
                "Wheel zooms; middle-drag or Alt-drag pans; drag (or Alt-drag) in the perspective view turns it. Double-click maximizes a view.\n" +
                "U switches the view under the mouse to the UV map (and back): pick and move UVs there as you would points.\n" +
-               "1–9 put a layer in the foreground (Shift adds; Alt puts it in the background).\n\n" + string.Join("\n", lines) +
+               "1–9 put a layer in the foreground (Shift adds; Alt puts it in the background).\n" +
+               "F1 Modeler, F2 Layout, F4 the AI Chat panel.\n\n" + string.Join("\n", lines) +
                "\n\nChange any key in Edit › Preferences.";
     }
 
@@ -485,10 +490,18 @@ public sealed class ModelerWorkspace : DockPanel
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
                     Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",
                     Item("Meta_NURBS", "MetaNURBS"), Item("_Backface Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-", Item("_Layout", "Show Layout")),
-                Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin"), "-", _agents),
+                Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin"), "-", ChatItem(), _agents),
                 Group("_Help", Item("_Keyboard", "Keyboard"), Item("_About", "About")),
             },
         };
+    }
+
+    /// <summary>Macros › AI Chat: the window handles its key (F4) in both workspaces, so it isn't in the key map.</summary>
+    private MenuItem ChatItem()
+    {
+        var item = new MenuItem { Header = "AI _Chat…", InputGesture = new KeyGesture(Key.F4) };
+        item.Click += (_, _) => Execute("AI Chat");
+        return item;
     }
 
     private static KeyGesture? TryGesture(string key)

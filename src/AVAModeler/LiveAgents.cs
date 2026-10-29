@@ -45,6 +45,21 @@ internal sealed class LiveAgents(ModelerSession session, LayoutSession layout) :
 
     public Task<T> InvokeAsync<T>(Func<T> work) => Dispatcher.UIThread.InvokeAsync(work).GetTask();
 
+    /// <summary>
+    /// The live host the AI Chat panel's in-process MCP server runs on: the same one outside agents get (UI thread,
+    /// waiting while the person is busy, each call one undo step), whether or not agents are allowed in from outside.
+    /// Its status-bar lines say Claude is working.
+    /// </summary>
+    public LiveHost ChatHost(string root) => new(this, new ChatReports(this), root) { BusyWait = BusyWait };
+
+    private sealed class ChatReports(LiveAgents agents) : ILiveModeler
+    {
+        public Commands Commands => agents.Commands;
+        public LayoutSession Layout => agents.Layout;
+        public string? Busy => agents.Busy;
+        public void Report(string text) => agents.Report(text.StartsWith("AI agent: ", StringComparison.Ordinal) ? "Claude is working… " + text["AI agent: ".Length..] : text);
+    }
+
     /// <summary>Opens the door on a pipe; returns why it couldn't (another AVA Modeler has it), or null.</summary>
     public string? Start(string pipeName)
     {

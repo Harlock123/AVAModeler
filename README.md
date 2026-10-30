@@ -405,6 +405,11 @@ ffmpeg into the MP4 and the looping GIF below.
 
 ![The carbon atom sample: electrons whizzing round the nucleus on three crossed orbits, ray-traced](samples/mcp/carbon.gif)
 
+`samples/knight` holds another movie made in AVA Modeler: a chess knight on a table, turning, 12 seconds at 30 frames
+a second, as [`knight.mp4`](samples/knight/knight.mp4) and the looping GIF below.
+
+![A chess knight on a wooden table, turning under a spotlight, ray-traced](samples/knight/knight.gif)
+
 ### Recipes (MCP prompts)
 
 The server also offers saved recipes as MCP prompts (in Claude Code, `/` lists them as

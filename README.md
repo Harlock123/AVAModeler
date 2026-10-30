@@ -247,6 +247,17 @@ nothing listens anywhere and Macros › Allow AI Agents needn't be on).
   modeling session with Opus and pictures can still use a fair number of tokens.
 - **Errors**: no connection, a refused key (401), rate limits (429) and an overloaded API show as a line in the chat
   with a **Retry** button.
+- **Long jobs**: one request pauses every 60 tool calls. With **Auto-continue** ticked (beside the model; on unless
+  you untick it, and remembered) Claude carries on by itself, saying so in the chat, up to 600 calls in all.
+
+![Claude building and animating the carbon atom from the chat, in Layout](Images/AVAModeler-chat-layout.png)
+
+A whole job from one sentence: asked for "a stylized carbon atom: white protons, grey neutrons, and green electrons
+whizzing round the nucleus", Claude models the nucleus and three orbit rings in separate layers, then stages them in
+Layout: a 120-frame loop, the nucleus keyed to turn once, each ring spinning under a tilted null, a rim light and the
+camera aimed with `look_at`. That's over 60 calls, so Auto-continue carries it on past the pause; then it ray-traces
+a frame to check its work. (The picture is drawn by the test suite with the sample's own calls, played by a stand-in
+for Claude.)
 
 ## Driving AVA Modeler from an AI agent
 
@@ -420,7 +431,7 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 588 tests cover every layer:
+It needs the .NET 10 SDK. 590 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
@@ -430,10 +441,10 @@ It needs the .NET 10 SDK. 588 tests cover every layer:
 | Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
 | Tools | 62 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
 | Scene | 144 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
-| Layout | 27 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed) |
+| Layout | 28 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed) |
 | Mcp | 62 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
 | Chat | 20 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap, and Auto-continue carrying on past it by itself, then stopping at its ceiling; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking |
-| UI | 54 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), and the screenshots |
+| UI | 55 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), and the screenshots |
 
 The screenshots are drawn by the tests in a real (headless) window:
 

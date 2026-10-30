@@ -313,6 +313,88 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void The_AI_chat_orchestrating_a_scene_in_Layout()
+    {
+        // The carbon atom sample's own calls (samples/mcp/carbon_atom.py), sent by a fake Claude (no real API call) a
+        // few at a time: modeling, then staging and animating in Layout, past the 60-call pause, which Auto-continue
+        // carries on through. Then a ray-traced check of a frame, and the answer.
+        static AVAModeler.Chat.Tests.FakeClaude.Part C(string name, object input) => AVAModeler.Chat.Tests.FakeClaude.Call("toolu_" + Guid.NewGuid().ToString("N")[..12], name, input);
+        var calls = new List<AVAModeler.Chat.Tests.FakeClaude.Part>
+        {
+            C("set_surface", new { name = "Proton", color = new[] { 245, 245, 240 }, specular = 0.5, glossiness = 128, smoothing = true, assign = false }),
+            C("set_surface", new { name = "Neutron", color = new[] { 120, 122, 128 }, specular = 0.3, glossiness = 64, smoothing = true, assign = false }),
+            C("set_surface", new { name = "Electron", color = new[] { 60, 255, 90 }, luminosity = 0.7, specular = 0.6, glossiness = 256, smoothing = true, assign = false }),
+            C("set_surface", new { name = "Orbit", color = new[] { 150, 200, 255 }, luminosity = 0.5, smoothing = true, double_sided = true, assign = false }),
+            C("set_layers", new { foreground = new[] { 1 } }),
+        };
+        double phi = (1 + Math.Sqrt(5)) / 2, spread = 0.513 / Math.Sqrt(1 + phi * phi);
+        var corners = new List<double[]>();
+        foreach (var a in new[] { 1, -1 }) foreach (var b in new[] { 1, -1 }) corners.Add([0, a, b * phi]);
+        foreach (var a in new[] { 1, -1 }) foreach (var b in new[] { 1, -1 }) corners.Add([a, b * phi, 0]);
+        foreach (var a in new[] { 1, -1 }) foreach (var b in new[] { 1, -1 }) corners.Add([b * phi, 0, a]);
+        int[] protons = [0, 3, 5, 6, 8, 11];
+        for (int i = 0; i < corners.Count; i++)
+            calls.Add(C("run_tool", new { name = "Ball", @params = new { Center = corners[i].Select(c => Math.Round(c * spread, 4)).ToArray(), Radius = new[] { 0.21, 0.21, 0.21 }, Sides = 32, Segments = 16, Surface = protons.Contains(i) ? "Proton" : "Neutron" } }));
+        const double radius = 1.6;
+        int first = 0;
+        foreach (var layer in new[] { 2, 3, 4 })
+        {
+            calls.Add(C("set_layers", new { foreground = new[] { layer } }));
+            calls.Add(C("add_points", new { points = Enumerable.Range(0, 8).Select(a => new[] { radius + 0.018 * Math.Cos(a * Math.PI / 4), 0.018 * Math.Sin(a * Math.PI / 4), 0 }).ToArray() }));
+            calls.Add(C("add_polygons", new { polygons = new[] { Enumerable.Range(first, 8).ToArray() }, surface = "Orbit" }));
+            calls.Add(C("run_tool", new { name = "Lathe", @params = new { Axis = "Y", Sides = 96 } }));
+            foreach (var x in new[] { radius, -radius })
+                calls.Add(C("run_tool", new { name = "Ball", @params = new { Center = new[] { x, 0, 0 }, Radius = new[] { 0.1, 0.1, 0.1 }, Sides = 16, Segments = 8, Surface = "Electron" } }));
+        }
+        calls.Add(C("set_layers", new { foreground = new[] { 1, 2, 3, 4 } }));
+        int modeled = calls.Count;
+        calls.Add(C("set_scene", new { first_frame = 1, last_frame = 120, fps = 30, gradient = true, gradient_top = new[] { 12, 16, 40 }, gradient_bottom = new[] { 0, 0, 0 }, ambient_intensity = 0.15, frame = 1 }));
+        calls.Add(C("add_object", new { layer = 1, name = "Nucleus" }));
+        calls.Add(C("set_key", new { item = "Nucleus", channel = "heading", frame = 1, value = 0, linear = true }));
+        calls.Add(C("set_key", new { item = "Nucleus", channel = "heading", frame = 120, value = 357, linear = true }));
+        calls.Add(C("set_end_behavior", new { item = "Nucleus", channel = "heading", post = "repeat" }));
+        foreach (var (k, layer, period, phase) in new[] { (1, 2, 30, 0), (2, 3, 24, 60), (3, 4, 40, 120) })
+        {
+            calls.Add(C("add_null", new { name = $"Tilt {k}", rotation = new[] { (k - 1) * 120, 62, 0 } }));
+            calls.Add(C("add_null", new { name = $"Spin {k}", parent = $"Tilt {k}" }));
+            calls.Add(C("add_object", new { layer, name = $"Orbit {k}", parent = $"Spin {k}" }));
+            calls.Add(C("set_key", new { item = $"Spin {k}", channel = "heading", frame = 1, value = phase, linear = true }));
+            calls.Add(C("set_key", new { item = $"Spin {k}", channel = "heading", frame = 1 + period, value = phase + 360, linear = true }));
+            calls.Add(C("set_end_behavior", new { item = $"Spin {k}", channel = "heading", post = "repeat" }));
+        }
+        calls.Add(C("set_item", new { item = "Light", intensity = 0.9, color = new[] { 255, 245, 235 } }));
+        calls.Add(C("add_light", new { type = "distant", name = "Rim", rotation = new[] { 200, 25, 0 }, color = new[] { 120, 150, 255 }, intensity = 0.5 }));
+        calls.Add(C("set_transform", new { item = "Camera", frame = 1, position = new[] { 0, 1.6, -6.8 }, key = false }));
+        calls.Add(C("look_at", new { item = "Camera", point = new[] { 0, 0, 0 }, frame = 1, key = false }));
+        Assert.True(calls.Count > 60);
+
+        var api = new AVAModeler.Chat.Tests.FakeClaude();
+        api.Reply([AVAModeler.Chat.Tests.FakeClaude.Say("I'll model it first: four surfaces, a nucleus of twelve balls packed on an icosahedron's corners (six protons, six neutrons), and three orbit rings with two electrons each, one ring to a layer so each can spin on its own."), .. calls.Take(5)]);
+        foreach (var chunk in calls.Skip(5).Take(modeled - 5).Chunk(6)) api.Reply([.. chunk]);
+        api.Reply([AVAModeler.Chat.Tests.FakeClaude.Say("Now Layout: a 120-frame loop at 30 fps, the nucleus turning once, and each ring spinning in its own tilted plane under a pair of nulls."), .. calls.Skip(modeled).Take(5)]);
+        foreach (var chunk in calls.Skip(modeled + 5).Chunk(6)) api.Reply([.. chunk]);
+        api.Reply(AVAModeler.Chat.Tests.FakeClaude.Say("Let me ray-trace a frame to check it."), C("render_scene", new { frame = 12, width = 320, height = 180, samples = 2 }));
+        api.Reply(AVAModeler.Chat.Tests.FakeClaude.Say("Done: a carbon atom with six white protons and six grey neutrons, and six green electrons on three tilted rings that each take a whole number of turns in 120 frames, so the animation loops without a jump. Press F10 to render it as a movie."));
+        var w = ChatPanelTests.WithChat(api, 1400, 860);
+        w.ToggleChat();
+        Assert.True(w.Chat.AutoContinue.IsChecked);
+        ChatPanelTests.Type(w, "build a stylized carbon atom: white protons, grey neutrons, and green electrons whizzing round the nucleus");
+        ChatPanelTests.Finish(w.Chat.Running);
+        Assert.Equal(0, api.Left);
+        Assert.Contains(w.Chat.Session.Entries.OfType<AVAModeler.Chat.NoticeEntry>(), n => n.Text.Contains("carrying on by itself"));
+        Assert.DoesNotContain(w.Chat.Session.Entries.OfType<AVAModeler.Chat.ToolEntry>(), t => t.IsError);
+
+        w.ShowLayout();
+        var layout = (LayoutWorkspace)w.Content!;
+        // Switching to Layout leaves the agent's staging alone: no whole Modeler object on top of its layers.
+        Assert.Equal(4, layout.Session.Scene.Objects.Count());
+        layout.Session.Select(layout.Session.Scene.Items.Single(i => i.Name == "Nucleus"));
+        layout.Session.SetFrame(12);
+        layout.View.Mode = LayoutViewMode.Camera;
+        Shot(w, "chat-layout");
+    }
+
+    [AvaloniaFact]
     public void A_ray_traced_frame()
     {
         var s = new LayoutSession();

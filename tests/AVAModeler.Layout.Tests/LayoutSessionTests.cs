@@ -152,6 +152,23 @@ public class LayoutSessionTests
     }
 
     [Fact]
+    public void Switching_to_Layout_adds_the_Modelers_object_only_if_none_of_it_is_there()
+    {
+        var doc = Box();
+        var s = new LayoutSession();
+        s.Scene.AddObject("Layer 1", doc, 0);
+        s.OfferModelerObject(doc);
+        Assert.Single(s.Scene.Objects);
+        var t = new LayoutSession();
+        t.OfferModelerObject(doc);
+        t.OfferModelerObject(doc);
+        Assert.Null(Assert.Single(t.Scene.Objects).Layer);
+        // Asked for outright, it still goes in whole beside a layer.
+        Assert.Null(s.ShowModelerObject(doc).Layer);
+        Assert.Equal(2, s.Scene.Objects.Count());
+    }
+
+    [Fact]
     public void Revalidate_lets_go_of_an_item_no_longer_in_the_scene()
     {
         var s = new LayoutSession();

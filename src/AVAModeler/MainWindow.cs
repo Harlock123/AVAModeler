@@ -156,9 +156,8 @@ public sealed class MainWindow : Window
             _layout = new LayoutWorkspace(_layoutSession, () => Session.Document);
             _layout.ShowModeler += ShowModeler;
             _layout.ToggleChat += ToggleChat;
-            _layoutSession.ShowModelerObject(Session.Document);
         }
-        else _layoutSession.ShowModelerObject(Session.Document);
+        _layoutSession.OfferModelerObject(Session.Document);
         Content = _layout;
         PlaceChat();
         _layoutSession.Scene.Notify();

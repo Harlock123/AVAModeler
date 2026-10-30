@@ -7,6 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Product>AVAModeler</Product>
+    <Version>0.1.0</Version>
     <Copyright>Copyright (c) 2026 Lonnie Watson</Copyright>
   </PropertyGroup>
 </Project>

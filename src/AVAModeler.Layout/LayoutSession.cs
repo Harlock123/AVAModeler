@@ -119,6 +119,15 @@ public sealed class LayoutSession
         return item;
     }
 
+    /// <summary>
+    /// What switching to Layout does: puts the Modeler's object in the scene unless some of it is there already, whole
+    /// or as layers (as an agent or the AI Chat stages it), so the switch never piles the whole object on top of them.
+    /// </summary>
+    public void OfferModelerObject(Document document)
+    {
+        if (!Scene.Objects.Any(o => ReferenceEquals(o.Document, document))) ShowModelerObject(document);
+    }
+
     private static ObjectItem AddModelerObject(Scene.Scene scene, Document document)
     {
         var name = document.FilePath != null ? Path.GetFileNameWithoutExtension(document.FilePath) : "Modeler object";

@@ -500,6 +500,22 @@ public class CommandTests
     }
 
     [Fact]
+    public void Macros_save_and_load_glTF_and_STL_by_extension()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "avamodeler-cmd-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var cmd = new Commands(new Document());
+            string d = dir.Replace("\\", "/");
+            Macros.Run($"tool('Box'); save('{d}/box.glb'); save('{d}/box.gltf'); save('{d}/box.stl'); new(); load('{d}/box.glb'); print(polycount()); load('{d}/box.gltf'); print(polycount()); load('{d}/box.stl'); print(pointcount())", cmd);
+            Assert.Equal(["12", "12", "8"], cmd.Output);
+            Assert.Contains(".glb", Macros.Reference.Single(r => r.Signature.Contains("save(path)")).Does);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public void A_plugin_from_its_own_assembly_adds_a_tool()
     {
         var built = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "StarPlugin", "bin");

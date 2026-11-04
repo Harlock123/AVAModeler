@@ -135,6 +135,39 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void The_still_life_back_from_a_glb()
+    {
+        // The textured still life exported as glTF binary (its images inside, the cubic and planar maps baked into
+        // UVs), then opened again from the .glb in place of the original.
+        var w = WithMacro("still-life.lua");
+        string dir = Path.Combine(Path.GetTempPath(), "avamodeler-shot-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string glb = Path.Combine(dir, "still-life.glb");
+            var (_, _, warnings) = AVAModeler.Formats.Gltf.Write(w.Session.Document, AVAModeler.Formats.GltfPacking.Binary);
+            Assert.Empty(warnings);
+            AVAModeler.Formats.ObjectFiles.Save(w.Session.Document, glb);
+            w.Session.Document.Modified = false;
+            var open = w.Modeler.Open(glb);
+            for (int i = 0; i < 2000 && !open.IsCompleted; i++) { Ui.Pump(); Thread.Sleep(1); }
+            var doc = w.Session.Document;
+            Assert.Equal(glb, doc.FilePath);
+            Assert.Equal(3, doc.Surfaces.Count(s => s.Textures.Count == 1));
+            Assert.Empty(TextureImages.Problems(doc.Surfaces, doc.ImageBase));
+            w.Session.SetSelectionMode(SelectionMode.Polygons);
+            Ui.Fit(w);
+            w.Modeler.Execute("Style Shaded");
+            Persp(w, 20, 20, 2.3);
+            Shot(w, "gltf");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [AvaloniaFact]
     public void The_uv_view_with_part_of_the_map_chosen()
     {
         var w = WithMacro("still-life.lua");

@@ -86,9 +86,30 @@ phases 0 to 7 and Layout phases L1 to L6.
   - VideoScape GEO is read and written.
   - Wavefront OBJ is read and written, with its .mtl: texture coordinates (`vt`, faces as `v/vt`) and `map_Kd`,
     `map_Ks`, `map_Ke` and `bump` maps.
+  - glTF 2.0 (File › Export glTF…) for game engines, three.js, Blender and the web, as `.glb` (one binary file, images
+    inside) or `.gltf` (JSON, its data inside it as base64; agents and the code can also put it in a `.bin` beside it).
+    - Written: each layer with faces as a node and mesh, one primitive per surface, triangulated; normals that follow
+      each surface's smoothing and smoothing angle (smooth surfaces share normals, flat ones split at every edge);
+      a PBR material per surface (colour × diffuse as the base colour in linear light, glossiness as roughness, no
+      metal, luminosity as emission, transparency as alpha with blending, double-sided); and the surface's first colour
+      image, embedded, with TEXCOORD_0 from the UV map it uses. A planar, cylindrical, spherical or cubic colour map
+      is worked out at each corner and written as UVs too, so it looks the same elsewhere. Tiling becomes the
+      sampler's wrap mode.
+    - Read: the default scene's nodes with their transforms, each node with a mesh becoming a layer (past the usual
+      ten if need be), triangles, strips and fans, points at the same place merged; materials' base colour, alpha,
+      emission, roughness and double-sidedness; TEXCOORD_0 as the UV map "UV"; and the base colour texture, from a
+      file beside it or from inside the file. A surface is smooth where the file's normals bend across its faces.
+    - The space: glTF is right-handed with +Y up, so Z is negated and every triangle's winding reversed, both ways; a
+      model faces the same way in both (a test checks a known triangle).
+  - STL (File › Export STL…, binary, or ASCII) for 3D printing, and read back (binary or ASCII, told apart by size,
+    with duplicate points merged into a joined mesh). Every face becomes triangles with facet normals. STL is Z up, as
+    slicers expect, so LightWave's axes go X → X, Y (up) → Z, Z (away) → Y: the model stands on the bed the way it
+    stands on the ground in the Modeler, its front toward you, and the winding is reversed to keep faces outward.
   - Image paths are stored relative to the object file where they can be, and looked for from it (and LightWave's
     Images folders beside it), then from the working folder.
   - Recent files, auto-save, and crash recovery: if the app didn't close cleanly, it offers the auto-save back.
+
+![The still life exported as a .glb, with its images inside, and opened again](Images/AVAModeler-gltf.png)
 
 ![MetaNURBS](Images/AVAModeler-metanurbs.png)
 
@@ -100,7 +121,8 @@ phases 0 to 7 and Layout phases L1 to L6.
 
 - **Macros** are Lua scripts (through MoonSharp), in the spirit of classic Modeler's ARexx macros.
   - What they can do: run any tool with any parameters, build geometry point by point, select, set layers, undo,
-    make and choose UV maps, texture surfaces, and load and save. Macros › Macro Reference lists every command.
+    make and choose UV maps, texture surfaces, and load and save (in any format above, chosen by the extension:
+    `save("ship.glb")`, `load("part.stl")`). Macros › Macro Reference lists every command.
   - Samples: `samples/scripts/spaceship.lua` models a classic spaceship from scratch, `logo.lua` makes bevelled
     flying-logo type, and `still-life.lua` builds a crate, a planet and a floor and textures them three ways (cubic,
     UV and planar), with the images in `samples/images` (drawn by `make_textures.py` there).
@@ -159,6 +181,9 @@ Modeler and Layout shows the change at once.
   and field of view. Distant, point and spot lights have colour, intensity, cone, soft edge, range and shadows.
 - **Scene files**: classic LightWave .lws scenes (LightWave 4 and 5, and later versions) are read and written, and
   there is a native .avascene format (JSON) that keeps everything, meshes included.
+- **glTF export** (Scene › Export glTF…): the scene as `.glb` or `.gltf`, its objects, nulls, cameras and lights
+  (KHR_lights_punctual) as nodes in their parent hierarchy, converted to glTF's right-handed +Y up space, and keyed
+  position, rotation and scale as one animation, sampled at every frame of the scene's range.
 - **Rendering**: an offline CPU ray tracer, multithreaded and deterministic.
   - Shading: Phong with glossiness, luminosity, smoothing within each surface's angle, reflection, and transparency
     with refraction.
@@ -316,7 +341,7 @@ Or, for everyone working in a folder, in its `.mcp.json`:
 | `set_selection_mode`, `select_points`, `select_polygons`, `select_box`, `select_all`, `select_none`, `select_invert`, `select_connected` | The selection. |
 | `set_layers` | The foreground and background layers. |
 | `copy_layer` | Copies a layer into an empty one, points in the same order: the start of a morph target. |
-| `undo`, `redo`, `new`, `open`, `save` | The history and files. |
+| `undo`, `redo`, `new`, `open`, `save` | The history and files: `.lwo`, `.obj`, `.geo`, `.glb`, `.gltf` and `.stl` (and plugin formats), chosen by the extension; `save` takes `ascii` for text STL and `separate_bin` for a `.gltf` with a `.bin` beside it. |
 | `set_surface`, `set_texture`, `remove_textures`, `make_uvs`, `set_uv_map` | Surfaces, image textures and UV maps. |
 | `run_lua` | Runs a Lua macro as one undo step, returning what it printed. |
 | `get_document`, `get_points`, `get_polygons` | Reads the object: layers, bounds, surfaces, UV maps, selection, history; points and polygons a page at a time. |
@@ -329,6 +354,7 @@ The Layout tools:
 |---|---|
 | `get_scene`, `get_keys` | Reads the scene at a frame: the frame range and rate, the current camera, ambient light, backdrop and fog; every item's kind, name, parent, position, rotation, scale, settings and animated channels; an object's world bounds; load warnings. And an item's keys, channel by channel, with their TCB settings and end behaviours. |
 | `new_scene`, `open_scene`, `save_scene` | Scene files in the working folder: the native `.avascene` (meshes inside it by default) and LightWave `.lws` (objects by their files; the warnings say what it drops). |
+| `export_scene` | The scene as glTF 2.0 (`.glb`, or `.gltf`): hierarchy, cameras, lights and keyed motion sampled per frame, for other programs. The scene and its file are left as they are. |
 | `add_object` | The Modeler's object, live (later modeling shows in the scene), one of its layers, or an object file. |
 | `add_light`, `add_camera`, `add_null`, `add_bone`, `remove_item` | Distant, point and spot lights with colour, intensity, cone, range and shadows; cameras by zoom factor or field of view; nulls; bones that bend an object. Lights and cameras can be aimed at a point as they're added. |
 | `set_item` | An item's name, parent, pivot, visibility and its own settings (a light's, a camera's, an object's shadows, a bone's rest pose, strength and activity, with Rest Here and resetting its pose). |
@@ -436,20 +462,20 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 590 tests cover every layer:
+It needs the .NET 10 SDK. 622 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
 | Core | 41 | Math, the mesh and its edge maps, layers, selection modes, undo and grouped edits; UV maps through edits and undo, every projection's maths, image sampling and tiling, PNG and BMP reading, finding images |
-| Formats | 68 | LWOB byte-identical round trips (textures included), LWLO layers, detail polygons, LWO2 (UV maps, seams and image blocks), GEO, OBJ (`vt` and .mtl maps), image paths, malformed files |
+| Formats | 85 | LWOB byte-identical round trips (textures included), LWLO layers, detail polygons, LWO2 (UV maps, seams and image blocks), GEO, OBJ (`vt` and .mtl maps), image paths, malformed files; glTF: a .glb's structure checked by hand (header, 4-byte chunk alignment, the JSON, POSITION's min and max, buffer views inside the buffer), round trips as .glb, .gltf and .gltf with a .bin (triangle counts, positions, UVs, materials and the embedded image), a known triangle facing the right way after conversion, smooth and flat normals, projected maps baked into UVs, node transforms, strips and outside files, malformed files; STL binary and ASCII round trips, Z up and winding, a binary file that starts with "solid" |
 | Geometry | 79 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation |
 | Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
-| Tools | 62 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands |
+| Tools | 63 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands, macros saving and loading glTF and STL |
 | Scene | 144 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
-| Layout | 28 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed) |
-| Mcp | 62 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes |
+| Layout | 32 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed); glTF scene export (the hierarchy, a camera and lights, a heading turning the same way, keyed motion sampled every frame, a .gltf with its .bin, and what it leaves out) |
+| Mcp | 71 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes; saving and opening .glb, .gltf (with and without a .bin) and .stl (binary and ASCII) through the handlers, a macro and a client, never over someone else's .bin, and export_scene |
 | Chat | 20 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap, and Auto-continue carrying on past it by itself, then stopping at its ceiling; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking |
-| UI | 55 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), and the screenshots |
+| UI | 56 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), and the screenshots (one of the still life opened again from a .glb) |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -464,13 +490,13 @@ Layout reuses them.
 
 | Project | What's in it |
 |---|---|
-| `AVAModeler.Core` | Double-precision math, the mesh (indexed points and n-gon polygons, with lazy edge and adjacency maps, and UV maps), layers, surfaces and their texture layers, the projections, texture images (PNG and BMP read here), selection, undo (copy-on-write snapshots of the layers an edit changes), the document |
-| `AVAModeler.Formats` | LWOB/LWLO read and write, LWO2 read, VideoScape GEO, OBJ |
+| `AVAModeler.Core` | Double-precision math, the mesh (indexed points and n-gon polygons, with lazy edge and adjacency maps, and UV maps), layers, surfaces and their texture layers, the projections, texture images (PNG and BMP read here), selection, undo (copy-on-write snapshots of the layers an edit changes), the document, PNG writing |
+| `AVAModeler.Formats` | LWOB/LWLO read and write, LWO2 read, VideoScape GEO, OBJ, glTF 2.0 (written by hand with System.Text.Json) and STL |
 | `AVAModeler.Geometry` | Triangulation (LibTessDotNet), BSP booleans and drills, Catmull–Clark subdivision, the extrude/lathe/bevel family |
 | `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp), plugins, SkiaSharp image reading |
 | `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing, the view cameras, picking |
 | `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones, LWS and JSON scenes, the ray tracer |
-| `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, its undo history, scene files, what the views draw, rendering animations and joining them into movies with ffmpeg), shared by the Layout workspace and the MCP server |
+| `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, its undo history, scene files and glTF scene export, what the views draw, rendering animations and joining them into movies with ffmpeg), shared by the Layout workspace and the MCP server |
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render and animation windows |
 | `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
@@ -496,6 +522,22 @@ Layout reuses them.
   procedural, gradient and front-projection layers are skipped. LWOB has nowhere for a layer's blending mode, so it
   isn't saved there (the native .avascene keeps it). Tools that make new geometry from nothing (Box, Text and so on)
   leave it without UVs, and a swept wall takes its edge's UVs at both ends rather than new ones.
+
+- **glTF and STL** are for exchange, not for keeping work: save as .lwo to keep everything. Writing glTF leaves out
+  points, 2-point lines and detail polygons, every texture but each surface's first colour image (no specular,
+  bump, luminosity or transparency maps, procedural textures or blending modes), and LightWave's specular level beyond
+  roughness; images that aren't PNG or JPEG are re-encoded as PNG. Reading glTF takes meshes and base colour textures
+  only: no normal, metallic-roughness, occlusion or emissive maps, extra UV sets, vertex colours, points or lines,
+  skins, morph targets, animations, cameras or lights, sparse accessors or Draco and other compression extensions;
+  KHR_texture_transform is ignored. An image inside a .glb or .gltf is kept in memory under a made-up path beside the
+  file, so saving the object as .lwo afterwards refers to an image that isn't on disk: save the picture out (or
+  re-export as .glb) to keep it. glTF has no smoothing angle: a surface read back is smooth or flat as its normals
+  show, at the usual 89.5°. STL keeps nothing but triangles (no surfaces, layers or UVs); the colour bits some
+  binary STL writers use aren't read. The Scene export writes each object's undeformed mesh (no bones, morphs or
+  displacements), the first frame's zoom and light intensity, hidden items as ordinary nodes, light intensity as
+  LightWave's 100% = 1 (not in physical units), and motion sampled linearly every frame, not as TCB curves. glTF has
+  no shear, so a non-uniform scale under a turned parent comes out slightly different. There's no Khronos validator
+  in the tests; the files are checked structurally (header, chunk alignment, accessor bounds, buffer views).
 
 - **Render Animation** needs ffmpeg on the PATH for MP4 and GIF (it isn't bundled); without it, the PNG frames are
   still written. Frames are numbered from 1 in the order rendered, not by scene frame. It renders frames one after

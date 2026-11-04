@@ -32,7 +32,7 @@ public static class Macros
         ("selectall() / deselect() / invert()", "selection"),
         ("setlayers({fg...}, {bg...})", "which layers are foreground and background"),
         ("undo() / redo()", "the history"),
-        ("new() / load(path) / save(path)", "files"),
+        ("new() / load(path) / save(path)", "files; the extension picks the format: .lwo, .obj, .geo, .glb, .gltf or .stl (load also reads .lw and any plugin format)"),
         ("makeuvs(map, projection, axis)", "lays the selection (or all) out in a UV map: \"planar\", \"cylindrical\", \"spherical\", \"cubic\" or \"atlas\", along \"x\", \"y\" or \"z\" (or tool(\"Make UVs\", {...}) for every setting)"),
         ("uvmap(name) / uvmap()", "chooses the UV map to work on (the UV view shows it), or returns the one chosen"),
         ("uvmaps()", "the names of the UV maps"),

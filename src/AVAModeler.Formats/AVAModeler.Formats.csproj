@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Object files: LWOB/LWLO read and write, LWO2 read, VideoScape GEO, Wavefront OBJ. -->
+  <!-- Object files: LWOB/LWLO read and write, LWO2 read, VideoScape GEO, Wavefront OBJ, glTF 2.0 and STL. -->
   <PropertyGroup>
     <RootNamespace>AVAModeler.Formats</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
+    <ProjectReference Include="..\AVAModeler.Geometry\AVAModeler.Geometry.csproj" />
   </ItemGroup>
 </Project>

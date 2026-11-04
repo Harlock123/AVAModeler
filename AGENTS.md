@@ -28,8 +28,16 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 ## Layout
 
 - `src/AVAModeler.Core/`: maths (`Vec`, `Mat4`), the n-gon `Mesh` with its UV maps, surfaces and textures.
-  - `Document.cs` holds the layers, the selection and the `UndoStack`.
-- `src/AVAModeler.Formats/`: LWOB/LWLO read and write, LWO2 read, VideoScape GEO and OBJ, on a shared `Iff` reader.
+  - `Document.cs` holds the layers, the selection and the `UndoStack`. `Png.cs` writes PNGs (renders, glTF images).
+- `src/AVAModeler.Formats/`: LWOB/LWLO read and write, LWO2 read, VideoScape GEO and OBJ, on a shared `Iff` reader;
+  glTF 2.0 and STL. It references `AVAModeler.Geometry` for triangulation.
+  - `ObjectFiles.cs` is the one registry of object formats: `LoadExtensions`, `SaveExtensions`, `Describe`, `Load`,
+    `Save` (with `SaveOptions` for ASCII STL and a .gltf's .bin) and `Targets` (the files a save writes). The open
+    dialogs, Lua's load and save, the MCP `Workspace` and Layout's object loading all go through it, so a new format
+    is added there once.
+  - `GltfBuilder.cs` builds glTF by hand (System.Text.Json and one binary buffer): meshes from LightWave meshes and
+    surfaces, nodes, cameras, lights, animations, and .glb/.gltf packing. `Gltf.cs` writes and reads objects with it;
+    `Stl.cs` is STL, binary and ASCII.
 - `src/AVAModeler.Geometry/`: triangulation (LibTessDotNet), BSP booleans and drills, subdivision, and the
   extrude, lathe and bevel family.
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
@@ -48,6 +56,8 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   - `SceneUndo.cs`: Layout's undo history (`LayoutSession.History`), `SceneSnapshot`s shared by the person and agents.
   - `SceneDrawing.cs` (what Layout's views draw, and looking through a scene camera) and `Keying.cs` (how values become keys:
     one rule for Layout's controls and agents alike).
+  - `SceneGltf.cs`: Scene › Export glTF and the `export_scene` tool: the scene's items as nodes in their hierarchy,
+    cameras, KHR_lights_punctual lights and motion sampled per frame, through `GltfBuilder`.
   - `AnimationRender.cs` (Render Animation's work: a run of frames from a `Scene.Copy` into numbered PNGs on a worker
     thread, with progress and cancelling) and `MovieEncoder.cs` (joins the frames into MP4 and GIF with the ffmpeg on
     the PATH, using `carbon_atom.py`'s arguments; render_animation's movie parameter and make_movie use it too).
@@ -101,7 +111,10 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - **Edits go through the document.** Change a mesh through `Document.Edit` (or `Snapshot` and `Commit`) so the
   edit is one undo step and the selection is pruned.
 - **LightWave conventions.** The space is left-handed with clockwise winding. Keep LWOB round trips byte-identical:
-  `AVAModeler.Formats.Tests` checks this.
+  `AVAModeler.Formats.Tests` checks this. Right-handed formats convert at the file's edge, never inside: OBJ and glTF
+  negate Z (`GltfBuilder.ToGltf`/`FromGltf`), STL swaps Y and Z for Z up (`Stl.ToStl`/`FromStl`), and each reverses
+  every face's winding, since both are mirrorings. A transform goes over as `F · M · F` with F the Z flip
+  (`GltfBuilder.Decompose`). Tests check a known triangle faces the same way after each conversion.
 - **Repeatable randomness.** Tools such as Jitter hash a `Seed` parameter rather than using `Random`, so the same
   seed gives the same result.
 - **OpenGL tests may skip.** `OffscreenGl` makes a windowless EGL context where Mesa offers one. Without it, the

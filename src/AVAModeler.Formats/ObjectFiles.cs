@@ -3,14 +3,29 @@ using AVAModeler.Core;
 
 namespace AVAModeler.Formats;
 
+/// <summary>
+/// Choices for formats that can be written more than one way: STL as text rather than binary, and a .gltf with its
+/// data in a .bin beside it rather than inside it.
+/// </summary>
+public sealed record SaveOptions
+{
+    public static readonly SaveOptions Default = new();
+
+    /// <summary>Write .stl as ASCII text (the default is binary, smaller and more common).</summary>
+    public bool AsciiStl { get; init; }
+
+    /// <summary>Write a .gltf's buffer (geometry and images) as a .bin of the same name beside it, not inside it as base64.</summary>
+    public bool SeparateGltfBuffer { get; init; }
+}
+
 /// <summary>Loads and saves objects in any supported format, choosing by the file's contents or extension.</summary>
 public static class ObjectFiles
 {
     /// <summary>Extensions that can be opened, for open dialogs.</summary>
-    public static readonly string[] LoadExtensions = [".lwo", ".lw", ".geo", ".obj"];
+    public static readonly string[] LoadExtensions = [".lwo", ".lw", ".geo", ".obj", ".glb", ".gltf", ".stl"];
 
     /// <summary>Extensions that can be saved, for save dialogs (the first is the native one).</summary>
-    public static readonly string[] SaveExtensions = [".lwo", ".obj", ".geo"];
+    public static readonly string[] SaveExtensions = [".lwo", ".obj", ".geo", ".glb", ".gltf", ".stl"];
 
     /// <summary>A short description of a format by extension, for dialog filters.</summary>
     public static string Describe(string extension) => extension.ToLowerInvariant() switch
@@ -18,7 +33,21 @@ public static class ObjectFiles
         ".lwo" or ".lw" => "LightWave object (LWOB/LWLO; LWO2 to open)",
         ".geo" => "VideoScape object",
         ".obj" => "Wavefront OBJ",
+        ".glb" => "glTF 2.0 binary",
+        ".gltf" => "glTF 2.0",
+        ".stl" => "STL (3D printing)",
         _ => throw new NotSupportedException($"No object format uses {extension}."),
+    };
+
+    /// <summary>
+    /// The files saving an object at a path writes: the file itself, and the .mtl beside an .obj or the .bin beside a
+    /// .gltf saved with <see cref="SaveOptions.SeparateGltfBuffer"/>.
+    /// </summary>
+    public static string[] Targets(string path, SaveOptions? options = null) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".obj" => [path, Path.ChangeExtension(path, ".mtl")],
+        ".gltf" when (options ?? SaveOptions.Default).SeparateGltfBuffer => [path, Path.ChangeExtension(path, ".bin")],
+        _ => [path],
     };
 
     /// <summary>
@@ -39,12 +68,16 @@ public static class ObjectFiles
             };
         else if (data.Length >= 4 && Encoding.Latin1.GetString(data, 0, 4) == "3DG1")
             doc = VideoScape.Read(Text(data));
+        else if (data.Length >= 12 && Encoding.Latin1.GetString(data, 0, 4) == "glTF")
+            doc = Gltf.Read(data, Path.GetDirectoryName(Path.GetFullPath(path)), Path.GetFileNameWithoutExtension(path));
         else
             doc = Path.GetExtension(path).ToLowerInvariant() switch
             {
                 ".lwo" or ".lw" => throw new FormatException($"{Path.GetFileName(path)} isn't a LightWave object: it doesn't start with FORM."),
                 ".geo" => VideoScape.Read(Text(data)),
                 ".obj" => Obj.Read(Text(data), name => OpenBeside(path, name)),
+                ".gltf" or ".glb" => Gltf.Read(data, Path.GetDirectoryName(Path.GetFullPath(path)), Path.GetFileNameWithoutExtension(path)),
+                ".stl" => Stl.Read(data),
                 var ext => throw new NotSupportedException($"Can't open {ext} files."),
             };
         doc.FilePath = path;
@@ -54,15 +87,20 @@ public static class ObjectFiles
 
     /// <summary>
     /// Saves an object by extension: .lwo (or .lw) as LWOB/LWLO, .obj as OBJ with a .mtl of the same name beside it,
-    /// .geo as VideoScape. Each file is written in full to a temporary file first, so a failure leaves the old one.
-    /// Texture image paths are written as <see cref="RebaseImages"/> would make them, without changing the document.
+    /// .geo as VideoScape, .glb and .gltf as glTF 2.0 (see <see cref="Gltf"/>; a .gltf has its data inside it unless
+    /// the options say otherwise), .stl as STL (binary unless the options say ASCII). Each file is written in full to a
+    /// temporary file first, so a failure leaves the old one. Texture image paths are written as
+    /// <see cref="RebaseImages"/> would make them, without changing the document.
     /// </summary>
-    public static void Save(Document doc, string path)
+    public static void Save(Document doc, string path) => Save(doc, path, null);
+
+    /// <inheritdoc cref="Save(Document, string)"/>
+    public static void Save(Document doc, string path, SaveOptions? options)
     {
         var changed = RebaseImages(doc, path);
         try
         {
-            Write(doc, path);
+            Write(doc, path, options ?? SaveOptions.Default);
         }
         finally
         {
@@ -95,7 +133,7 @@ public static class ObjectFiles
         return changed;
     }
 
-    private static void Write(Document doc, string path)
+    private static void Write(Document doc, string path, SaveOptions options)
     {
         switch (Path.GetExtension(path).ToLowerInvariant())
         {
@@ -121,6 +159,32 @@ public static class ObjectFiles
                 {
                     using var w = new StreamWriter(s, new UTF8Encoding(false));
                     VideoScape.Write(doc, w);
+                });
+                break;
+            case ".glb":
+            {
+                var (glb, _, _) = Gltf.Write(doc, GltfPacking.Binary, imageBase: TextureImages.BaseOf(path));
+                Replace(path, s => s.Write(glb));
+                break;
+            }
+            case ".gltf":
+            {
+                string binPath = Path.ChangeExtension(path, ".bin");
+                var (gltf, bin, _) = Gltf.Write(doc, options.SeparateGltfBuffer ? GltfPacking.Separate : GltfPacking.Embedded, Path.GetFileName(binPath), TextureImages.BaseOf(path));
+                if (bin != null) Replace(binPath, s => s.Write(bin));
+                Replace(path, s => s.Write(gltf));
+                break;
+            }
+            case ".stl":
+                Replace(path, s =>
+                {
+                    if (!options.AsciiStl)
+                    {
+                        Stl.WriteBinary(doc, s);
+                        return;
+                    }
+                    using var w = new StreamWriter(s, new UTF8Encoding(false));
+                    Stl.WriteAscii(doc, w, Path.GetFileNameWithoutExtension(path));
                 });
                 break;
             case var ext:

@@ -53,21 +53,22 @@ public sealed class Workspace(string root, ToolRegistry registry)
     }
 
     /// <summary>
-    /// Saves an object inside the root, choosing the format by extension. An existing file is only replaced when
+    /// Saves an object inside the root, choosing the format by extension (with <paramref name="options"/> for STL as
+    /// ASCII and a .gltf's .bin beside it). An existing file (the .mtl or .bin beside it included) is only replaced when
     /// <paramref name="overwrite"/> is set or this workspace wrote it earlier. Saving as LightWave (.lwo) makes the
     /// file the document's own, as File › Save does.
     /// </summary>
-    public string Save(Document doc, string path, bool overwrite)
+    public string Save(Document doc, string path, bool overwrite, SaveOptions? options = null)
     {
         string full = Resolve(path);
         string ext = Path.GetExtension(full).ToLowerInvariant();
         if (!SaveExtensions.Contains(ext))
             throw new NotSupportedException($"AVA Modeler can't save {(ext == "" ? "files without an extension" : ext + " files")}. It saves {string.Join(", ", SaveExtensions)}.");
-        string[] targets = ext == ".obj" ? [full, Path.ChangeExtension(full, ".mtl")] : [full];
+        string[] targets = ObjectFiles.Targets(full, options);
         CheckWritable(targets, overwrite);
         var plugin = Registry.Formats.FirstOrDefault(f => f.CanSave && f.Extensions.Contains(ext));
         if (plugin != null && !ObjectFiles.SaveExtensions.Contains(ext)) plugin.Save(doc, full);
-        else ObjectFiles.Save(doc, full);
+        else ObjectFiles.Save(doc, full, options);
         Wrote(targets);
         if (ext is ".lwo" or ".lw")
         {

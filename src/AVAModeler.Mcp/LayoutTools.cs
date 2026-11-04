@@ -119,10 +119,33 @@ public sealed partial class ModelerTools
             return new JsonObject { ["saved"] = full, ["bytes"] = new FileInfo(full).Length, ["warnings"] = Strings(warnings) };
         }, cancel);
 
+    [McpServerTool(Name = "export_scene", Destructive = true)]
+    [Description("Exports the scene as glTF 2.0 for other programs (game engines, three.js, Blender): .glb (binary, one file) or .gltf (JSON, its data inside it unless separate_bin). Objects (their undeformed meshes, surfaces as PBR materials and colour images), nulls, cameras (perspective, the first frame's field of view) and lights (KHR_lights_punctual: distant → directional, point, spot with its cone) become nodes in their parent hierarchy, converted to glTF's right-handed +Y up space; keyed position, rotation and scale become one animation, sampled at every frame from the first to the last (by the frame step). Bones, morphs and displacements aren't exported (objects are in their rest shape), nor animated zoom or intensity; the warnings say what was left out. It doesn't change the scene or its file (save_scene keeps the scene itself). The path is relative to the working folder and must stay inside it; an existing file is only replaced when overwrite is true.")]
+    public Task<string> ExportScene(
+        [Description("The file, relative to the working folder, e.g. \"scene.glb\" or \"scene.gltf\".")] string path,
+        [Description("Replace the file (and the .bin beside it) if it already exists.")] bool overwrite = false,
+        [Description(".gltf only: write the geometry, images and animation to a .bin of the same name beside it.")] bool separate_bin = false,
+        CancellationToken cancel = default) =>
+        DoScene($"exported {Path.GetFileName(path)}", (c, l) =>
+        {
+            var files = Files(c);
+            string full = files.Resolve(path);
+            string ext = Path.GetExtension(full).ToLowerInvariant();
+            if (!SceneGltf.Extensions.Contains(ext))
+                throw new NotSupportedException($"export_scene writes glTF: .glb or .gltf, not {(ext == "" ? "a file without an extension" : ext)}. To save the scene itself, use save_scene with .avascene or .lws.");
+            var targets = SceneGltf.Targets(full, separate_bin);
+            files.CheckWritable(targets, overwrite);
+            var warnings = SceneGltf.Save(l.Scene, full, separate_bin);
+            files.Wrote(targets);
+            var result = new JsonObject { ["exported"] = full, ["bytes"] = new FileInfo(full).Length, ["frames"] = SceneGltf.Frames(l.Scene).Count, ["warnings"] = Strings(warnings) };
+            if (targets.Length > 1) result["also"] = new JsonArray([.. targets.Skip(1).Select(t => (JsonNode)t)]);
+            return result;
+        }, cancel, changes: false);
+
     // ───────────────────────────── adding items ─────────────────────────────
 
     [McpServerTool(Name = "add_object", Destructive = true)]
-    [Description("Puts an object in the scene. With no file, the Modeler's object (in the live app, the one open in the Modeler) goes in live: the scene shows each change made to it later, as Layout's Add › The Modeler's Object does; if it's already there that item is returned, not added again. With file, an object file from the working folder (.lwo, .obj, .geo or a plugin format). layer (1 to 10, as the app's layer buttons number them) takes just that layer; otherwise every non-empty layer, merged. The object's own coordinates are kept: position, rotation and scale (constants, not keys) then place it. Returns the item, with its world bounds.")]
+    [Description("Puts an object in the scene. With no file, the Modeler's object (in the live app, the one open in the Modeler) goes in live: the scene shows each change made to it later, as Layout's Add › The Modeler's Object does; if it's already there that item is returned, not added again. With file, an object file from the working folder (.lwo, .obj, .geo, .glb, .gltf, .stl or a plugin format). layer (1 to 10, as the app's layer buttons number them) takes just that layer; otherwise every non-empty layer, merged. The object's own coordinates are kept: position, rotation and scale (constants, not keys) then place it. Returns the item, with its world bounds.")]
     public Task<string> AddObject(
         [Description("An object file relative to the working folder, e.g. \"table.lwo\". Leave out for the Modeler's object.")] string? file = null,
         [Description("Just this layer, 1 to 10 as the app's layer buttons number them. Default: every non-empty layer.")] int? layer = null,

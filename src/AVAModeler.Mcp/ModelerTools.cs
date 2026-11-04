@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AVAModeler.Core;
+using AVAModeler.Formats;
 using AVAModeler.Rendering;
 using AVAModeler.Tools;
 using ModelContextProtocol;
@@ -226,7 +227,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "open", Destructive = true)]
-    [Description("Opens an object file in place of the current object: LightWave .lwo (LWOB, LWLO and LWO2), Wavefront .obj or VideoScape .geo, plus any plugin format. The path is relative to the working folder and must stay inside it. Refuses if the current object has unsaved changes, unless discard_changes is true.")]
+    [Description("Opens an object file in place of the current object: LightWave .lwo (LWOB, LWLO and LWO2), Wavefront .obj, VideoScape .geo, glTF 2.0 .glb or .gltf (meshes, each node with a mesh becoming a layer, base colours and base colour textures, TEXCOORD_0 as the UV map \"UV\"; converted to LightWave's left-handed space) or STL .stl (binary or ASCII, into layer 1, duplicate points merged; STL's Z up becomes +Y), plus any plugin format. The path is relative to the working folder and must stay inside it. Refuses if the current object has unsaved changes, unless discard_changes is true.")]
     public Task<string> Open(
         [Description("The file, relative to the working folder, e.g. \"models/table.lwo\".")] string path,
         [Description("Throw away the current object's unsaved changes.")] bool discard_changes = false,
@@ -241,15 +242,21 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "save", Destructive = true)]
-    [Description("Saves the object, the format chosen by the extension: .lwo (LightWave LWOB/LWLO, the native format: keeps every layer, surface, texture and UV map), .obj (Wavefront, with a .mtl beside it) or .geo (VideoScape), plus any plugin format. The path is relative to the working folder and must stay inside it; folders are made as needed. An existing file is only replaced when overwrite is true.")]
+    [Description("Saves the object, the format chosen by the extension: .lwo (LightWave LWOB/LWLO, the native format: keeps every layer, surface, texture and UV map), .obj (Wavefront, with a .mtl beside it), .geo (VideoScape), .glb (glTF 2.0 binary, one file with its images inside) or .gltf (glTF 2.0 JSON, its data inside it as base64 unless separate_bin), or .stl (for 3D printing: triangles only, binary unless ascii, Z up: LightWave's +Y becomes STL's +Z), plus any plugin format. glTF and STL are exports: faces are triangulated, points and lines left out, and the space converted (glTF is right-handed +Y up with Z flipped); glTF keeps each layer as a node, each surface as a PBR material (colour × diffuse as base colour, glossiness as roughness, luminosity as emission, transparency as alpha), smooth or flat normals by the surface's smoothing, and the colour image with its UVs. The path is relative to the working folder and must stay inside it; folders are made as needed. An existing file is only replaced when overwrite is true.")]
     public Task<string> Save(
-        [Description("The file, relative to the working folder, e.g. \"table.lwo\".")] string path,
-        [Description("Replace the file if it already exists.")] bool overwrite = false,
+        [Description("The file, relative to the working folder, e.g. \"table.lwo\", \"table.glb\" or \"table.stl\".")] string path,
+        [Description("Replace the file (and the .mtl or .bin beside it) if it already exists.")] bool overwrite = false,
+        [Description(".stl only: write ASCII text rather than binary.")] bool ascii = false,
+        [Description(".gltf only: write the geometry and images to a .bin of the same name beside it, rather than inside the .gltf.")] bool separate_bin = false,
         CancellationToken cancel = default) =>
         Do($"saved {Path.GetFileName(path)}", c =>
         {
-            string full = Files(c).Save(c.Document, path, overwrite);
-            return new JsonObject { ["saved"] = full, ["bytes"] = new FileInfo(full).Length };
+            var options = new SaveOptions { AsciiStl = ascii, SeparateGltfBuffer = separate_bin };
+            string full = Files(c).Save(c.Document, path, overwrite, options);
+            var result = new JsonObject { ["saved"] = full, ["bytes"] = new FileInfo(full).Length };
+            if (ObjectFiles.Targets(full, options).Skip(1).ToArray() is { Length: > 0 } beside)
+                result["also"] = new JsonArray([.. beside.Select(f => (JsonNode)f)]);
+            return result;
         }, cancel);
 
     [McpServerTool(Name = "set_surface", Destructive = true)]
@@ -429,7 +436,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "run_lua", Destructive = true)]
-    [Description("Runs a Lua macro, as Macros › Run Macro does, as one undo step: if it fails, everything it did is put back. Macros number points and polygons from 1 (these tools number them from 0); layers are 1 to 10 in both. Functions: tool(name, {Param = value}), addpoint(x, y, z), addpolygon({p1, p2, ...}, surface), pointcount(), polycount(), getpoint(n), polypoints(n), selmode(\"points\"|\"polygons\"|\"edges\"|\"volume\"), selpoints({...}), selpolygons({...}), selbox(x0, y0, z0, x1, y1, z1), selectall(), deselect(), invert(), setlayers({fg}, {bg}), makeuvs(map, projection, axis), uvmap(name), uvmaps(), setuv(n, u, v), getuv(n), texture(surface, image, {options}), notexture(surface, channel), new(), load(path), save(path) (paths inside the working folder; save won't replace a file it didn't write), print(...). undo() and redo() can't be used here. Returns what it printed.")]
+    [Description("Runs a Lua macro, as Macros › Run Macro does, as one undo step: if it fails, everything it did is put back. Macros number points and polygons from 1 (these tools number them from 0); layers are 1 to 10 in both. Functions: tool(name, {Param = value}), addpoint(x, y, z), addpolygon({p1, p2, ...}, surface), pointcount(), polycount(), getpoint(n), polypoints(n), selmode(\"points\"|\"polygons\"|\"edges\"|\"volume\"), selpoints({...}), selpolygons({...}), selbox(x0, y0, z0, x1, y1, z1), selectall(), deselect(), invert(), setlayers({fg}, {bg}), makeuvs(map, projection, axis), uvmap(name), uvmaps(), setuv(n, u, v), getuv(n), texture(surface, image, {options}), notexture(surface, channel), new(), load(path), save(path) (paths inside the working folder, the format by extension as open and save choose it; save won't replace a file it didn't write), print(...). undo() and redo() can't be used here. Returns what it printed.")]
     public Task<string> RunLua(
         [Description("The Lua source.")] string script,
         [Description("Stop the macro after this many seconds (default 30, at most 300).")] double time_limit_seconds = 30,

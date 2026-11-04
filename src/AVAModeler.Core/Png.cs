@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 
-namespace AVAModeler.Scene;
+namespace AVAModeler.Core;
 
 /// <summary>Writes 8-bit RGBA images as PNG files, with no outside library.</summary>
 public static class Png

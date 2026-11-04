@@ -402,7 +402,7 @@ public sealed class LayoutWorkspace : DockPanel
             ItemsSource = new[]
             {
                 Group("_Scene", Item("_New Scene", NewScene), Item("_Load Scene…", () => _ = LoadScene()), Item("_Save Scene…", () => _ = SaveScene(".avascene")),
-                    Item("Save as _LWS…", () => _ = SaveScene(".lws")), Item("Scene _Settings…", () => _ = SceneSettings()),
+                    Item("Save as _LWS…", () => _ = SaveScene(".lws")), Item("Export _glTF…", () => _ = ExportGltf()), Item("Scene _Settings…", () => _ = SceneSettings()),
                     Item("_Quit", () => Owner?.Close())),
                 Group("_Edit", _undo, _redo),
                 Group("_Add", Item("The _Modeler's Object", () => Session.ShowModelerObject(_modelerDocument())), Item("_Object from a File…", () => _ = LoadObject()),
@@ -471,6 +471,24 @@ public sealed class LayoutWorkspace : DockPanel
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             await Dialogs.Message(Owner, "Can't save", e.Message);
+        }
+    }
+
+    /// <summary>Exports the scene as glTF 2.0 (.glb or .gltf, as the name chosen ends), with its hierarchy, cameras, lights and motion.</summary>
+    private async Task ExportGltf()
+    {
+        if (TopLevel.GetTopLevel(this) is not { } top) return;
+        var path = await Dialogs.Save(top, "Export the scene as glTF", Path.GetFileNameWithoutExtension(Session.ScenePath ?? "scene") + ".glb", Dialogs.Glb, Dialogs.GltfFile);
+        if (path == null) return;
+        try
+        {
+            var warnings = SceneGltf.Save(Session.Scene, path);
+            Session.SetStatus($"Exported {Path.GetFileName(path)}.");
+            if (warnings.Count > 0) await Dialogs.Message(Owner, "Exported with warnings", string.Join("\n", warnings));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            await Dialogs.Message(Owner, "Can't export", e.Message);
         }
     }
 

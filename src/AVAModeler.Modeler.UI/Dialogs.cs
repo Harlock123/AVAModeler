@@ -56,10 +56,23 @@ public static class Dialogs
         return answer;
     }
 
-    public static readonly FilePickerFileType Objects = new("Objects") { Patterns = ["*.lwo", "*.lw", "*.geo", "*.obj"] };
+    public static readonly FilePickerFileType Objects = new("Objects") { Patterns = ["*.lwo", "*.lw", "*.geo", "*.obj", "*.glb", "*.gltf", "*.stl"] };
     public static readonly FilePickerFileType Lwo = new("LightWave object (LWOB)") { Patterns = ["*.lwo"] };
     public static readonly FilePickerFileType ObjFile = new("Wavefront OBJ") { Patterns = ["*.obj"] };
     public static readonly FilePickerFileType Geo = new("VideoScape GEO") { Patterns = ["*.geo"] };
+    public static readonly FilePickerFileType Glb = new("glTF 2.0 binary (.glb)") { Patterns = ["*.glb"] };
+    public static readonly FilePickerFileType GltfFile = new("glTF 2.0 (.gltf, data inside)") { Patterns = ["*.gltf"] };
+    public static readonly FilePickerFileType StlFile = new("STL (3D printing)") { Patterns = ["*.stl"] };
+
+    /// <summary>The save dialog's choices for exporting as a format, by extension.</summary>
+    public static FilePickerFileType[] ExportTypes(string ext) => ext switch
+    {
+        ".obj" => [ObjFile],
+        ".geo" => [Geo],
+        ".glb" or ".gltf" => ext == ".glb" ? [Glb, GltfFile] : [GltfFile, Glb],
+        ".stl" => [StlFile],
+        _ => [Lwo],
+    };
     public static readonly FilePickerFileType Lua = new("Lua macro") { Patterns = ["*.lua"] };
     public static readonly FilePickerFileType Dll = new("Plugin") { Patterns = ["*.dll"] };
     public static readonly FilePickerFileType Images = new("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp"] };

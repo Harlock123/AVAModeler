@@ -1,3 +1,4 @@
+using AVAModeler.Core;
 using AVAModeler.Scene;
 
 namespace AVAModeler.Layout.Tests;

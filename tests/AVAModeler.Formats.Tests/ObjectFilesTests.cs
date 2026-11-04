@@ -69,7 +69,8 @@ public class ObjectFilesTests
     [Fact]
     public void ExtensionListsCoverTheFormats()
     {
-        Assert.Equal([".lwo", ".lw", ".geo", ".obj"], ObjectFiles.LoadExtensions);
+        Assert.Equal([".lwo", ".lw", ".geo", ".obj", ".glb", ".gltf", ".stl"], ObjectFiles.LoadExtensions);
+        Assert.Equal([".lwo", ".obj", ".geo", ".glb", ".gltf", ".stl"], ObjectFiles.SaveExtensions);
         Assert.Equal(".lwo", ObjectFiles.SaveExtensions[0]);
         Assert.All(ObjectFiles.LoadExtensions.Concat(ObjectFiles.SaveExtensions), e => Assert.NotEmpty(ObjectFiles.Describe(e)));
     }

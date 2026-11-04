@@ -112,6 +112,9 @@ public sealed class ModelerWorkspace : DockPanel
             ["Save As"] = () => _ = SaveDocument(true),
             ["Export OBJ"] = () => _ = Export(".obj"),
             ["Export GEO"] = () => _ = Export(".geo"),
+            ["Export glTF"] = () => _ = Export(".glb"),
+            ["Export STL"] = () => _ = Export(".stl"),
+            ["Export STL ASCII"] = () => _ = Export(".stl", new SaveOptions { AsciiStl = true }),
             ["Export Plugin Format"] = () => _ = ExportPlugin(),
             // Closing the window asks about unsaved changes first.
             ["Quit"] = () => Owner?.Close(),
@@ -357,18 +360,22 @@ public sealed class ModelerWorkspace : DockPanel
         }
     }
 
-    private async Task Export(string ext)
+    /// <summary>
+    /// Saves a copy in another format (the object stays the LightWave file it was). glTF offers .glb and .gltf, the
+    /// extension chosen deciding which; STL is binary unless the options say ASCII.
+    /// </summary>
+    private async Task Export(string ext, SaveOptions? options = null)
     {
         Session.CommitTool();
         if (TopLevel.GetTopLevel(this) is not { } top) return;
-        var path = await Dialogs.Save(top, "Export", Path.GetFileNameWithoutExtension(Session.Document.FilePath ?? "untitled") + ext, ext == ".obj" ? Dialogs.ObjFile : Dialogs.Geo);
+        var path = await Dialogs.Save(top, "Export", Path.GetFileNameWithoutExtension(Session.Document.FilePath ?? "untitled") + ext, Dialogs.ExportTypes(ext));
         if (path == null) return;
         try
         {
-            ObjectFiles.Save(Session.Document, path);
+            ObjectFiles.Save(Session.Document, path, options);
             Session.SetStatus($"Exported {Path.GetFileName(path)}.");
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
         {
             await Dialogs.Message(Owner, "Can't export", e.Message);
         }
@@ -483,7 +490,8 @@ public sealed class ModelerWorkspace : DockPanel
             ItemsSource = new[]
             {
                 Group("_File", Item("_New", "New"), Item("_Open…", "Open"), _recent, "-", Item("_Save", "Save"), Item("Save _As…", "Save As"),
-                    Item("Export _OBJ…", "Export OBJ"), Item("Export _GEO…", "Export GEO"), Item("Export with a _Plugin…", "Export Plugin Format"), "-", Item("_Quit", "Quit")),
+                    Item("Export _OBJ…", "Export OBJ"), Item("Export _GEO…", "Export GEO"),
+                    Item("Export gl_TF…", "Export glTF"), Item("Export S_TL…", "Export STL"), Item("Export STL (AS_CII)…", "Export STL ASCII"), Item("Export with a _Plugin…", "Export Plugin Format"), "-", Item("_Quit", "Quit")),
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",
                     Item("Select _All", "Select All"), Item("_Deselect", "Deselect"), Item("_Invert", "Invert Selection"), Item("Select C_onnected", "Select Connected"),
                     Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),

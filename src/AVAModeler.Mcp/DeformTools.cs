@@ -275,4 +275,96 @@ public sealed partial class ModelerTools
                 }).ToArray()),
             };
         }, cancel);
+
+    // ───────────────────────────── inverse kinematics ─────────────────────────────
+
+    [McpServerTool(Name = "set_ik", Destructive = true)]
+    [Description("Sets a bone's inverse kinematics, as LightWave 5's Goal Object, Full-time IK and Controllers and Limits: give the bone at the end of a chain a goal item (a null, usually: add_null, then animate the null) and the chain turns so that bone's tip reaches it. The chain is the bone and its parent bones up to the object, stopping below a bone with anchor true (LightWave's \"unaffected by IK of descendants\": it stays as keyed). With full_time true (the default when a goal is given) the chain follows the goal at every frame, in views, renders and deformation; with it false the bones play their keys, and IK acts only when bake_ik keys it. lock names channels IK leaves at their keyed values (heading, pitch, bank); heading_limits, pitch_limits and bank_limits are [min, max] degrees IK may turn that channel to ([] removes a limit). These settings belong to each bone: give limits and locks on any bone in the chain, the goal on its end. A goal beyond reach leaves the chain stretched straight toward it. get_scene shows each bone's ik: goal, chain, reach, tip_to_goal (metres), and ik_rotation where IK turns it. Keys aren't changed: bake_ik writes them.")]
+    public Task<string> SetIK(
+        [Description("The bone, by name or #index.")] string bone,
+        [Description("The item its tip reaches for, by name (a null, usually); \"\" for no IK.")] string? goal = null,
+        [Description("Full-time IK: the chain follows the goal at every frame (default true when a goal is first given).")] bool? full_time = null,
+        [Description("Unaffected by IK of descendants: IK further down stops below this bone.")] bool? anchor = null,
+        [Description("Channels IK leaves alone (keyed only): any of \"heading\", \"pitch\", \"bank\"; [] for none.")] string[]? @lock = null,
+        [Description("[min, max] degrees IK may turn the heading to; [] for no limit.")] double[]? heading_limits = null,
+        [Description("[min, max] degrees for the pitch; [] for no limit.")] double[]? pitch_limits = null,
+        [Description("[min, max] degrees for the bank; [] for no limit.")] double[]? bank_limits = null,
+        CancellationToken cancel = default) =>
+        DoScene("set a bone's IK", (c, l) =>
+        {
+            var s = l.Scene;
+            var it = Item(s, bone, "bone");
+            if (it is not Bone b) throw new ArgumentException($"{it.Name} is {(it is ObjectItem ? "an" : "a")} {it.Kind.ToLowerInvariant()}, not a bone: IK is for bones (add_bone or skelegons_to_bones).");
+            if (goal == null && full_time == null && anchor == null && @lock == null && heading_limits == null && pitch_limits == null && bank_limits == null)
+                throw new ArgumentException("Give goal, full_time, anchor, lock or limits (or several).");
+            if (goal != null)
+            {
+                if (goal.Trim() is "" or "(none)") b.IKGoal = null;
+                else
+                {
+                    var g = Item(s, goal, "goal");
+                    if (InverseKinematics.GoalProblem(b, g) is { } problem) throw new ArgumentException(problem);
+                    if (b.IKGoal == null && full_time == null) b.FullTimeIK = true;
+                    b.IKGoal = g;
+                }
+            }
+            if (full_time is { } ft) b.FullTimeIK = ft;
+            if (anchor is { } an) b.IKAnchor = an;
+            if (@lock != null)
+            {
+                var locked = IKChannels.None;
+                foreach (var name in @lock)
+                    locked |= name.Trim().ToLowerInvariant() switch
+                    {
+                        "heading" or "h" => IKChannels.Heading,
+                        "pitch" or "p" => IKChannels.Pitch,
+                        "bank" or "b" => IKChannels.Bank,
+                        _ => throw new ArgumentException($"lock takes heading, pitch and bank, not \"{name}\"."),
+                    };
+                b.IKLocked = locked;
+            }
+            var limits = b.IKLimits;
+            foreach (var (given, channel, what) in new[] { (heading_limits, 0, "heading_limits"), (pitch_limits, 1, "pitch_limits"), (bank_limits, 2, "bank_limits") })
+            {
+                if (given == null) continue;
+                if (given.Length == 0) { limits = limits.With(channel, null); continue; }
+                if (given.Length != 2) throw new ArgumentException($"{what} is [min, max] in degrees, or [] for none.");
+                limits = limits.With(channel, new IKLimit(given[0], given[1]).Checked(what));
+            }
+            b.IKLimits = limits.Checked();
+            s.Notify();
+            var result = ItemNow(c, l, b, l.Frame);
+            if (b.IKGoal != null && !b.FullTimeIK) result["note"] = "Full-time IK is off: the chain plays its keys until bake_ik keys the IK (or set full_time true).";
+            return result;
+        }, cancel);
+
+    [McpServerTool(Name = "bake_ik", Destructive = true)]
+    [Description("Bakes a chain's IK into keys, as one undo step: solves the chain ending at the bone (which must have a goal, set_ik) at every step frames from first to last (and at last), keys each chain bone's heading, pitch and bank there (not channels it locks), and turns its full-time IK off so the keys play. Use it to hand the motion to programs without IK (glTF export, LightWave without the goal), or to edit the keys afterwards.")]
+    public Task<string> BakeIK(
+        [Description("The bone at the end of the chain (the one with the goal), by name or #index.")] string bone,
+        [Description("The first frame (default: the scene's first).")] double? first = null,
+        [Description("The last frame (default: the scene's last).")] double? last = null,
+        [Description("Frames between keys, 1 or more (default 1: every frame).")] double step = 1,
+        CancellationToken cancel = default) =>
+        DoScene("baked IK into keys", (c, l) =>
+        {
+            var s = l.Scene;
+            var it = Item(s, bone, "bone");
+            if (it is not Bone b) throw new ArgumentException($"{it.Name} isn't a bone.");
+            if (b.IKGoal == null) throw new ArgumentException($"{b.Name} has no IK goal. Give it one with set_ik (goal), on the bone at the end of the chain.");
+            double f0 = SceneCensus.Frame(l, first ?? s.FirstFrame), f1 = SceneCensus.Frame(l, last ?? s.LastFrame);
+            if (!(step >= 1) || !double.IsFinite(step)) throw new ArgumentException("step must be 1 frame or more.");
+            if (f1 < f0) throw new ArgumentException($"last ({f1:0.###}) is before first ({f0:0.###}).");
+            var frames = l.BakeIK(b, f0, f1, step);
+            var result = new JsonObject
+            {
+                ["bone"] = b.Name,
+                ["chain"] = Strings(InverseKinematics.Chain(b).Select(x => x.Name)),
+                ["keyed_frames"] = frames.Count,
+                ["first"] = Census.Round(f0),
+                ["last"] = Census.Round(f1),
+                ["full_time"] = b.FullTimeIK,
+            };
+            return result;
+        }, cancel);
 }

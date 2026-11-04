@@ -296,9 +296,54 @@ internal static class SceneCensus
                 o["rest_length"] = Round(bone.RestLength);
                 o["strength"] = Round(bone.Strength);
                 o["active"] = bone.Active;
+                if (IK(bone, sf) is { } ik) o["ik"] = ik;
                 break;
         }
         return o;
+    }
+
+    /// <summary>
+    /// A bone's IK at a frame, or null when it has none of it: its goal, full-time flag, chain, reach and how far its tip
+    /// is from the goal; whether IK turns it and to what; its anchor, locked channels and limits.
+    /// </summary>
+    public static JsonObject? IK(Bone bone, SceneFrame sf)
+    {
+        var end = bone.IKEnd;
+        if (bone.IKGoal == null && end == null && !bone.IKAnchor && bone.IKLocked == IKChannels.None && !bone.IKLimits.Any) return null;
+        var o = new JsonObject();
+        if (bone.IKGoal is { } goal)
+        {
+            o["goal"] = goal.Name;
+            o["full_time"] = bone.FullTimeIK;
+            o["chain"] = Strings(InverseKinematics.Chain(bone).Select(b => b.Name));
+            o["reach"] = Round(InverseKinematics.Reach(bone));
+            if (sf.World.TryGetValue(bone, out var m) && sf.World.TryGetValue(goal, out var g))
+                o["tip_to_goal"] = Round((m.TransformPoint(new Vec3(0, 0, bone.RestLength)) - g.TransformPoint(goal.Pivot)).Length);
+        }
+        if (end != null)
+        {
+            o["turned_by_ik_of"] = end.Name;
+            o["ik_rotation"] = Vec(bone.MotionRotationAt(sf.Frame));
+        }
+        if (bone.IKAnchor) o["anchor"] = true;
+        if (bone.IKLocked != IKChannels.None) o["locked"] = Strings(LockNames(bone.IKLocked));
+        if (bone.IKLimits.Any)
+        {
+            var limits = new JsonObject();
+            string[] names = ["heading", "pitch", "bank"];
+            for (int c = 0; c < 3; c++)
+                if (bone.IKLimits[c] is { } l) limits[names[c]] = new JsonArray(Round(l.Min), Round(l.Max));
+            o["limits"] = limits;
+        }
+        return o;
+    }
+
+    /// <summary>Locked channels' names: heading, pitch, bank.</summary>
+    public static IEnumerable<string> LockNames(IKChannels locked)
+    {
+        if (locked.HasFlag(IKChannels.Heading)) yield return "heading";
+        if (locked.HasFlag(IKChannels.Pitch)) yield return "pitch";
+        if (locked.HasFlag(IKChannels.Bank)) yield return "bank";
     }
 
     /// <summary>An object's morphs at a frame: each one's name, weight channel, weight, and the target's point count.</summary>

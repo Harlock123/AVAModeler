@@ -15,7 +15,7 @@ namespace AVAModeler.Mcp.Tests;
 /// </summary>
 public class RecipeTests
 {
-    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table", "product_shot"];
+    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table", "product_shot", "reaching_arm"];
 
     /// <summary>Each recipe with arguments that keep it quick (small pictures, few frames).</summary>
     public static TheoryData<string, string> Cases => new()
@@ -33,6 +33,7 @@ public class RecipeTests
         { "rounded_box", """{"segments": "2"}""" },
         { "marble_table", """{"check": "0.4"}""" },
         { "product_shot", """{"width": "48", "environment": "builtin:sky"}""" },
+        { "reaching_arm", """{"frames": "12", "width": "64"}""" },
     };
 
     /// <summary>A recipe's tool calls, read from its text as an agent reads them.</summary>
@@ -133,6 +134,23 @@ public class RecipeTests
                 Assert.True(dof.On);
                 // Focused on the ball's middle, about 2.3 m away.
                 Assert.InRange(dof.FocalDistance, 2.0, 2.6);
+                break;
+            case "reaching_arm":
+                var lower = Assert.IsType<Bone>(b.Scene.Items.Single(i => i.Name == "Lower"));
+                var upper = Assert.IsType<Bone>(b.Scene.Items.Single(i => i.Name == "Upper"));
+                var reached = Obj("Ball");
+                Assert.Same(reached, lower.IKGoal);
+                Assert.True(lower.FullTimeIK);
+                Assert.Same(lower, upper.IKEnd);
+                // The hand is on the ball at every frame, and the elbow keeps within its limit.
+                foreach (var f in new[] { 1.0, 4, 6, 9, 12 })
+                {
+                    var tip = lower.WorldMatrix(f).TransformPoint(new Vec3(0, 0, 1));
+                    Assert.True((tip - reached.WorldPosition(f)).Length < 1e-3, $"At frame {f} the hand is {(tip - reached.WorldPosition(f)).Length} m from the ball.");
+                    Assert.InRange(lower.MotionRotationAt(f).X, -150 - 1e-9, 1e-9);
+                }
+                // No rotation keys: IK does it.
+                Assert.True(upper[Channel.Heading].Keys.Count <= 1);
                 break;
             case "three_point_lighting":
                 Assert.Equal(["Camera", "Modeler object", "Key", "Fill", "Rim"], b.Scene.Items.Select(i => i.Name));

@@ -18,6 +18,12 @@ public sealed record SceneLoadResult(Scene Scene, IReadOnlyList<string> Warnings
 /// times are frames; in version 3 colours are 0–1 and key times are seconds. In a bone's section of a version 1
 /// file, <c>ParentObject n</c> names the object's nth bone.
 /// </para>
+/// <para>
+/// A bone's IK: <c>GoalObject n</c> (version 1, the nth object or null, as <c>ParentObject</c> counts them) or
+/// <c>GoalItem id</c> (version 3) names its goal, <c>FullTimeIK</c> its Full-time IK flag (off when a goal comes without
+/// it, as in LightWave), and <c>HLimits</c>, <c>PLimits</c> and <c>BLimits</c> its joint limits (min and max degrees;
+/// 0 0 is none). IK on objects, nulls, lights and cameras isn't read.
+/// </para>
 /// </summary>
 public static class LwsReader
 {
@@ -46,6 +52,8 @@ public static class LwsReader
         private readonly List<CameraItem> _cameras = [];
         private readonly Dictionary<string, Document?> _documents = [];
         private readonly List<(SceneItem Item, string Kind, long Value, int Line)> _parents = [];
+        private readonly List<(Bone Bone, string Kind, long Value, int Line)> _goals = [];
+        private readonly HashSet<Bone> _fullTimeRead = [];
         private readonly HashSet<Envelope> _readInSeconds = [];
         private readonly List<Envelope> _inSeconds = [];
         private readonly Dictionary<LightItem, (int? Type, double Range, double Legacy)> _falloff = [];
@@ -315,6 +323,31 @@ public static class LwsReader
                     _lastObject.BoneFalloffExponent = Math.Pow(2, Int(rest, key));
                     break;
 
+                case "GoalObject" when _current is Bone b:
+                    _goals.Add((b, "object", Int(rest, key), _pos));
+                    break;
+                case "GoalItem" when _current is Bone b:
+                    if (long.TryParse(Tokens(rest).FirstOrDefault(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out long goalId))
+                        _goals.Add((b, "item", goalId, _pos));
+                    else Warn($"Line {_pos}: GoalItem needs a hexadecimal item number.");
+                    break;
+                case "GoalObject" or "GoalItem" when _current != null:
+                    Warn($"{_current.Name} has an IK goal: IK is read for bones only, so it is left out.");
+                    break;
+                case "FullTimeIK" when _current is Bone b:
+                    b.FullTimeIK = Int(rest, key) != 0;
+                    _fullTimeRead.Add(b);
+                    break;
+                case "HLimits" or "PLimits" or "BLimits" when _current is Bone b:
+                {
+                    var n = Numbers(rest, 2, key);
+                    int channel = key[0] switch { 'H' => 0, 'P' => 1, _ => 2 };
+                    // LightWave writes 0 0 for a channel without limits.
+                    if (n[0] != 0 || n[1] != 0)
+                        b.IKLimits = b.IKLimits.With(channel, new IKLimit(Math.Min(n[0], n[1]), Math.Max(n[0], n[1])));
+                    break;
+                }
+
                 case "Plugin":
                     SkipUntil("EndPlugin");
                     break;
@@ -563,6 +596,24 @@ public static class LwsReader
                 {
                     Warn($"Line {line}: {e.Message}");
                 }
+            }
+
+            foreach (var (bone, kind, value, line) in _goals)
+            {
+                var goal = kind == "object" ? At(_objects, (int)value - 1) : ItemById(value);
+                if (goal == null)
+                {
+                    Warn($"Line {line}: {bone.Name}'s IK goal ({value:X}) isn't in the scene.");
+                    continue;
+                }
+                if (InverseKinematics.GoalProblem(bone, goal) is { } problem)
+                {
+                    Warn($"Line {line}: {problem}");
+                    continue;
+                }
+                bone.IKGoal = goal;
+                // LightWave's Full-time IK is off unless the file says so.
+                if (!_fullTimeRead.Contains(bone)) bone.FullTimeIK = false;
             }
 
             if (_resolutionMultiplier > 0 && _resolutionMultiplier != 1)

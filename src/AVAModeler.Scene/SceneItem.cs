@@ -90,8 +90,15 @@ public abstract class SceneItem
     private Vec3 Vector(int first, double frame) =>
         new(_channels[first].Evaluate(frame), _channels[first + 1].Evaluate(frame), _channels[first + 2].Evaluate(frame));
 
+    /// <summary>
+    /// Heading, pitch and bank in degrees as the item actually turns at a frame: its keys' (<see cref="RotationAt"/>),
+    /// unless full-time IK turns it (a bone in a chain with a goal), when it's the solved rotation.
+    /// </summary>
+    public Vec3 MotionRotationAt(double frame) => Scene is { } s ? s.Motion.Rotation(this, frame) : RotationAt(frame);
+
+    /// <summary>The item's own transform at a frame, from its position, its rotation as it moves (IK included), scale and pivot.</summary>
     public Mat4 LocalMatrix(double frame) =>
-        Mat4.Translation(PositionAt(frame)) * Rotations.Matrix(RotationAt(frame)) * Mat4.Scaling(ScaleAt(frame)) * Mat4.Translation(-Pivot);
+        Mat4.Translation(PositionAt(frame)) * Rotations.Matrix(MotionRotationAt(frame)) * Mat4.Scaling(ScaleAt(frame)) * Mat4.Translation(-Pivot);
 
     public Mat4 WorldMatrix(double frame) => WorldMatrix(frame, null);
 

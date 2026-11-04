@@ -337,6 +337,39 @@ public sealed class LayoutSession
         SetStatus($"Key at frame {Frame:0} deleted." + (kept > 0 ? $" {kept} channel(s) kept it: it's their only key." : ""));
     }
 
+    // ───────────────────────────── inverse kinematics ─────────────────────────────
+
+    /// <summary>
+    /// Bakes the IK of the chain ending at <paramref name="end"/> into keys from <paramref name="first"/> to
+    /// <paramref name="last"/> every <paramref name="step"/> frames, by the keying rule, as one undo step, and turns its
+    /// full-time IK off so the keys play (<see cref="InverseKinematics.Bake"/>). Returns the frames keyed.
+    /// </summary>
+    public IReadOnlyList<double> BakeIK(Bone end, double first, double last, double step = 1)
+    {
+        var frames = Edit($"Bake IK for {end.Name}", () =>
+            InverseKinematics.Bake(end, first, last, step, (e, f, v) => Keying.Key(e, Scene, new EnvelopeKey(f, v), keepShape: true)));
+        SetStatus($"Baked {end.Name}'s IK into keys at {frames.Count} frame(s), {first:0.##} to {last:0.##}; full-time IK is off so they play.");
+        return frames;
+    }
+
+    /// <summary>
+    /// Keys the pose IK gives the chain ending at <paramref name="end"/> at the current frame (LightWave's way without
+    /// full-time IK: move the goal, then key the chain), as one undo step. Full-time IK is left as it is.
+    /// </summary>
+    public void KeyIK(Bone end)
+    {
+        if (end.IKGoal == null) throw new InvalidOperationException($"{end.Name} has no IK goal: choose one first.");
+        Edit($"Key IK for {end.Name}", () =>
+        {
+            foreach (var (bone, hpb) in InverseKinematics.Solve(end, Frame))
+                for (int c = 0; c < 3; c++)
+                    if ((bone.IKLocked & (IKChannels)(1 << c)) == 0)
+                        Keying.Key(bone[(Channel)(3 + c)], Scene, new EnvelopeKey(Frame, hpb[c]), keepShape: true);
+            Scene.Notify();
+        });
+        SetStatus($"Keyed {end.Name}'s IK chain at frame {Frame:0}.");
+    }
+
     /// <summary>Adds an item as one undo step ("Add Light") and chooses it.</summary>
     public T Add<T>(T item) where T : SceneItem
     {

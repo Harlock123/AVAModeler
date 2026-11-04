@@ -10,7 +10,9 @@ namespace AVAModeler.Scene;
 /// with a warning), so the meshes must be saved separately. Morphs, displacements, visibility and the safe areas have no place in the format and are
 /// left out. An area light is written as LightWave 6's (light type 4), and a camera's depth of field and motion blur
 /// as LightWave's own settings; an area light's size, a light's radius, the effects' sample counts, ambient occlusion
-/// and the environment have no place in the format either (the .avascene keeps them).
+/// and the environment have no place in the format either (the .avascene keeps them). A bone's IK goal is written as
+/// <c>GoalItem</c> (with <c>GoalStrength 1</c> and <c>FullTimeIK</c>) and its joint limits as <c>HLimits</c>,
+/// <c>PLimits</c> and <c>BLimits</c>; its IK anchor and locked channels aren't written (a warning says so).
 /// </summary>
 public static class LwsWriter
 {
@@ -138,6 +140,17 @@ public static class LwsWriter
             L($"BoneActive {(b.Active ? 1 : 0)}");
             Motion("BoneMotion", b);
             if (b.Parent is Bone parent) L($"ParentItem {Id(parent)}");
+            if (b.IKGoal is { } goal && (goal is not Bone || goal.Scene == scene))
+            {
+                L($"GoalItem {Id(goal)}");
+                L("GoalStrength 1");
+                L($"FullTimeIK {(b.FullTimeIK ? 1 : 0)}");
+            }
+            string[] limitKeys = ["HLimits", "PLimits", "BLimits"];
+            for (int c = 0; c < 3; c++)
+                if (b.IKLimits[c] is { } limit) L($"{limitKeys[c]} {N(limit.Min)} {N(limit.Max)}");
+            if (b.IKAnchor || b.IKLocked != IKChannels.None)
+                warnings.Add($"{b.Name}'s IK anchor and locked channels have no place in a LightWave scene: the .avascene keeps them.");
         }
 
         private void Common(SceneItem item)

@@ -468,6 +468,45 @@ public static class Recipes
         return recipe.Text("For a ripple instead (a pond's surface), add_displacement with shape ripple, direction y and a center.");
     }
 
+    [McpServerPrompt(Name = "reaching_arm", Title = "Arm reaching for a ball (IK)")]
+    [Description("Shows inverse kinematics: a two-bone arm whose hand follows a moving ball, its bones turned every frame by full-time IK with the ball as the goal (no rotation keys).")]
+    public static string ReachingArm(
+        [Description("The arm's colour as r, g, b from 0 to 255, or a name (default [210, 170, 120]).")] string? color = null,
+        [Description("Frames, 2 to 120 (default 48).")] string? frames = null,
+        [Description("Width of the rendered frame in pixels (default 320).")] string? width = null)
+    {
+        var c = Colour(color, [210, 170, 120]);
+        int n = Whole(frames, 48, "frames", 2, ModelerTools.MaxAnimationFrames);
+        int w = Whole(width, 320, "width", 16, ModelerTools.MaxRenderSize);
+        int mid = Math.Max(1, (1 + n) / 2);
+        var recipe = new Recipe("Make an arm reach for a ball by inverse kinematics: two bones (upper arm and forearm, 1 m each, out along +X from the shoulder at the origin) whose chain turns at every frame so the forearm's tip is on the ball, wherever it is keyed to go.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("The arm's surface.", "set_surface", new { name = "Arm", color = c, specular = 0.3, glossiness = 64, smoothing = true, assign = false });
+        recipe.Step("The ball's.", "set_surface", new { name = "Ball", color = new[] { 220, 40, 40 }, specular = 0.6, glossiness = 256, smoothing = true, assign = false });
+        recipe.Step("The upper arm in layer 1: a box from the shoulder (x 0) to the elbow (x 1), cut along its length so it can bend.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0.5, 0, 0), ["Size"] = V(1, 0.16, 0.16), ["Segments X"] = 8, ["Surface"] = "Arm" } });
+        recipe.Step("The forearm, from the elbow to the hand (x 2), a little thinner.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(1.5, 0, 0), ["Size"] = V(1, 0.12, 0.12), ["Segments X"] = 8, ["Surface"] = "Arm" } });
+        recipe.Step("The ball in layer 2, centred on its own origin so its position is its middle.", "set_layers", new { foreground = new[] { 2 } });
+        recipe.Step(null, "run_tool", new { name = "Ball", @params = new Dictionary<string, object> { ["Center"] = V(0, 0, 0), ["Radius"] = V(0.1, 0.1, 0.1), ["Sides"] = 16, ["Segments"] = 8, ["Surface"] = "Ball" } });
+        recipe.Step("Back to layer 1.", "set_layers", new { foreground = new[] { 1 } });
+        recipe.Step("A new scene (save or discard the old one if it refuses).", "new_scene", new { });
+        recipe.Step($"Frames 1 to {n}.", "set_scene", new { first_frame = 1, last_frame = n, frame = 1 });
+        recipe.Step("The arm and the ball as objects of their own.", "add_object", new { layer = 1, name = "Arm" });
+        recipe.Step(null, "add_object", new { layer = 2, name = "Ball" });
+        recipe.Step("The upper arm's bone: from the shoulder, 1 m along +X (heading 90 turns a bone's +Z to +X).", "add_bone", new { @object = "Arm", name = "Upper", rest_position = V(0, 0, 0), rest_rotation = V(90, 0, 0), rest_length = 1 });
+        recipe.Step("The forearm's, hanging from it: it starts at the upper bone's tip ([0, 0, 1] along its axis) and carries straight on.", "add_bone", new { @object = "Arm", name = "Lower", rest_position = V(0, 0, 1), rest_length = 1, parent_bone = "Upper" });
+        recipe.Step("Key the ball's path, all within the arm's 2 m reach: out in front...", "set_transform", new { item = "Ball", frame = 1, position = V(1.6, 0.6, 0.4), key = true });
+        recipe.Step("...up and back...", "set_transform", new { item = "Ball", frame = mid, position = V(0.8, 1.3, -0.5), key = true });
+        recipe.Step("...and down low.", "set_transform", new { item = "Ball", frame = n, position = V(1.4, -0.5, 0.6), key = true });
+        recipe.Step("The forearm's goal is the ball: with full-time IK, the chain (Lower and Upper) turns every frame so its tip reaches it.", "set_ik", new { bone = "Lower", goal = "Ball", full_time = true });
+        recipe.Step("Keep the elbow bending one way only, as a real one does: limit the forearm's heading.", "set_ik", new { bone = "Lower", heading_limits = new[] { -150.0, 0 } });
+        recipe.Step("The camera in front, looking at the arm.", "set_transform", new { item = "Camera", frame = 1, position = V(1, 0.5, -4.5), key = false });
+        recipe.Step(null, "look_at", new { item = "Camera", point = V(1, 0.4, 0), frame = 1, key = false });
+        recipe.Step($"Check the reach at frame {mid}: the Lower bone's ik.tip_to_goal should be close to 0.", "get_scene", new { frame = mid });
+        recipe.Step("See it through the camera, the bones drawn and a line from the hand to its goal.", "render_scene_view", new { view = "camera", frame = mid, width = w });
+        recipe.Step("Render the last frame.", "render_scene", new { frame = n, width = w, samples = 1 });
+        return recipe.Text("To hand the motion to a program without IK (glTF export), bake_ik {\"bone\": \"Lower\"} keys the bones at every frame and turns full-time IK off.");
+    }
+
     // ───────────────────────────── writing them ─────────────────────────────
 
     /// <summary>A recipe's text being built: what it makes, then numbered steps, each with its tool call.</summary>

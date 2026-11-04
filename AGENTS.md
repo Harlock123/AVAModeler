@@ -100,6 +100,12 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     and the built-in `builtin:sky` and `builtin:studio`. `Rendering/RayTracer.cs` does every effect: depth of field and
     motion blur in the pixel loop (one `Tracer` per moment across the shutter), ambient occlusion, environment
     lighting (only the hidden light is sampled, against the irradiance table) and soft lights where rays hit.
+  - `InverseKinematics.cs`: IK for bones (`Bone.IKGoal`, `FullTimeIK`, `IKAnchor`, `IKLocked`, `IKLimits` with
+    `IKLimit` records), the chain (`Chain`, `Reach`), what can be a goal (`GoalProblem`), the CCD solver (`Solve`,
+    in each bone's own heading, pitch and bank, from the keyed pose every frame) and `Bake`. `Motion.cs` is
+    `MotionSolver` (`Scene.Motion`): what moves items beyond their keys, remembered per frame until the scene's version
+    changes, safe across threads. `SceneItem.LocalMatrix` uses `MotionRotationAt` (keys, or the solved IK rotation);
+    `RotationAt` stays the keys' value, which keying, the panels and `look_at` use.
   - `SceneSnapshot.cs` (`Scene.Snapshot()`) puts a scene back as it was, items by reference (with every setting an
     edit can change, morphs' and displacements' included: extend it when you add one); `Scene.Copy` makes one
     that shares nothing that changes, to render on another thread; `Scene.Batch` raises `Changed` once for many edits.
@@ -233,6 +239,12 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   keep morph targets by reference, so a tool that changes a target puts a new mesh in (`add_morph` and `set_morph`
   copy the layer) and never edits one in place. Errors go
   back as `McpException`s whose messages say what to do instead.
+- **Motion beyond keys goes through `Scene.Motion`.** Anything that moves an item other than its own keys (full-time
+  IK) is worked out by `MotionSolver` and reached through `SceneItem.LocalMatrix`, so views, the ray tracer,
+  deformation, exports and the MCP census all see it; never write solved values into envelopes except as an explicit
+  bake. An item that refers to another (a bone's `IKGoal`) has the reference remapped in `Scene.Copy`, kept in
+  `SceneSnapshot`, written by index in `.avascene`, and cleared by `Scene.Remove` when that item goes; check what it
+  may refer to (`InverseKinematics.GoalProblem`) so it can't chase itself.
 - **Agents see the app's numbers.** MCP tools number layers 1 to 10, as the layer buttons and Lua macros do, and give
   every colour as [r, g, b] whole numbers from 0 to 255, as surfaces and the Layout panel do (`Json.Colour`,
   `Json.SceneColour` and `Json.ColourJson`). Convert at the MCP edge: inside, layers are indexed from 0 and Layout's

@@ -332,6 +332,7 @@ public sealed class LayoutWorkspace : DockPanel
                 active.IsCheckedChanged += (_, _) => Change("Bone Active", () => { bone.Active = active.IsChecked == true; Session.Scene.Notify(); });
                 _properties.Children.Add(active);
                 _properties.Children.Add(Look.MakeButton("Rest here", () => Change("Rest Here", () => { bone.RestFromPose(Session.Frame); Session.Scene.Notify(); }), "Make the current pose the rest pose"));
+                IKSettings(bone);
                 break;
             case ObjectItem obj:
                 _properties.Children.Add(new TextBlock { Text = obj.IsPlaceholder ? "(couldn't load: a placeholder)" : $"{obj.BaseMesh().Points.Count} points, {obj.BaseMesh().Polygons.Count} polygons", Foreground = Look.Text, FontSize = 11 });
@@ -344,6 +345,121 @@ public sealed class LayoutWorkspace : DockPanel
                 break;
         }
         _properties.Children.Add(Look.MakeButton("Remove item", () => Session.Remove(item)));
+    }
+
+    /// <summary>The IK goal's choices for a bone (the items it can reach for), shown after "(none)".</summary>
+    public IReadOnlyList<SceneItem> GoalChoices(Bone bone) =>
+        Session.Scene.Items.Where(i => InverseKinematics.GoalProblem(bone, i) == null).ToList();
+
+    /// <summary>
+    /// A bone's inverse kinematics, as LightWave 5's motion options had them: the goal its tip reaches for, Full-time
+    /// IK, the anchor that stops chains below it, and per channel a joint limit and a lock (keyed only); Key IK at this
+    /// frame and Bake IK over the scene's frames.
+    /// </summary>
+    private void IKSettings(Bone bone)
+    {
+        void Set(string label, Action change) => Change(label, () => { change(); Session.Scene.Notify(); });
+        _properties.Children.Add(new TextBlock { Text = "Inverse kinematics", FontWeight = FontWeight.Bold, Foreground = Look.Text, Margin = new Thickness(0, 8, 0, 0) });
+        var choices = GoalChoices(bone);
+        var goal = new ComboBox
+        {
+            Name = "IKGoal", ItemsSource = new[] { "(none)" }.Concat(choices.Select(i => $"{i.Kind}: {i.Name}")).ToList(),
+            SelectedIndex = bone.IKGoal == null ? 0 : Math.Max(0, choices.ToList().IndexOf(bone.IKGoal) + 1), HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 11,
+        };
+        ToolTip.SetTip(goal, "The item this bone's tip reaches for (a null, usually); the chain is this bone and its parent bones, up to an anchor");
+        goal.SelectionChanged += (_, _) =>
+        {
+            if (goal.SelectedIndex < 0) return;
+            var g = goal.SelectedIndex == 0 ? null : choices[goal.SelectedIndex - 1];
+            if (g == bone.IKGoal) return;
+            Set(g == null ? "Remove IK Goal" : "IK Goal", () => bone.IKGoal = g);
+            Dispatcher.UIThread.Post(ShowProperties);
+        };
+        _properties.Children.Add(Label("Goal"));
+        _properties.Children.Add(goal);
+        var fullTime = new CheckBox { Name = "FullTimeIK", Content = "Full-time IK", IsChecked = bone.FullTimeIK, Foreground = Look.Text };
+        ToolTip.SetTip(fullTime, "Follow the goal at every frame; off, the chain plays its keys (Key IK or Bake IK keys it)");
+        fullTime.IsCheckedChanged += (_, _) => Set("Full-time IK", () => bone.FullTimeIK = fullTime.IsChecked == true);
+        var anchor = new CheckBox { Name = "IKAnchor", Content = "Anchor (unaffected by IK below)", IsChecked = bone.IKAnchor, Foreground = Look.Text };
+        anchor.IsCheckedChanged += (_, _) => Set("IK Anchor", () => bone.IKAnchor = anchor.IsChecked == true);
+        _properties.Children.Add(fullTime);
+        _properties.Children.Add(anchor);
+        if (bone.IKGoal != null)
+        {
+            var chain = InverseKinematics.Chain(bone);
+            _properties.Children.Add(new TextBlock
+            {
+                Text = $"Chain: {string.Join(" → ", chain.Select(b => b.Name))} (reach {InverseKinematics.Reach(bone):0.###} m)",
+                TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 11,
+            });
+        }
+        else if (bone.IKEnd is { } end)
+            _properties.Children.Add(new TextBlock { Text = $"Turned by {end.Name}'s IK.", Foreground = Look.Text, FontSize = 11 });
+
+        // Per channel: a limit (min and max, degrees) and a lock (IK leaves it at its keys).
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("62,Auto,*,*,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto") };
+        void Cell(Control c, int row, int col) { Grid.SetRow(c, row); Grid.SetColumn(c, col); grid.Children.Add(c); }
+        Cell(new TextBlock { Text = "limit", FontSize = 10, Foreground = Look.Text }, 0, 1);
+        Cell(new TextBlock { Text = "min °", FontSize = 10, Foreground = Look.Text, Margin = new Thickness(3, 0) }, 0, 2);
+        Cell(new TextBlock { Text = "max °", FontSize = 10, Foreground = Look.Text, Margin = new Thickness(3, 0) }, 0, 3);
+        Cell(new TextBlock { Text = "lock", FontSize = 10, Foreground = Look.Text }, 0, 4);
+        string[] names = ["Heading", "Pitch", "Bank"];
+        for (int c = 0; c < 3; c++)
+        {
+            int channel = c;
+            var limit = bone.IKLimits[c];
+            var on = new CheckBox { Name = $"IKLimit{names[c]}", IsChecked = limit != null, MinWidth = 0, Padding = new Thickness(0) };
+            var min = new TextBox { Name = $"IKMin{names[c]}", Text = F(limit?.Min ?? -90), FontSize = 11, Margin = new Thickness(1, 0), IsEnabled = limit != null };
+            var max = new TextBox { Name = $"IKMax{names[c]}", Text = F(limit?.Max ?? 90), FontSize = 11, Margin = new Thickness(1, 0), IsEnabled = limit != null };
+            var locked = new CheckBox { Name = $"IKLock{names[c]}", IsChecked = (bone.IKLocked & (IKChannels)(1 << c)) != 0, MinWidth = 0, Padding = new Thickness(0) };
+            ToolTip.SetTip(on, $"Limit how far IK turns the {names[c].ToLowerInvariant()}");
+            ToolTip.SetTip(locked, $"IK leaves the {names[c].ToLowerInvariant()} at its keys");
+            void ApplyLimit()
+            {
+                IKLimit? l = null;
+                if (on.IsChecked == true)
+                {
+                    if (!double.TryParse(min.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var lo) ||
+                        !double.TryParse(max.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var hi)) return;
+                    try { l = new IKLimit(lo, hi).Checked(names[channel]); }
+                    catch (ArgumentException e) { Session.SetStatus(e.Message); return; }
+                }
+                if (bone.IKLimits[channel] == l) return;
+                Set($"IK {names[channel]} Limit", () => bone.IKLimits = bone.IKLimits.With(channel, l));
+            }
+            on.IsCheckedChanged += (_, _) => { min.IsEnabled = max.IsEnabled = on.IsChecked == true; ApplyLimit(); };
+            foreach (var box in new[] { min, max })
+            {
+                box.LostFocus += (_, _) => ApplyLimit();
+                box.KeyDown += (_, e) => { if (e.Key == Key.Enter) ApplyLimit(); };
+            }
+            locked.IsCheckedChanged += (_, _) =>
+            {
+                var flag = (IKChannels)(1 << channel);
+                Set($"IK {names[channel]} Lock", () => bone.IKLocked = locked.IsChecked == true ? bone.IKLocked | flag : bone.IKLocked & ~flag);
+            };
+            Cell(new TextBlock { Text = names[c], FontSize = 11, Foreground = Look.Text, VerticalAlignment = VerticalAlignment.Center }, c + 1, 0);
+            Cell(on, c + 1, 1);
+            Cell(min, c + 1, 2);
+            Cell(max, c + 1, 3);
+            Cell(locked, c + 1, 4);
+        }
+        _properties.Children.Add(grid);
+        if (bone.IKGoal != null)
+        {
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3 };
+            buttons.Children.Add(Look.MakeButton("Key IK here", () =>
+            {
+                try { Session.KeyIK(bone); ShowProperties(); }
+                catch (InvalidOperationException e) { Session.SetStatus(e.Message); }
+            }, "Key the chain's IK pose at this frame"));
+            buttons.Children.Add(Look.MakeButton("Bake IK", () =>
+            {
+                try { Session.BakeIK(bone, Session.Scene.FirstFrame, Session.Scene.LastFrame); ShowProperties(); }
+                catch (Exception e) when (e is InvalidOperationException or ArgumentException) { Session.SetStatus(e.Message); }
+            }, "Key the chain's IK pose at every frame of the scene, and turn full-time IK off"));
+            _properties.Children.Add(buttons);
+        }
     }
 
     /// <summary>The camera's depth of field (with Focus on an item) and motion blur.</summary>
@@ -486,6 +602,11 @@ public sealed class LayoutWorkspace : DockPanel
 
         Ctrl+Z (Edit › Undo) takes back the last change to the scene, an AI agent's included; Ctrl+Shift+Z or Ctrl+Y redoes
         it. A drag, a value typed and entered, or a key made is one step. The object's geometry has the Modeler's own undo.
+
+        A bone's settings have inverse kinematics: choose a Goal (a null, say) for the bone at the end of a chain and, with
+        Full-time IK, the chain turns at every frame so its tip reaches the goal. Limits and locks keep each bone's heading,
+        pitch and bank in bounds; an Anchor stops chains below it. Key IK here keys the pose at this frame; Bake IK keys every
+        frame and turns full-time IK off.
 
         The graph editor shows the chosen item's channels as curves; click a key to set its value, tension, continuity and
         bias (TCB, as classic LightWave), and what happens before the first key and after the last.

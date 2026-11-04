@@ -5,7 +5,7 @@ namespace AVAModeler.Scene;
 /// <summary>
 /// A scene as it was at one moment (<see cref="Scene.Snapshot"/>), to put back with <see cref="Restore"/>: its
 /// settings (the render effects' among them) and current camera, which items it held and in what order, and each item's name, parent, pivot,
-/// visibility, channels and own settings (a light's, a camera's, an object's, a bone's). Items are kept by reference,
+/// visibility, channels and own settings (a light's, a camera's, an object's, a bone's, its IK goal, flags and limits included). Items are kept by reference,
 /// so restoring brings back the very items that were removed since, takes away those added since, and leaves anything
 /// that holds an item (a selection) pointing at the right one. An object's morph targets and displacements are kept by
 /// reference too, with their settings: a morph's name, target and weight envelope, a displacement's shape, axes,
@@ -170,7 +170,12 @@ public sealed class SceneSnapshot
         private static Action Bone(Bone b)
         {
             var (position, rotation, length, strength, active) = (b.RestPosition, b.RestRotation, b.RestLength, b.Strength, b.Active);
-            return () => (b.RestPosition, b.RestRotation, b.RestLength, b.Strength, b.Active) = (position, rotation, length, strength, active);
+            var (goal, fullTime, anchor, locked, limits) = (b.IKGoal, b.FullTimeIK, b.IKAnchor, b.IKLocked, b.IKLimits);
+            return () =>
+            {
+                (b.RestPosition, b.RestRotation, b.RestLength, b.Strength, b.Active) = (position, rotation, length, strength, active);
+                (b.IKGoal, b.FullTimeIK, b.IKAnchor, b.IKLocked, b.IKLimits) = (goal, fullTime, anchor, locked, limits);
+            };
         }
 
         private static void Replace<T>(List<T> list, List<T> was)

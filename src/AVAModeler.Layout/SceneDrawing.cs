@@ -13,7 +13,8 @@ public static class SceneDrawing
 {
     /// <summary>
     /// The scene at a worked-out frame, as a view draws it: every visible object's deformed, placed mesh as a layer
-    /// (<paramref name="selected"/> boxed in yellow), and lines for lights, cameras, nulls and bones.
+    /// (<paramref name="selected"/> boxed in yellow), and lines for lights, cameras, nulls and bones (with a line from a
+    /// bone's tip to its IK goal).
     /// </summary>
     public static ViewScene Build(SceneFrame frame, IEnumerable<SceneItem> items, bool shaded, SceneItem? selected = null)
     {
@@ -41,9 +42,15 @@ public static class SceneDrawing
             if (item is ObjectItem || !frame.World.TryGetValue(item, out var m)) continue;
             uint color = item == selected ? Palette.Selected : Color(item);
             foreach (var (a, b) in Glyph(item)) scene.Overlay.Add(new OverlayLine(m.TransformPoint(a), m.TransformPoint(b), color));
+            // A bone reaching for an IK goal: a line from its tip to the goal.
+            if (item is Bone { IKGoal: { } goal } bone && frame.World.TryGetValue(goal, out var g))
+                scene.Overlay.Add(new OverlayLine(m.TransformPoint(new Vec3(0, 0, bone.RestLength)), g.TransformPoint(goal.Pivot), IKLink));
         }
         return scene;
     }
+
+    /// <summary>The colour of the line from a bone's tip to its IK goal.</summary>
+    public const uint IKLink = 0xFFFFC030;
 
     /// <summary>The colour an item's drawing has when it isn't chosen.</summary>
     public static uint Color(SceneItem item) => item switch

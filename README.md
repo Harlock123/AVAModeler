@@ -339,6 +339,16 @@ Modeler and Layout shows the change at once.
     [ffmpeg](https://ffmpeg.org) is on the PATH, it also joins the frames into an MP4 (H.264) and a looping GIF.
 - **Deformation**: bones bend objects, weighted by distance as classic LightWave's were. Skelegons in the Modeler
   turn into bones. Morph targets blend by envelope, and there is wave and ripple displacement.
+- **Inverse kinematics** (a bone's settings in the item panel), as LightWave 5 had it: give the bone at the end of a
+  chain a **goal** (a null, or any item that doesn't ride on the chain) and the chain (that bone and its parent bones,
+  up to one marked **Anchor**, LightWave's "unaffected by IK of descendants") turns so its tip reaches it. With
+  **Full-time IK** on, it follows the goal at every frame, in the views, renders, deformation and exports; off, the
+  bones play their keys, and **Key IK here** keys the chain's IK pose at the frame (move the goal, then key, as in
+  LightWave 5). Each bone can **limit** its heading, pitch and bank (minimum and maximum degrees) and **lock** any of
+  them (IK leaves it at its keys). **Bake IK** keys the solved rotations at every frame and turns full-time IK off. A
+  goal beyond reach leaves the chain stretched straight toward it. The view draws a line from the bone's tip to its
+  goal. The solver is cyclic coordinate descent in each bone's own heading, pitch and bank, starting every frame from
+  the keyed pose, so it gives the same answer every time.
 
 ![Layout](Images/AVAModeler-layout.png)
 
@@ -569,6 +579,7 @@ The Layout tools:
 | `add_morph`, `set_morph`, `remove_morph` | Morph targets: a copy of a Modeler layer with the object's points in the same order (a mismatch is refused, saying why), blended by a weight channel, `morph.<name>`. |
 | `add_displacement`, `set_displacement`, `remove_displacement` | Wave and ripple displacements: points move along an axis by a travelling sine wave, its amplitude a channel, `displacement.<number>.amplitude`. |
 | `skelegons_to_bones` | Layout's Skelegons → Bones: a bone for each 2-point polygon on a "Skelegon…" surface, chained where one's base is on another's tip. |
+| `set_ik`, `bake_ik` | Inverse kinematics: a bone's goal (its chain reaches for it), full-time IK, anchor, locked channels and heading, pitch and bank limits; and baking the chain's solved rotations into keys over a run of frames. `get_scene` shows each bone's chain, reach, `tip_to_goal` and `ik_rotation`. |
 | `set_transform`, `look_at` | Position, rotation and scale at a frame, as keys or as plain values (the rule is in the tool's description); turning anything to face a point or another item. |
 | `set_key`, `delete_key`, `set_end_behavior` | One key on one channel with tension, continuity, bias and the linear flag; removing keys; what a channel does before its first key and after its last. |
 | `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame; ambient occlusion (`ao`, samples, distance in metres, strength) and the environment (`environment`: a lat-long `.hdr`, `.png` or `.jpg` in the working folder, or `builtin:sky` or `builtin:studio`; intensity, heading, and `environment_lighting` with its samples). |
@@ -671,6 +682,7 @@ arguments such as a size, a colour or a frame count. The tests follow every one,
 | `rounded_box` | A box with every edge rounded by Chamfer and a panel sunk into its top by Inset, checked with `check_mesh`. |
 | `marble_table` | A table with a marble top and wooden legs on a checkerboard floor with a faint fractal-noise bump, all textured with `set_procedural` (no images), and rendered. |
 | `product_shot` | A glossy ball on a floor as a product shot: an environment (an HDR file or a built-in one) lighting it and seen in its reflections, ambient occlusion, a big area light's soft shadow, and depth of field focused on it with `focus_on`. |
+| `reaching_arm` | A two-bone arm whose hand follows a keyed, moving ball by full-time IK (the ball is the goal, the elbow's heading limited), checked with `get_scene`'s `tip_to_goal`. |
 
 ## Building and testing
 
@@ -813,6 +825,15 @@ Layout reuses them.
   a light's radius, the effects' sample counts, ambient occlusion and the environment have no place there and are
   kept only in `.avascene`. glTF export leaves them all out.
 
+- **Inverse kinematics** is for bones: objects, nulls, lights and cameras have no goals (LightWave's IK on any item,
+  goal strength and matching the goal's orientation aren't there). A chain has one goal, on its end bone; where two
+  chains share bones, the first in the scene turns them. The solver starts each frame from the keyed pose, so which
+  way an elbow bends comes from the keys (or rest pose): limit or lock a channel to keep it bending the right way.
+  Limits are applied to heading, pitch and bank as numbers, so close to a pitch of ±90° (where heading and bank turn
+  about the same axis) they can behave unexpectedly. In `.lws` files a bone's goal is written as `GoalItem` (LightWave
+  5's `GoalObject` is read too), with `FullTimeIK` and `HLimits`, `PLimits` and `BLimits`; the anchor and locked
+  channels have no place there and are kept only in `.avascene`. glTF export writes the bones' solved motion only as
+  it moves the items exported (bones themselves aren't exported); bake the IK first for programs that need keys.
 - **Layout's undo** covers the scene only: not the object's geometry (that's the Modeler's undo), the current frame or
   which item is chosen. A morph target's mesh is kept by reference, so to be undoable it is replaced rather than
   edited in place. The depth is a fixed 100 steps (the Undo Levels preference is the Modeler's).

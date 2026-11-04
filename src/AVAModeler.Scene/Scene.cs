@@ -48,6 +48,11 @@ public sealed class Scene
     public IEnumerable<CameraItem> Cameras => _items.OfType<CameraItem>();
     public IEnumerable<Bone> Bones => _items.OfType<Bone>();
 
+    private MotionSolver? _motion;
+
+    /// <summary>What moves items beyond their keys (full-time IK), worked out on demand and remembered until the scene changes.</summary>
+    public MotionSolver Motion => _motion ??= new MotionSolver(this);
+
     /// <summary>Goes up on every change, so views know to redraw.</summary>
     public int Version { get; private set; }
 
@@ -164,13 +169,16 @@ public sealed class Scene
             if (x is Bone b) b.Owner.DetachBone(b);
         }
         if (_camera != null && gone.Contains(_camera)) _camera = null;
+        // Nothing reaches for an item that has gone.
+        foreach (var b in Bones)
+            if (b.IKGoal != null && gone.Contains(b.IKGoal)) b.IKGoal = null;
         Notify();
     }
 
     /// <summary>
     /// A copy of the scene that shares nothing that can change with it, so it can be rendered on another thread while
     /// this one is edited: the settings, every item with its channels and settings, the parents and the current
-    /// camera. Each object's document is copied once by <paramref name="copyDocument"/> (shared, as it is, if that is
+    /// camera (IK goals pointing at the copies). Each object's document is copied once by <paramref name="copyDocument"/> (shared, as it is, if that is
     /// null); morph target meshes are shared, as nothing edits them in place.
     /// </summary>
     public Scene Copy(Func<Document, Document>? copyDocument = null)
@@ -232,6 +240,7 @@ public sealed class Scene
                     c = new Bone(b.Name, (ObjectItem)map[b.Owner])
                     {
                         RestPosition = b.RestPosition, RestRotation = b.RestRotation, RestLength = b.RestLength, Strength = b.Strength, Active = b.Active,
+                        FullTimeIK = b.FullTimeIK, IKAnchor = b.IKAnchor, IKLocked = b.IKLocked, IKLimits = b.IKLimits,
                     };
                     break;
                 default:
@@ -245,7 +254,10 @@ public sealed class Scene
             map[item] = c;
         }
         foreach (var item in _items)
+        {
             if (item.Parent is { } p) map[item].RestoreParent(map[p]);
+            if (item is Bone { IKGoal: { } goal } bone && map.TryGetValue(goal, out var g)) ((Bone)map[bone]).IKGoal = g;
+        }
         if (_camera != null && map.TryGetValue(_camera, out var current)) s._camera = (CameraItem)current;
         return s;
     }

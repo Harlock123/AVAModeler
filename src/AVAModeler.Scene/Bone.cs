@@ -19,6 +19,21 @@ public sealed class Bone : SceneItem
     public double Strength = 1;
     public bool Active = true;
 
+    /// <summary>
+    /// The item this bone's tip reaches for by inverse kinematics (LightWave's Goal Object): a null, usually. The chain
+    /// is this bone and its parent bones up to an <see cref="IKAnchor"/> (see <see cref="InverseKinematics"/>). Null:
+    /// no IK.
+    /// </summary>
+    public SceneItem? IKGoal;
+    /// <summary>LightWave's Full-time IK: the chain follows the goal at every frame (off: it plays its keys, and IK acts only when baked into keys).</summary>
+    public bool FullTimeIK = true;
+    /// <summary>LightWave's "Unaffected by IK of descendants": IK below this bone stops here, leaving it (and what it hangs from) as keyed.</summary>
+    public bool IKAnchor;
+    /// <summary>Channels IK leaves at their keyed values (this bone's own heading, pitch or bank, turned only by its keys).</summary>
+    public IKChannels IKLocked;
+    /// <summary>Joint limits: how far IK may turn each of this bone's channels (degrees).</summary>
+    public IKLimits IKLimits = new();
+
     public Bone(string name, ObjectItem owner) : base(name) => Owner = owner;
 
     /// <summary>The object the bone deforms.</summary>
@@ -45,7 +60,13 @@ public sealed class Bone : SceneItem
         return m;
     }
 
-    /// <summary>The animated pose in object coordinates.</summary>
+    /// <summary>
+    /// The bone whose goal turns this one by full-time IK at the moment (itself, or one further down its chain), or
+    /// null when its rotation is its keys'.
+    /// </summary>
+    public Bone? IKEnd => Scene?.Motion.IKEndOf(this);
+
+    /// <summary>The animated pose in object coordinates (IK included).</summary>
     public Mat4 PoseInObject(double frame)
     {
         var m = LocalMatrix(frame);

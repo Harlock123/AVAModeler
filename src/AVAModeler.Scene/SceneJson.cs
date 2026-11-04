@@ -133,6 +133,14 @@ public static class SceneJson
                     d.RestLength = b.RestLength;
                     d.Strength = b.Strength;
                     d.Active = b.Active;
+                    if (b.IKGoal != null && items.IndexOf(b.IKGoal) is var gi and >= 0)
+                    {
+                        d.IkGoal = gi;
+                        d.FullTimeIk = b.FullTimeIK;
+                    }
+                    d.IkAnchor = b.IKAnchor ? true : null;
+                    d.IkLocked = b.IKLocked == IKChannels.None ? null : b.IKLocked;
+                    d.IkLimits = b.IKLimits.Any ? b.IKLimits : null;
                     break;
                 case LightItem l:
                     d.LightType = l.Type;
@@ -226,6 +234,17 @@ public static class SceneJson
                 warnings.Add(e.Message);
             }
         }
+        for (int i = 0; i < dto.Items.Count; i++)
+        {
+            if (items[i] is not Bone bone || dto.Items[i].IkGoal is not int g) continue;
+            if (g < 0 || g >= items.Count || items[g] is not { } goal)
+            {
+                warnings.Add($"{bone.Name}'s IK goal isn't in the scene.");
+                continue;
+            }
+            if (InverseKinematics.GoalProblem(bone, goal) is { } problem) warnings.Add(problem);
+            else bone.IKGoal = goal;
+        }
         if (dto.CurrentCamera is int ci && ci >= 0 && ci < items.Count && items[ci] is CameraItem cam) scene.CurrentCamera = cam;
         return scene;
     }
@@ -300,7 +319,19 @@ public static class SceneJson
         RestLength = d.RestLength ?? 1,
         Strength = d.Strength ?? 1,
         Active = d.Active ?? true,
+        FullTimeIK = d.FullTimeIk ?? true,
+        IKAnchor = d.IkAnchor ?? false,
+        IKLocked = d.IkLocked ?? IKChannels.None,
+        IKLimits = Limits(d.IkLimits),
     };
+
+    /// <summary>Limits read from a file, any that make no sense (least above most) left off.</summary>
+    private static IKLimits Limits(IKLimits? l)
+    {
+        if (l == null) return new IKLimits();
+        static IKLimit? Ok(IKLimit? x) => x is { } v && double.IsFinite(v.Min) && double.IsFinite(v.Max) && v.Min <= v.Max ? v : null;
+        return new IKLimits(Ok(l.Heading), Ok(l.Pitch), Ok(l.Bank));
+    }
 
     private static Document? LoadDocument(DocumentDto d, Func<string, Document?>? load, string? baseDir, List<string> warnings)
     {
@@ -634,6 +665,11 @@ public static class SceneJson
         public double? RestLength { get; set; }
         public double? Strength { get; set; }
         public bool? Active { get; set; }
+        public int? IkGoal { get; set; }
+        public bool? FullTimeIk { get; set; }
+        public bool? IkAnchor { get; set; }
+        public IKChannels? IkLocked { get; set; }
+        public IKLimits? IkLimits { get; set; }
 
         public LightType? LightType { get; set; }
         public double[]? Color { get; set; }

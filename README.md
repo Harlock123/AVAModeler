@@ -201,7 +201,9 @@ phases 0 to 7 and Layout phases L1 to L6.
 
 - **AI Chat inside the app** (F4, or Macros › AI Chat): a panel on the right where you ask Claude for something
   ("make a chess pawn", "put it in a scene with a spotlight and render it") and watch it build with the same tools,
-  with no outside client. See [The AI Chat panel](#the-ai-chat-panel).
+  with no outside client. It can also run on a local or self-hosted model (Ollama, LM Studio, vLLM, llama.cpp, or a
+  company gateway) through an OpenAI-compatible API, so nothing need leave the machine. See
+  [The AI Chat panel](#the-ai-chat-panel).
 
 ![A table an AI agent built through MCP, live in the open window](Images/AVAModeler-mcp.png)
 
@@ -324,6 +326,57 @@ nothing listens anywhere and Macros › Allow AI Agents needn't be on).
   with a **Retry** button.
 - **Long jobs**: one request pauses every 60 tool calls. With **Auto-continue** ticked (beside the model; on unless
   you untick it, and remembered) Claude carries on by itself, saying so in the chat, up to 600 calls in all.
+- **Which model**: the line under the panel's title says what it's using ("Using Claude Opus 5.5 (Anthropic API)", or
+  "Using qwen3 on localhost:11434 (OpenAI-compatible, core tools)"). **Setup…** chooses the provider: Claude, or a
+  local or self-hosted model (below). The choice is kept in Preferences (Edit › Preferences has it too); changing
+  provider starts a new chat, since a conversation can't move between them.
+
+### A local or self-hosted model
+
+![A local model (qwen3 on Ollama) building a table from the chat](Images/AVAModeler-chat-local.png)
+
+The chat can also talk to any server that speaks the OpenAI Chat Completions API: [Ollama](https://ollama.com)
+(its `/v1`), LM Studio, vLLM, llama.cpp's `llama-server`, or a company's own gateway. The model gets the same MCP
+tools and the same system prompt, and builds in the open window the same way: the same model-agnostic tools, with the
+model running where the data lives. With a server on your own computer nothing leaves the machine, there's no API bill,
+and it works offline.
+
+- **Ollama**: install it, fetch a model that can call tools, and give it room for the tool definitions and system
+  prompt, which need more than Ollama's default context:
+
+  ```bash
+  ollama pull qwen3                  # or qwen3:14b, llama3.1, mistral-small, qwen2.5…
+  OLLAMA_CONTEXT_LENGTH=32768 ollama serve
+  ```
+
+  In the chat press **Setup…**, choose **OpenAI-compatible server**, leave the base URL at
+  `http://localhost:11434/v1`, and type the model's name (`qwen3`), or press **Refresh** to list the models the server
+  has and pick one.
+- **LM Studio**: start its server (Developer › Start Server), load a model, and use `http://localhost:1234/v1`.
+  llama.cpp's `llama-server --jinja` is at `http://localhost:8080/v1`; vLLM (started with tool calling on) at
+  `http://localhost:8000/v1`.
+- **A gateway**: put its base URL in and press **Key…** to enter its API key, if it asks for one. The key is kept like
+  the Anthropic key, in a file of its own (`openai-compatible-api-key` beside `preferences.json`, readable only by you
+  on Linux and macOS), sent only in the Authorization header to that server, and only ever shown masked. A server on
+  `localhost` needs no key.
+- **Core tools only** (on unless you untick it): small models choose much better among fewer tools, so the chat
+  offers them 23 of the 67 instead of all of them: `run_tool` (any Modeler tool by name, with `list_tools` and
+  `describe_tool`), `add_points` and `add_polygons`, a few selection commands, layers, undo, new and save, surfaces,
+  `get_document`, `check_mesh`, `render_view`, and the main scene tools (`get_scene`, `add_object`, `add_light`,
+  `set_transform`, `look_at`, `set_key`, `render_scene`). Untick it for a large model on a gateway.
+- **Model sees pictures** (off unless you tick it): tick it for a vision model (qwen2.5vl, gemma3, llama3.2-vision…)
+  and the pictures it renders go back to it as images, in a message after the tool's result. Otherwise the panel
+  still shows you the pictures, and the model is told one was made and to check its work with `get_document` and
+  `check_mesh` instead.
+- **What to expect**: a small local model handles simple jobs (a box, a table, a lathed vase) but is far less
+  reliable than Claude at long multi-step work: it may call a tool with wrong arguments (the error goes back to it, as
+  it would to Claude), lose track of what it built, or stop early. Bigger models (14B and up) do noticeably better.
+  The tool-call limit, Auto-continue, Stop, Retry and Ctrl+Z work the same way. Prompt caching is Anthropic's, so it
+  isn't used here.
+- **Errors**: a server that isn't running, a wrong base URL, a model that isn't downloaded (404), a model without tool
+  support, or a refused key each show as one plain line with **Retry**.
+- **Network**: the chat contacts only the base URL you set, for `…/chat/completions` and (when you press Refresh)
+  `…/models`. Nothing else, and no telemetry.
 
 ![Claude building and animating the carbon atom from the chat, in Layout](Images/AVAModeler-chat-layout.png)
 
@@ -520,7 +573,7 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 689 tests cover every layer:
+It needs the .NET 10 SDK. 718 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
@@ -532,8 +585,8 @@ It needs the .NET 10 SDK. 689 tests cover every layer:
 | Scene | 144 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
 | Layout | 32 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed); glTF scene export (the hierarchy, a camera and lights, a heading turning the same way, keyed motion sampled every frame, a .gltf with its .bin, and what it leaves out) |
 | Mcp | 81 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes; saving and opening .glb, .gltf (with and without a .bin) and .stl (binary and ASCII) through the handlers, a macro and a client, never over someone else's .bin, and export_scene; check_mesh (volumes in m³, inside-out and open meshes with their fixes, layers from 1, bad arguments) and an agent checking, selecting, fixing and checking again through a client; `select_edges`, `select_loop` and `select_ring` (and their mistakes), Loop Cut through `run_tool` as one undo step, and an agent bridging two boxes, rounding every edge and filling a hole through a client, checking each time |
-| Chat | 20 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap, and Auto-continue carrying on past it by itself, then stopping at its ceiling; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking |
-| UI | 66 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), Mesh Info (W, following the object, its Select button and Ctrl+Z, its Align button sparing a cavity, the menu and tabs), the new tools' buttons, keys (Alt+L, Alt+R, I, Ctrl+B) and menu items, a Loop Cut dragged with no edge saying why and changing nothing, Mesh Info's Fill Hole button, and the screenshots (one of the still life opened again from a .glb, one of Mesh Info, one of the edge tools) |
+| Chat | 45 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap, and Auto-continue carrying on past it by itself, then stopping at its ceiling; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking. The same against a fake OpenAI-compatible server (no real server): streamed text, tool calls whose names and arguments arrive in pieces put together and run, several calls in one turn, the request's tools, tool messages and image parts checked as JSON, pictures as a note for a model that can't see them, the core tool set, 401, 404 (model not found), 400 (no tool support, no images), 429, 500 and a refused connection as one line with Retry, a gateway's key only in its header and masked even when echoed back, Stop mid-reply, the tool limit and Auto-continue, arguments that aren't JSON, an answer that isn't streamed, a reply cut short, a missing model or bad base URL, switching provider, model lists in OpenAI's and Ollama's shapes, and the gateway key's own owner-only file |
+| UI | 70 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy; switching to a fake local server in Setup…, Refresh listing its models, building with it and switching back; Preferences reaching the panel; a server that isn't running), the chat settings' preferences round trip, Mesh Info (W, following the object, its Select button and Ctrl+Z, its Align button sparing a cavity, the menu and tabs), the new tools' buttons, keys (Alt+L, Alt+R, I, Ctrl+B) and menu items, a Loop Cut dragged with no edge saying why and changing nothing, Mesh Info's Fill Hole button, and the screenshots (one of the still life opened again from a .glb, one of Mesh Info, one of the edge tools, one of the chat on a local model) |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -558,7 +611,7 @@ Layout reuses them.
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items, timeline, graph editor, render and animation windows |
 | `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
-| `AVAModeler.Chat` | The AI Chat's conversation and agent loop on the Anthropic C# SDK (streaming, prompt caching), the bridge to the MCP server's tools through an in-process MCP client, and the API key's store. No UI |
+| `AVAModeler.Chat` | The AI Chat's conversation and agent loop, with two providers: Claude on the Anthropic C# SDK (streaming, prompt caching), and any OpenAI-compatible Chat Completions server (HttpClient and System.Text.Json, streamed tool calls); the bridge to the MCP server's tools through an in-process MCP client, and the API keys' stores. No UI |
 | `AVAModeler` | The application: one window hosting both workspaces, and the AI Chat panel |
 
 ## Known limits
@@ -636,12 +689,19 @@ Layout reuses them.
   image paths may point outside the working folder (they're only read). The live pipe is tested on Linux; Windows and
   macOS use the same .NET pipe code but haven't been tried.
 
-- **AI Chat**: it needs your own Anthropic API key and internet access, and your API account pays for it. One
+- **AI Chat**: with Claude it needs your own Anthropic API key and internet access, and your API account pays for it. One
   request pauses every 60 tool calls; with Auto-continue ticked (beside the model, on unless you untick it) it
   carries on by itself, up to 600 calls in all, and without it you say "continue". Stop ends a request at any time. The conversation isn't saved when the app closes, and
   it isn't trimmed: a very long chat grows slower and dearer, so start a New Chat for a new job. Claude's files go in
   your Documents folder (the chat's working folder). It's tested against a fake API only; the real API's behaviour
   (and its model names) can change.
+- **AI Chat on a local or self-hosted model**: how well it works depends on the model. Small local models use tools
+  far less reliably than Claude (wrong arguments, losing track, stopping early) and are best at simple jobs; give
+  Ollama a long enough context (`OLLAMA_CONTEXT_LENGTH`), or the tool definitions crowd out the conversation. Pictures
+  reach the model only if it's a vision model and the box is ticked; servers differ in what they accept (some take no
+  images, or no tool calls while streaming). It's tested against a fake server only, built to the OpenAI Chat
+  Completions format; real servers' quirks (Ollama, LM Studio, vLLM, llama.cpp) haven't all been tried. Changing
+  provider starts a new chat.
 
 ## About and licence
 

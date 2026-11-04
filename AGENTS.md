@@ -17,7 +17,7 @@ dotnet test AVAModeler.slnx                       # every test runs headless: no
 dotnet run --project src/AVAModeler               # run it; an object file as the argument opens in the Modeler
 dotnet src/AVAModeler/bin/Debug/net10.0/AVAModeler.dll --mcp   # the MCP server on stdio, no window (not via dotnet run)
 dotnet test tests/AVAModeler.Mcp.Tests            # the MCP server: handlers, whole agent sessions, live mode, processes
-dotnet test tests/AVAModeler.Chat.Tests           # the AI chat's agent loop, against a fake Anthropic API
+dotnet test tests/AVAModeler.Chat.Tests           # the AI chat's agent loop, against a fake Anthropic API and a fake OpenAI-compatible server
 AVAMODELER_SHOTS=$PWD/Images dotnet test tests/AVAModeler.UI.Tests --filter Screenshot   # refresh the README's pictures
 python3 samples/images/make_textures.py           # redraws the sample texture images
 ```
@@ -96,14 +96,29 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   - `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
     proxy to that pipe), `McpCommandLine.cs` (`--mcp`), `Workspace.cs` (the working folder's file rules),
     `Pictures.cs` (render_view and render), `CheckReport.cs` (check_mesh's JSON, with `how_to_fix`), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
-- `src/AVAModeler.Chat/`: the AI Chat panel's logic, no UI, on the official Anthropic C# SDK (NuGet `Anthropic`).
-  - `ChatSession.cs` is the conversation and the agent loop: a streamed Messages API request with the MCP server's
-    tools, each `tool_use` run through the bridge, results back (pictures as image blocks, failures as `is_error`),
-    until Claude stops, 60 tool calls (carrying on by itself `AutoContinues` times; the panel's Auto-continue box sets 9 and is remembered in Preferences), or Stop. Cache breakpoints sit on the system prompt, the last tool and the
-    conversation. `ChatEntries.cs` is what the panel shows; `ChatErrors.cs` turns failures into one plain line.
+- `src/AVAModeler.Chat/`: the AI Chat panel's logic, no UI, with two providers (`ChatProvider`): Claude on the
+  official Anthropic C# SDK (NuGet `Anthropic`), and any OpenAI-compatible Chat Completions server (Ollama's `/v1`, LM
+  Studio, vLLM, llama.cpp, a gateway) on plain `HttpClient` and System.Text.Json (no OpenAI SDK).
+  - `ChatSession.cs` is the agent loop, shared by both providers: a streamed request with the MCP server's tools,
+    each tool call run through the bridge, results back, until the model stops, 60 tool calls (carrying on by itself
+    `AutoContinues` times; the panel's Auto-continue box sets 9 and is remembered in Preferences), or Stop. Changing
+    `Provider` starts a new chat. `ChatEntries.cs` is what the panel shows; `ChatErrors.cs` turns failures into one
+    plain line.
+  - `ChatBackend.cs` is `IChatBackend`, one provider's conversation in its API's shape and one streamed request.
+    `AnthropicBackend.cs` is Claude's (content blocks, pictures as image blocks in each `tool_result`, failures as
+    `is_error`, cache breakpoints on the system prompt, the last tool and the conversation: Anthropic only).
+    `OpenAICompatibleBackend.cs` is the other: tools as `function` definitions from the MCP schemas,
+    `tool_choice: "auto"`, `delta.content` and `delta.tool_calls` fragments put together by index, results as
+    `role: "tool"` messages, pictures as `image_url` data-URL parts in a user message after them (or a line of text
+    when `ModelSeesPictures` is off), arguments that aren't JSON sent back as an error without running, and
+    `ChatTools.Core` (in `ChatModels.cs`) when `CoreToolsOnly` is on. `OpenAICompatibleClient.cs` is its HTTP:
+    `POST {base}/chat/completions` as server-sent events (or one whole JSON answer), `GET {base}/models`, and every
+    failure as an `OpenAICompatibleException` already worded for the person (server named by host and port only).
   - `ToolBridge.cs`: `McpToolBridge` is an in-process MCP client talking to `ModelerServer` over in-memory pipes, built
     over the app's `LiveHost`, so the chat and outside agents share one code path. `ChatModels.cs` has the model ids
-    and `ChatPrompt` (the server's instructions plus a few in-app lines). `ApiKeyStore.cs` is the key.
+    and `ChatPrompt` (the server's instructions plus a few in-app lines, and notes for the core tool set and for a model
+    that can't see pictures), used by both providers. `ApiKeyStore.cs` is the keys: `ForApp` (Anthropic's) and
+    `ForServer` (an OpenAI-compatible gateway's, its own file and no environment variable).
 - `src/AVAModeler.Modeler.UI/` and `src/AVAModeler.Layout.UI/`: the two workspaces. `Session.cs` holds
   `Preferences`. The Layout workspace shows a `LayoutSession` (from `AVAModeler.Layout`) and keeps no state of its own.
   - `AnimationWindow.cs` is Render › Render Animation (F10), a thin window over `AnimationRender` and `MovieEncoder`.
@@ -112,8 +127,10 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - `src/AVAModeler/`: the application, one window hosting both workspaces. `Program.cs` sends `--mcp` to the MCP
   server before Avalonia starts; `LiveAgents.cs` is the app's side of live mode (it hands the live host both the
   Modeler's session and the window's `LayoutSession`, which exists before Layout is first shown, and gives the chat
-  its own `LiveHost`). `ChatPanel.cs` is the AI Chat panel's controls; `MainWindow` docks it on the right of whichever
-  workspace is on screen (F4).
+  its own `LiveHost`). `ChatPanel.cs` is the AI Chat panel's controls (the line saying which provider and model it
+  uses, Setup… with the provider, base URL, model and Refresh, Core tools only and Model sees pictures, all kept in
+  `Preferences.Chat*`; Edit › Preferences has them too and `ModelerWorkspace.PreferencesApplied` hands them back);
+  `MainWindow` docks it on the right of whichever workspace is on screen (F4).
 - `samples/`: `StarPlugin` (an example plugin), Lua macro scripts, texture images, and `mcp/carbon_atom.py` (a
   scene built entirely through the MCP server, with its saved object, scene and render).
 - `tests/`: one xUnit v3 project per source project. `AVAModeler.UI.Tests` uses `Avalonia.Headless.XUnit` with
@@ -176,12 +193,17 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - **The live listener is local and per user.** It listens on a named pipe opened with `PipeOptions.CurrentUserOnly`
   (a Unix socket on Linux and macOS), so no token is needed; it is off until the person allows agents. Don't add a
   network listener. Paths agents give stay inside the working folder (`Workspace`), and nothing is deleted.
-- **The chat never calls the real API in tests, and never shows the key.** `AVAModeler.Chat.Tests` and the UI tests
-  give the SDK a fake `HttpMessageHandler` (`FakeClaude`, scripted server-sent events) and a made-up key; a window made
-  for tests (`loadPlugins: false`) reads no environment variable and no key file. The key comes from
-  `ANTHROPIC_API_KEY`, else the `anthropic-api-key` file beside `preferences.json` (written owner-only, chmod 600, on
-  Linux and macOS). Never log it, put it in an exception, a status line or a chat line, or show more than
-  `ApiKeyStore.Mask`. The chat's tools are the MCP server's, unchanged: add a tool to `ModelerTools`/`LayoutTools` and
+- **The chat never calls the real API or a real model server in tests, and never shows a key.**
+  `AVAModeler.Chat.Tests` and the UI tests give the SDK a fake `HttpMessageHandler` (`FakeClaude`, scripted
+  server-sent events) and a made-up key, and the OpenAI-compatible client another (`FakeModelServer`, scripted chunks,
+  errors and refused connections; the panel's `ServerFactory` takes it); a window made for tests
+  (`loadPlugins: false`) reads no environment variable and no key file. The Anthropic key comes from
+  `ANTHROPIC_API_KEY`, else the `anthropic-api-key` file beside `preferences.json`; a gateway's key only from the
+  `openai-compatible-api-key` file beside it (both written owner-only, chmod 600, on Linux and macOS; never in
+  `preferences.json`). Never log either, put it in an exception, a status line or a chat line, or show more than
+  `ApiKeyStore.Mask`: `OpenAICompatibleClient` masks any copy a server echoes back, and sends the key only in the
+  Authorization header. The OpenAI-compatible provider contacts only the base URL the person set (`…/chat/completions`,
+  and `…/models` on Refresh): no other network call, no telemetry. The chat's tools are the MCP server's, unchanged: add a tool to `ModelerTools`/`LayoutTools` and
   the chat has it too (a test checks the lists match).
 - **Preferences live in the app-data folder.** `preferences.json`, `plugins/` and `autosave/` sit under
   `AVAModeler` in `SpecialFolder.ApplicationData`. Tests use temporary folders and never touch them.

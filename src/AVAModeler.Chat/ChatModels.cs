@@ -1,4 +1,5 @@
 using AVAModeler.Mcp;
+using McpTool = ModelContextProtocol.Protocol.Tool;
 
 namespace AVAModeler.Chat;
 
@@ -32,4 +33,30 @@ public static class ChatPrompt
 
     /// <summary>The system prompt: the same instructions every MCP agent gets, then <see cref="InApp"/>.</summary>
     public static string System => ModelerServer.Instructions.TrimEnd() + "\n\n" + InApp.TrimEnd();
+
+    /// <summary>Added for a model given only <see cref="ChatTools.Core"/>.</summary>
+    public const string CoreToolsNote =
+        "In this chat you have a core set of the server's tools, not all of them: the instructions above may name tools you don't have, so work with the ones you're given. run_tool runs any Modeler tool by name (list_tools and describe_tool say what there is).";
+
+    /// <summary>Added for a model that can't see pictures (its tools' pictures become a line of text).</summary>
+    public const string NoPicturesNote =
+        "You can't see pictures in this chat: render_view and render still show the person what you made, but check your work yourself with get_document and check_mesh (and get_scene in Layout).";
+}
+
+/// <summary>Which of the MCP server's tools the chat offers a model.</summary>
+public static class ChatTools
+{
+    /// <summary>
+    /// The core set for small local models, which choose better among fewer tools: modeling through run_tool and raw
+    /// points and polygons, surfaces, a look and a check, files, and the main scene tools.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Core =
+    [
+        "list_tools", "describe_tool", "run_tool", "add_points", "add_polygons", "select_all", "select_none", "select_polygons",
+        "set_layers", "undo", "new", "save", "set_surface", "get_document", "check_mesh", "render_view",
+        "get_scene", "add_object", "add_light", "set_transform", "look_at", "set_key", "render_scene",
+    ];
+
+    /// <summary>The core tools among <paramref name="tools"/>, in the server's order.</summary>
+    public static IReadOnlyList<McpTool> CoreOf(IReadOnlyList<McpTool> tools) => tools.Where(t => Core.Contains(t.Name)).ToList();
 }

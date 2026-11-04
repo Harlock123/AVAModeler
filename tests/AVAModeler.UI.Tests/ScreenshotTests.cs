@@ -413,6 +413,33 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void The_AI_chat_on_a_local_model()
+    {
+        // A stand-in for Ollama (no real server is called) plays qwen3 building a table with a few tool calls, the four
+        // legs in one turn; the panel's Setup shows the OpenAI-compatible server it's set to.
+        static AVAModeler.Chat.Tests.FakeModelServer.Part Box(string id, double[] size, double[] center) =>
+            AVAModeler.Chat.Tests.FakeModelServer.Call(id, "run_tool", new { name = "Box", @params = new { Size = size, Center = center, Surface = "Wood" } });
+        var server = new AVAModeler.Chat.Tests.FakeModelServer()
+            .Reply(AVAModeler.Chat.Tests.FakeModelServer.Say("I'll make the table top first, then the four legs."), Box("call_1", [1.2, 0.06, 0.8], [0, 0.75, 0]))
+            .Reply(Box("call_2", [0.06, 0.72, 0.06], [-0.55, 0.36, -0.35]), Box("call_3", [0.06, 0.72, 0.06], [0.55, 0.36, -0.35]),
+                Box("call_4", [0.06, 0.72, 0.06], [-0.55, 0.36, 0.35]), Box("call_5", [0.06, 0.72, 0.06], [0.55, 0.36, 0.35]))
+            .Reply(AVAModeler.Chat.Tests.FakeModelServer.Call("call_6", "set_surface", new { name = "Wood", color = new[] { 168, 112, 62 }, specular = 0.2 }),
+                AVAModeler.Chat.Tests.FakeModelServer.Call("call_7", "check_mesh", new { }))
+            .Reply(AVAModeler.Chat.Tests.FakeModelServer.Say("Done: a 1.2 m by 0.8 m table, 0.78 m high, with a top and four legs in a warm wood colour. check_mesh finds five closed boxes and no problems."));
+        var w = ChatPanelTests.WithServer(server, 1400, 860);
+        ChatPanelTests.Type(w, "make a simple wooden table");
+        ChatPanelTests.Finish(w.Chat.Running);
+        Assert.Equal(0, server.Left);
+        Assert.Equal(40, w.Session.Document.Current.Mesh.Points.Count);
+        Assert.DoesNotContain(w.Chat.Session.Entries.OfType<AVAModeler.Chat.ToolEntry>(), t => t.IsError);
+        Assert.Equal("Using qwen3 on localhost:11434 (OpenAI-compatible, core tools)", w.Chat.UsingText);
+        w.Session.Document.Selection.Clear();
+        Ui.Fit(w);
+        Persp(w, 35, 22, 1.1);
+        Shot(w, "chat-local");
+    }
+
+    [AvaloniaFact]
     public void The_AI_chat_orchestrating_a_scene_in_Layout()
     {
         // The carbon atom sample's own calls (samples/mcp/carbon_atom.py), sent by a fake Claude (no real API call) a

@@ -22,6 +22,16 @@ public sealed class Preferences
     public bool NumericCollapsed { get; set; }
     /// <summary>Whether the AI Chat carries on by itself after its tool-call limit, instead of waiting for "continue".</summary>
     public bool ChatAutoContinue { get; set; } = true;
+    /// <summary>Where the AI Chat's model runs: "Anthropic" (Claude) or "OpenAICompatible" (a local or self-hosted server).</summary>
+    public string ChatProvider { get; set; } = "Anthropic";
+    /// <summary>The OpenAI-compatible server's base URL (Ollama's on this computer unless changed).</summary>
+    public string ChatServerUrl { get; set; } = "http://localhost:11434/v1";
+    /// <summary>The model on the OpenAI-compatible server, by the server's name for it (e.g. "qwen3").</summary>
+    public string ChatServerModel { get; set; } = "";
+    /// <summary>Offer an OpenAI-compatible model only the core tools (small local models choose better among fewer).</summary>
+    public bool ChatCoreTools { get; set; } = true;
+    /// <summary>Send an OpenAI-compatible model the pictures it renders (for vision models only).</summary>
+    public bool ChatModelSeesPictures { get; set; }
     /// <summary>
     /// Whether AI agents may drive the open document through MCP (<c>AVAModeler --mcp --attach</c>), over a local
     /// pipe only this user can open. Off unless turned on.

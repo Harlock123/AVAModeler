@@ -5,13 +5,16 @@ namespace AVAModeler.Chat;
 
 /// <summary>
 /// What went wrong with a request, as one plain line for the chat. The API key never appears: the lines are written
-/// here, and only the API's own short error message is quoted (it never holds the key).
+/// here (or, for an OpenAI-compatible server, by <see cref="OpenAICompatibleClient"/>), and only the server's own short
+/// error message is quoted, with any copy of the key masked.
 /// </summary>
 public static class ChatErrors
 {
     /// <summary>The line to show. Anything at all is described, so a failed request never takes the app down.</summary>
     public static string Describe(Exception e) => e switch
     {
+        // An OpenAI-compatible server's failures are put in words where they happen (they name the server, not a key).
+        OpenAICompatibleException local => local.Message,
         AnthropicUnauthorizedException => "The Anthropic API didn't accept the key (401). Check it with the Key… button, or the ANTHROPIC_API_KEY environment variable, then Retry.",
         AnthropicForbiddenException => "The Anthropic API refused the request (403): the key may not have access to this model. Try another model, or check the account, then Retry.",
         AnthropicRateLimitException => "The Anthropic API is limiting requests (429): too many, or too many tokens, for now. Wait a minute, then Retry.",

@@ -290,13 +290,29 @@ public class SessionTests
         var path = Path.Combine(Path.GetTempPath(), "avamodeler-prefs-" + Guid.NewGuid().ToString("N") + ".json");
         try
         {
-            var p = new Preferences { Renderer = "OpenGL", UndoLevels = 42 };
+            var fresh = new Preferences();
+            Assert.Equal("Anthropic", fresh.ChatProvider);
+            Assert.Equal("http://localhost:11434/v1", fresh.ChatServerUrl);
+            Assert.True(fresh.ChatCoreTools);
+            Assert.False(fresh.ChatModelSeesPictures);
+            var p = new Preferences
+            {
+                Renderer = "OpenGL", UndoLevels = 42, ChatProvider = "OpenAICompatible", ChatServerUrl = "http://localhost:1234/v1",
+                ChatServerModel = "qwen3:14b", ChatCoreTools = false, ChatModelSeesPictures = true,
+            };
             for (int i = 0; i < 12; i++) p.AddRecent($"/tmp/{i}.lwo");
             p.AddRecent("/tmp/3.lwo");
             p.Save(path);
             var q = Preferences.Load(path);
             Assert.Equal("OpenGL", q.Renderer);
             Assert.Equal(42, q.UndoLevels);
+            Assert.Equal("OpenAICompatible", q.ChatProvider);
+            Assert.Equal("http://localhost:1234/v1", q.ChatServerUrl);
+            Assert.Equal("qwen3:14b", q.ChatServerModel);
+            Assert.False(q.ChatCoreTools);
+            Assert.True(q.ChatModelSeesPictures);
+            // No key is ever written into the preferences.
+            Assert.DoesNotContain("ApiKey", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
             Assert.Equal(10, q.RecentFiles.Count);
             Assert.Equal("/tmp/3.lwo", q.RecentFiles[0]);
             File.WriteAllText(path, "{ not json");

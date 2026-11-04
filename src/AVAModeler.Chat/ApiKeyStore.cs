@@ -15,6 +15,12 @@ public sealed class ApiKeyStore(string? path, Func<string?>? environment)
     /// <summary>The key file's name, beside <c>preferences.json</c> in the app-data folder.</summary>
     public const string FileName = "anthropic-api-key";
 
+    /// <summary>The file a key for an OpenAI-compatible server (a gateway) is kept in, beside the Anthropic key's.</summary>
+    public const string ServerFileName = "openai-compatible-api-key";
+
+    /// <summary>The store for an OpenAI-compatible server's key: only its file (no environment variable is read).</summary>
+    public static ApiKeyStore ForServer(string folder) => new(System.IO.Path.Combine(folder, ServerFileName), null);
+
     /// <summary>The app's store: the environment variable, then the file in <paramref name="folder"/>.</summary>
     public static ApiKeyStore ForApp(string folder) =>
         new(System.IO.Path.Combine(folder, FileName), () => System.Environment.GetEnvironmentVariable(EnvironmentVariable));

@@ -248,6 +248,16 @@ public sealed class PreferencesWindow : Window
             Content = "Allow AI agents to drive AVA Modeler (MCP, from this user's programs only)", IsChecked = p.AllowAgents, Foreground = Look.Text,
         };
         ToolTip.SetTip(agents, "An agent configured with \"AVAModeler --mcp --attach\" can then build in the open object: you see its work in the views, and Ctrl+Z undoes it.");
+        // The AI Chat's model: Claude, or a local or self-hosted server that speaks the OpenAI Chat Completions API.
+        var chatProvider = new ComboBox { ItemsSource = ChatProviders.Select(c => c.Label).ToList(), SelectedIndex = Math.Max(0, ChatProviders.FindIndex(c => c.Id == p.ChatProvider)) };
+        var chatUrl = new TextBox { Text = p.ChatServerUrl, PlaceholderText = "http://localhost:11434/v1" };
+        var chatModel = new TextBox { Text = p.ChatServerModel, PlaceholderText = "qwen3" };
+        var chatCore = new CheckBox { Content = "Core tools only (best for small local models)", IsChecked = p.ChatCoreTools, Foreground = Look.Text };
+        var chatPictures = new CheckBox { Content = "Model sees pictures (a vision model)", IsChecked = p.ChatModelSeesPictures, Foreground = Look.Text };
+        var chatServer = new StackPanel { Spacing = 4, Children = { Label("Server base URL (OpenAI-compatible)"), chatUrl, Label("Model on the server"), chatModel, chatCore, chatPictures } };
+        void ShowServer() => chatServer.IsVisible = chatProvider.SelectedIndex == 1;
+        chatProvider.SelectionChanged += (_, _) => ShowServer();
+        ShowServer();
         var keys = new StackPanel { Spacing = 2 };
         var keyBoxes = new Dictionary<string, TextBox>();
         foreach (var (command, key) in session.Keymap.Bindings.OrderBy(kv => kv.Key))
@@ -268,6 +278,11 @@ public sealed class PreferencesWindow : Window
             if (int.TryParse(level.SelectedItem as string, out int l)) p.SubdivisionLevel = l;
             if (Enum.TryParse<DisplayStyle>(style.SelectedItem as string, out var st)) p.PerspectiveStyle = st;
             p.AllowAgents = agents.IsChecked == true;
+            p.ChatProvider = ChatProviders[Math.Max(0, chatProvider.SelectedIndex)].Id;
+            p.ChatServerUrl = string.IsNullOrWhiteSpace(chatUrl.Text) ? new Preferences().ChatServerUrl : chatUrl.Text.Trim();
+            p.ChatServerModel = chatModel.Text?.Trim() ?? "";
+            p.ChatCoreTools = chatCore.IsChecked == true;
+            p.ChatModelSeesPictures = chatPictures.IsChecked == true;
             p.Keys = keyBoxes.Where(kv => kv.Value.Text != Keymap.Defaults.GetValueOrDefault(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value.Text ?? "");
             p.Save();
@@ -292,6 +307,7 @@ public sealed class PreferencesWindow : Window
                             Label("Viewports"), renderer, Label("Perspective view"), style, Label("Undo levels"), undo,
                             Label("Auto-save every (minutes, 0 for never)"), autosave, Label("MetaNURBS smoothing level"), level,
                             Label("AI agents"), agents,
+                            Label("AI Chat model"), chatProvider, chatServer,
                             Label("Keys (e.g. T, Shift+X, Ctrl+Z)"), keys,
                         },
                     },
@@ -301,6 +317,13 @@ public sealed class PreferencesWindow : Window
     }
 
     private static TextBlock Label(string text) => new() { Text = text, Foreground = Look.Text, FontSize = 12, FontWeight = FontWeight.Bold, Margin = new Thickness(0, 8, 0, 2) };
+
+    /// <summary>The AI Chat's providers, as <see cref="Preferences.ChatProvider"/> keeps them and as they're shown.</summary>
+    public static readonly List<(string Id, string Label)> ChatProviders =
+    [
+        ("Anthropic", "Claude (Anthropic API)"),
+        ("OpenAICompatible", "OpenAI-compatible server (local or self-hosted)"),
+    ];
 
     private static Control Dock(Control c, Avalonia.Controls.Dock d)
     {

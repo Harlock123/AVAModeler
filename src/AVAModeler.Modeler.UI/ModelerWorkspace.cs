@@ -246,8 +246,12 @@ public sealed class ModelerWorkspace : DockPanel
         Tabs.ShowTab("Objects");
         _agents.IsChecked = Session.Preferences.AllowAgents;
         AgentsChanged?.Invoke();
+        PreferencesApplied?.Invoke();
         Session.Document.Notify();
     }
+
+    /// <summary>Raised when Edit › Preferences has saved new settings (the chat panel takes up its model settings).</summary>
+    public event Action? PreferencesApplied;
 
     /// <summary>Turns AI agents' access (MCP) on or off (kept with the preferences when the app closes).</summary>
     private void ToggleAgents()

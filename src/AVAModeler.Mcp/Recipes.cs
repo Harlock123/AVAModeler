@@ -162,6 +162,34 @@ public static class Recipes
         return recipe.Text("For softer edges raise segments; Inset on the side faces (Mode Individual) makes more panels the same way.");
     }
 
+    [McpServerPrompt(Name = "marble_table", Title = "Marble table on a checkerboard floor")]
+    [Description("Models a small table with a marble top and wooden legs standing on a checkerboard floor, all textured with LightWave 5 procedural textures (set_procedural: no image files or UV maps), with a rough bump on the floor, and renders it.")]
+    public static string MarbleTable(
+        [Description("The marble's vein colour as r, g, b from 0 to 255, or a name (default slate [70, 75, 90]).")] string? veins = null,
+        [Description("The floor's checks' width in metres (default 0.5).")] string? check = null)
+    {
+        var v = Colour(veins, [70, 75, 90]);
+        double size = Number(check, 0.5, "check", 0.05, 10);
+        const double w = 1.0, d = 0.7, h = 0.72, top = 0.05, leg = 0.06;
+        double lx = w / 2 - 0.08, lz = d / 2 - 0.08;
+        var recipe = new Recipe($"Model a {F(w)} × {F(d)} m table, {F(h)} m tall, with a marble top and wooden legs, on a checkerboard floor of {F(size)} m checks, textured with procedurals (patterns worked out in 3D, so no images or UV maps are needed), and render it.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("The floor: a thin slab whose top is at y = 0.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0, -0.01, 0), ["Size"] = V(2.4, 0.02, 2.4), ["Surface"] = "Floor" } });
+        recipe.Step("The top.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0, h - top / 2, 0), ["Size"] = V(w, top, d), ["Surface"] = "Marble" } });
+        foreach (var (x, z) in new[] { (lx, lz), (-lx, lz), (lx, -lz), (-lx, -lz) })
+            recipe.Step(x == lx && z == lz ? "Four square legs under its corners." : null, "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(x, (h - top) / 2, z), ["Size"] = V(leg, h - top, leg), ["Surface"] = "Legs" } });
+        recipe.Step("The surfaces' own colours: white marble, warm wood, a cream floor.", "set_surface", new { name = "Marble", color = new[] { 235, 232, 225 }, specular = 0.6, glossiness = 256, reflection = 0.08, assign = false });
+        recipe.Step(null, "set_surface", new { name = "Legs", color = new[] { 160, 105, 60 }, specular = 0.2, assign = false });
+        recipe.Step(null, "set_surface", new { name = "Floor", color = new[] { 225, 215, 190 }, specular = 0.1, assign = false });
+        recipe.Step("Marble veins in the top, layered along X so they run across it; the size sets how big the swirls are.", "set_procedural", new { surface = "Marble", kind = "marble", color = v, axis = "x", size = V(0.25, 0.25, 0.25), settings = new Dictionary<string, object> { ["vein_spacing"] = 0.6, ["turbulence"] = 0.6, ["vein_sharpness"] = 6 } });
+        recipe.Step("Wood grain in the legs: rings round Y, the legs' long axis, centred in one leg.", "set_procedural", new { surface = "Legs", kind = "wood", color = new[] { 95, 55, 25 }, axis = "y", center = V(lx, 0, lz), size = V(0.1, 1, 0.1), settings = new Dictionary<string, object> { ["ring_spacing"] = 0.12, ["turbulence"] = 0.15 } });
+        recipe.Step($"The checkerboard floor: cubes {F(size)} m across, so the floor's top shows squares that size.", "set_procedural", new { surface = "Floor", kind = "checkerboard", color = new[] { 50, 45, 45 }, size = V(size, size, size) });
+        recipe.Step("A faint fractal-noise bump on the floor, so it isn't perfectly smooth.", "set_procedural", new { surface = "Floor", kind = "fractal_noise", channel = "bump", size = V(0.2, 0.2, 0.2), amplitude = 0.15 });
+        recipe.Step("Look at it, textured (the view shows the colour procedurals).", "render_view", new { view = "perspective", mode = "textured", width = 320, height = 240 });
+        recipe.Step("Ray-trace it: the bump shows here.", "render", new { width = 320, height = 240, samples = 2, pitch = 25 });
+        return recipe.Text("Try other kinds on the same surfaces (fractal_noise, grid, dots, crumple...), or put a procedural on another channel (e.g. specular) with value; describe them with get_document.");
+    }
+
     // ───────────────────────────── scenes ─────────────────────────────
 
     [McpServerPrompt(Name = "three_point_lighting", Title = "Three-point lighting")]

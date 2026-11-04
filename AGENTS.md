@@ -29,12 +29,20 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 
 - `src/AVAModeler.Core/`: maths (`Vec`, `Mat4`), the n-gon `Mesh` with its UV maps, surfaces and textures.
   - `Document.cs` holds the layers, the selection and the `UndoStack`. `Png.cs` writes PNGs (renders, glTF images).
+  - `Texture.cs` is `TextureLayer` (an image map, or a procedural: `Procedural` names the kind, `Parameters` holds
+    TFP0 to TFP3 and TIP0, with `TextureColor`, `Value` and `Falloff`) and the projections' maths. `Procedurals.cs`
+    is LightWave 5's procedural textures: the catalog (`Procedurals.All`, each kind's settings with their LWOB slot,
+    default and limits; `Find`, `Get`, `Set`, `SetType`, the Texture Type list) and `ProceduralTexture`, a layer ready
+    to evaluate (`Amount` at a point, 0 to 1). `Noise.cs` is Perlin's improved noise with his fixed permutation table,
+    and fractal and turbulence sums over it.
 - `src/AVAModeler.Formats/`: LWOB/LWLO read and write, LWO2 read, VideoScape GEO and OBJ, on a shared `Iff` reader;
   glTF 2.0 and STL. It references `AVAModeler.Geometry` for triangulation.
   - `ObjectFiles.cs` is the one registry of object formats: `LoadExtensions`, `SaveExtensions`, `Describe`, `Load`,
     `Save` (with `SaveOptions` for ASCII STL and a .gltf's .bin) and `Targets` (the files a save writes). The open
     dialogs, Lua's load and save, the MCP `Workspace` and Layout's object loading all go through it, so a new format
     is added there once.
+  - `ProceduralBake.cs` bakes a surface's colour procedurals into a picture (through its UV map, or as a six-cell box
+    map) for glTF's base colour texture.
   - `GltfBuilder.cs` builds glTF by hand (System.Text.Json and one binary buffer): meshes from LightWave meshes and
     surfaces, nodes, cameras, lights, animations, and .glb/.gltf packing. `Gltf.cs` writes and reads objects with it;
     `Stl.cs` is STL, binary and ASCII.
@@ -63,7 +71,10 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).
     Edge tools read their edges through `Selection.ActiveEdges` (Core), which follows the app's selection rules.
 - `src/AVAModeler.Rendering/`: `IRenderer` with the software and OpenGL (Silk.NET) renderers, view cameras and
-  picking.
+  picking. `Texturing.cs` is what both renderers' textured faces share (`Texturing.Fragment` is the C# twin of the GL
+  fragment shader): image layers by their corners' UVs, procedural layers from each pixel's interpolated point
+  (`TexturedCorner.Local` and `World`), evaluated with `ProceduralTexture`; the shader in `GlRenderer.cs` repeats
+  `Noise` and `ProceduralTexture.Pattern` in GLSL, with the permutation table as a 256 × 1 texture.
 - `src/AVAModeler.Scene/`: Layout's model: items, envelopes, bones, LWS and JSON scenes, and the ray tracer.
   - `SceneSnapshot.cs` (`Scene.Snapshot()`) puts a scene back as it was, items by reference (with every setting an
     edit can change, morphs' and displacements' included: extend it when you add one); `Scene.Copy` makes one
@@ -161,7 +172,14 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   `ArgumentException`) saying what to select; `Commands.Run` cancels it, agents get the message, and the UI shows it in
   the status bar, also when the error comes from a drag or a numeric-panel edit of an armed tool.
 - **Repeatable randomness.** Tools such as Jitter hash a `Seed` parameter rather than using `Random`, so the same
-  seed gives the same result.
+  seed gives the same result. Procedural textures use `Noise` (Perlin's improved noise with his fixed table, whose
+  reference values a test pins), never `Random`, so renders are the same every time; wave sources and phases come
+  from the same table.
+- **Procedurals have three twins.** `ProceduralTexture.Pattern` (C#), the GLSL `pattern()` in `GlRenderer`'s texture
+  shader, and the settings catalog in `Procedurals.All`. Change a pattern's sums in both places (the Rendering tests
+  compare the OpenGL picture with the software one, through the shader's C# twin and on a real context); a new kind
+  gets a `ProceduralKind` number for the shader, its settings in LWOB slots (TFP0 to TFP3, TIP0) and an entry in
+  `ModelerTools.ProceduralKinds` (a test checks the description lists every kind and setting with its default).
 - **OpenGL tests may skip.** `OffscreenGl` makes a windowless EGL context where Mesa offers one. Without it, the
   OpenGL comparison tests skip rather than fail.
 - **Agents use the command layer, never the mouse.** MCP handlers reach the document only through
@@ -218,6 +236,8 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   `[McpServerTool]` method with careful `[Description]`s (units, axes, conventions), working through `Do(...)` (or
   `DoScene(...)`) so it runs on the host and its errors are explained. Test it in `AVAModeler.Mcp.Tests` (the handler directly, and through a client where the wiring matters).
   A few of those tests start the built app as a real `--mcp` process (the test project builds it).
+- Agents lay procedural textures with `set_procedural` (`Commands.SetProcedural`), macros with `proctex()`; both check
+  every setting on a spare layer first, so a bad one changes nothing.
 - A recipe (an MCP prompt) goes in `Recipes.cs`. Write each step's tool call on a line of its own after `→ `,
   with its arguments as JSON (the `Recipe` builder does this). `RecipeTests` fetches every prompt through a client and
   runs its calls through the server, which checks the arguments against each tool's schema, then checks the result:

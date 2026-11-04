@@ -22,7 +22,7 @@ public class TextureRenderingTests
         return new TextureImage(64, 64, rgba);
     }
 
-    private static Mesh Square()
+    internal static Mesh Square()
     {
         var m = new Mesh();
         m.AddFace(0, new Vec3(-1, -1, 0), new Vec3(-1, 1, 0), new Vec3(1, 1, 0), new Vec3(1, -1, 0));
@@ -41,7 +41,7 @@ public class TextureRenderingTests
         return r;
     }
 
-    private static (int R, int G, int B) Rgb8(uint c) => ((int)(c >> 16) & 0xFF, (int)(c >> 8) & 0xFF, (int)c & 0xFF);
+    internal static (int R, int G, int B) Rgb8(uint c) => ((int)(c >> 16) & 0xFF, (int)(c >> 8) & 0xFF, (int)c & 0xFF);
 
     /// <summary>A colour to within a level (the renderer rounds down).</summary>
     private static void Near((int R, int G, int B) want, uint got)
@@ -112,7 +112,7 @@ public class TextureRenderingTests
     /// buffers) through its matrix, rasterized as OpenGL does (perspective-correct by 1/w, depth-tested), each pixel
     /// coloured by the C# twin of its fragment shader.
     /// </summary>
-    private static (uint[] Pixels, bool[] Covered) GlPicture(ViewScene scene, ViewCamera cam)
+    internal static (uint[] Pixels, bool[] Covered) GlPicture(ViewScene scene, ViewCamera cam)
     {
         int w = cam.Width, h = cam.Height;
         var pixels = new uint[w * h];
@@ -147,6 +147,7 @@ public class TextureRenderingTests
                         Uv0 = new Vec2(v[o + 7], v[o + 8]), Uv1 = new Vec2(v[o + 9], v[o + 10]),
                         Uv2 = new Vec2(v[o + 11], v[o + 12]), Uv3 = new Vec2(v[o + 13], v[o + 14]),
                         On0 = v[o + 15], On1 = v[o + 16], On2 = v[o + 17], On3 = v[o + 18],
+                        Local = new Vec3(v[o + 19], v[o + 20], v[o + 21]), World = new Vec3(v[o + 22], v[o + 23], v[o + 24]),
                     };
                 }
                 double area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sy[1] - sy[0]) * (sx[2] - sx[0]);
@@ -213,7 +214,7 @@ public class TextureRenderingTests
     }
 
     /// <summary>How many of the pixels both pictures cover agree to within a few levels, of how many, and the worst.</summary>
-    private static (int Close, int Compared, int Worst) Agreement(uint[] a, uint[] b, Func<int, bool> covered)
+    internal static (int Close, int Compared, int Worst) Agreement(uint[] a, uint[] b, Func<int, bool> covered)
     {
         int compared = 0, close = 0, worst = 0;
         for (int i = 0; i < a.Length; i++)

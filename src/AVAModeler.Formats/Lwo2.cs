@@ -6,8 +6,10 @@ namespace AVAModeler.Formats;
 /// Reads LightWave 6+ objects (FORM/LWO2) for compatibility: layers, points, FACE and PTCH polygons (patches come in
 /// as their cage faces), surface tags, each surface's basic settings, UV maps (VMAP and VMAD of type TXUV), and image
 /// map texture blocks (BLOK with an IMAP header) for colour, diffuse, specular, luminosity, reflection, transparency
-/// and bump, with their images from the CLIP chunks. Other vertex maps, curves, envelopes, procedural and gradient
-/// textures are skipped. Writing is LWOB/LWLO only (<see cref="Lwob"/>).
+/// and bump, with their images from the CLIP chunks, and procedural texture blocks (PROC) of the kinds LightWave 5 had
+/// (<see cref="Procedurals"/>) with their colour or value, centre, size, falloff and axis, at their default settings
+/// (LWO2 keeps each kind's settings in a FUNC layout of its own, which isn't read). Other vertex maps, curves,
+/// envelopes, gradients, shaders and other procedurals are skipped. Writing is LWOB/LWLO only (<see cref="Lwob"/>).
 /// </summary>
 public static class Lwo2
 {
@@ -187,13 +189,15 @@ public static class Lwo2
     };
 
     /// <summary>
-    /// A surface BLOK: an image map's texture layer and the CLIP index of its image, or null for blocks this doesn't
-    /// draw (procedurals, gradients, shaders, disabled layers, and channels such as glossiness).
+    /// A surface BLOK: an image map's texture layer and the CLIP index of its image, or a procedural's layer (clip -1),
+    /// or null for blocks this doesn't draw (unknown procedurals, gradients, shaders, disabled layers, and channels such
+    /// as glossiness).
     /// </summary>
     private static (TextureLayer, int)? ReadBlock(IffReader block)
     {
         var header = block.Chunk(true, out string kind);
-        if (kind != "IMAP") return null;
+        if (kind is not ("IMAP" or "PROC")) return null;
+        bool procedural = kind == "PROC";
         header.S0();
         var t = new TextureLayer();
         bool known = true, enabled = true;
@@ -227,7 +231,24 @@ public static class Lwo2
                         if (mid == "CNTR") t.Center = m.Vec12();
                         else if (mid == "SIZE") t.Size = m.Vec12();
                         else if (mid == "CSYS") t.WorldCoordinates = m.U2() == 1;
+                        else if (mid == "FALL")
+                        {
+                            m.U2();
+                            t.Falloff = m.Vec12();
+                        }
                     }
+                    break;
+                case "FUNC" when procedural:
+                    string name = c.S0();
+                    if (Procedurals.Find(name) is { } type) Procedurals.Apply(t, type);
+                    else known = false;
+                    break;
+                case "VALU" when procedural:
+                    // A colour for the colour channel, else one value; an envelope index follows.
+                    var value = new double[3];
+                    for (int i = 0; i < (t.Channel == TextureChannel.Color ? 3 : 1); i++) value[i] = c.F4();
+                    t.TextureColor = Rgb.FromVec(new Vec3(value[0], value[1], value[2]));
+                    t.Value = value[0];
                     break;
                 case "PROJ":
                     int proj = c.U2();
@@ -256,7 +277,8 @@ public static class Lwo2
                 case "TAMP": t.Amplitude = c.F4(); break;
             }
         }
-        return known && enabled ? (t, clip) : null;
+        if (procedural && t.Procedural == null) known = false;
+        return known && enabled ? (t, procedural ? -1 : clip) : null;
     }
 
     /// <summary>LWO2's WRAP codes: 0 reset, 1 repeat, 2 mirror, 3 edge.</summary>

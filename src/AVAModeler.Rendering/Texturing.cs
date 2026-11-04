@@ -3,24 +3,34 @@ using AVAModeler.Core;
 namespace AVAModeler.Rendering;
 
 /// <summary>
-/// A surface's colour textures made ready to draw: its colour, and up to <see cref="Texturing.MaxLayers"/> image
-/// layers with their images (placeholders for missing ones).
+/// A surface's colour textures made ready to draw: its colour, and up to <see cref="Texturing.MaxLayers"/> image or
+/// procedural layers with their images (placeholders for missing ones, a blank one for a procedural).
 /// </summary>
 public sealed class TexturedSurface
 {
     public required Vec3 Color { get; init; }
     public required IReadOnlyList<(TextureLayer Layer, TextureImage Image)> Layers { get; init; }
+    /// <summary>Each layer's procedural, ready to evaluate, or null for an image layer (empty: all images).</summary>
+    public IReadOnlyList<ProceduralTexture?> Procedurals { get; init; } = [];
+
+    /// <summary>Layer i's procedural, or null if it's an image.</summary>
+    public ProceduralTexture? ProceduralOf(int i) => i < Procedurals.Count ? Procedurals[i] : null;
+
+    /// <summary>Whether any layer is procedural (they need each pixel's position).</summary>
+    public bool HasProcedurals => Procedurals.Any(p => p != null);
 }
 
 /// <summary>
 /// What a textured face carries to each pixel, worked out at its corners and blended across it (in perspective):
 /// the lighting as a multiplier and an offset (so the textured colour can go under it), each layer's image
-/// coordinates, and whether each layer reaches that corner (a UV layer doesn't where the face isn't mapped).
+/// coordinates, whether each layer reaches that corner (a UV layer doesn't where the face isn't mapped), and the
+/// point in object and world coordinates (for procedural layers, worked out per pixel in 3D).
 /// </summary>
 public struct TexturedCorner
 {
     public double Mul;
     public Vec3 Add;
+    public Vec3 Local, World;
     public Vec2 Uv0, Uv1, Uv2, Uv3;
     public double On0, On1, On2, On3;
 
@@ -43,6 +53,8 @@ public struct TexturedCorner
     {
         Mul = a.Mul * wa + b.Mul * wb + c.Mul * wc,
         Add = a.Add * wa + b.Add * wb + c.Add * wc,
+        Local = a.Local * wa + b.Local * wb + c.Local * wc,
+        World = a.World * wa + b.World * wb + c.World * wc,
         Uv0 = a.Uv0 * wa + b.Uv0 * wb + c.Uv0 * wc,
         Uv1 = a.Uv1 * wa + b.Uv1 * wb + c.Uv1 * wc,
         Uv2 = a.Uv2 * wa + b.Uv2 * wb + c.Uv2 * wc,
@@ -55,28 +67,35 @@ public struct TexturedCorner
 }
 
 /// <summary>
-/// Image textures in the views, shared by both renderers so they draw the same picture: which layers a surface
-/// shows, each face corner's lighting and image coordinates, and the colour of a pixel from them (the OpenGL
-/// renderer's fragment shader does the very same sums). The views show colour textures; the ray tracer does the rest.
+/// Textures in the views, shared by both renderers so they draw the same picture: which layers a surface shows, each
+/// face corner's lighting and image coordinates, and the colour of a pixel from them (the OpenGL renderer's fragment
+/// shader does the very same sums). Procedural layers are worked out at every pixel from its point in 3D, as the ray
+/// tracer does. The views show colour textures; the ray tracer does the rest.
 /// </summary>
 public static class Texturing
 {
     /// <summary>The most colour layers a surface shows in a view.</summary>
     public const int MaxLayers = 4;
 
-    /// <summary>A surface's colour image layers and their images, or null if it has none to show.</summary>
+    /// <summary>A surface's colour image and procedural layers and their images, or null if it has none to show.</summary>
     public static TexturedSurface? Prepare(Surface? surface, string? imageBase)
     {
         if (surface == null || surface.Textures.Count == 0) return null;
         var layers = new List<(TextureLayer, TextureImage)>();
+        var procedurals = new List<ProceduralTexture?>();
         foreach (var t in surface.Textures)
         {
-            if (t.Channel != TextureChannel.Color || !t.IsImage || t.Opacity <= 0) continue;
-            layers.Add((t, TextureImages.Load(t.Image, imageBase)));
+            if (t.Channel != TextureChannel.Color || !t.IsDrawn || t.Opacity <= 0) continue;
+            var proc = t.IsImage ? null : Procedurals.Prepare(t);
+            layers.Add((t, proc == null ? TextureImages.Load(t.Image, imageBase) : Blank));
+            procedurals.Add(proc);
             if (layers.Count == MaxLayers) break;
         }
-        return layers.Count == 0 ? null : new TexturedSurface { Color = surface.Color.ToVec(), Layers = layers };
+        return layers.Count == 0 ? null : new TexturedSurface { Color = surface.Color.ToVec(), Layers = layers, Procedurals = procedurals };
     }
+
+    /// <summary>The image a procedural layer is paired with: a white pixel, never sampled.</summary>
+    public static readonly TextureImage Blank = new(1, 1, [255, 255, 255, 255]);
 
     /// <summary>
     /// The corners of one triangle of a face: lighting from <paramref name="light"/> (see <see cref="Shading.FaceLight"/>)
@@ -97,11 +116,22 @@ public static class Texturing
         var normal = space.Normal(poly);
         Span<Vec2> uv = stackalloc Vec2[3];
         Span<Vec3> at = stackalloc Vec3[3];
+        {
+            int n = space.Points.Count;
+            bool local = pts[0] < n && pts[1] < n && pts[2] < n;
+            for (int k = 0; k < 3; k++)
+            {
+                corners[k].World = mesh.Points[pts[k]];
+                corners[k].Local = local ? space.Points[pts[k]] : mesh.Points[pts[k]];
+            }
+        }
         for (int i = 0; i < ts.Layers.Count; i++)
         {
             var t = ts.Layers[i].Layer;
             bool on = true;
-            if (t.Projection == TextureProjection.UV)
+            if (ts.ProceduralOf(i) != null)
+                uv.Clear();
+            else if (t.Projection == TextureProjection.UV)
             {
                 for (int k = 0; k < 3; k++)
                     if (mesh.TryGetUV(t.UVMap, poly, pts[k], out var u)) uv[k] = u;
@@ -130,6 +160,12 @@ public static class Texturing
             var (t, img) = ts.Layers[i];
             double on = at.On(i);
             if (on <= 0) continue;
+            if (ts.ProceduralOf(i) is { } proc)
+            {
+                double amount = proc.Amount(proc.WorldCoordinates ? at.World : at.Local);
+                col = TextureMapping.Blend(col, proc.Color, Math.Clamp(t.Opacity, 0, 1) * amount * Math.Min(on, 1), t.Blend);
+                continue;
+            }
             var uv = at.Uv(i);
             var (c, alpha) = img.Sample(uv.X, uv.Y, t.WidthTiling, t.HeightTiling, t.PixelBlending);
             if (t.Negative) c = Vec3.One - c;

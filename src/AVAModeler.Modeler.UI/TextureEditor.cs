@@ -14,9 +14,11 @@ namespace AVAModeler.Modeler.UI;
 
 /// <summary>
 /// The texture panel for one of a surface's channels, as LightWave 5's "T" buttons opened it: the channel's layers
-/// (add, remove), and for the chosen one its image, projection, axis, centre and size (with Automatic Sizing to fit
-/// the surface), UV map, tiling across and up, wrap amounts, opacity and blending, and a picture of the image. It
-/// changes the surface live; the surface editor that opened it makes the visit one undo step.
+/// (add, remove), and for the chosen one its Texture Type (an image map by projection, or a procedural), then for an
+/// image its file, axis, centre and size (with Automatic Sizing to fit the surface), UV map, tiling across and up, wrap
+/// amounts, opacity and blending, and a picture of the image; for a procedural its texture colour or value, axis,
+/// centre, size, falloff and the kind's own settings (from <see cref="Procedurals"/>). It changes the surface live;
+/// the surface editor that opened it makes the visit one undo step.
 /// </summary>
 public sealed class TextureEditor : Window
 {
@@ -84,7 +86,16 @@ public sealed class TextureEditor : Window
     }
 
     private static string Caption(TextureLayer t, int i) =>
-        $"{i + 1}. {(t.Procedural != null ? t.Procedural + " (not drawn)" : t.Projection + (t.Image.Length > 0 ? ": " + Path.GetFileName(t.Image) : ": (no image)"))}";
+        $"{i + 1}. {(t.Procedural != null ? Procedurals.TypeOf(t) + (t.IsProcedural ? "" : " (not drawn)") : t.Projection + (t.Image.Length > 0 ? ": " + Path.GetFileName(t.Image) : ": (no image)"))}";
+
+    /// <summary>Changes the chosen layer's type (an image map by projection, or a procedural) and shows its settings.</summary>
+    public void SetType(string type)
+    {
+        if (Layer is not { } t) return;
+        Procedurals.SetType(t, type);
+        ShowLayer();
+        Changed();
+    }
 
     private void Refill()
     {
@@ -162,19 +173,25 @@ public sealed class TextureEditor : Window
             return;
         }
         _loading = true;
+        var types = Procedurals.TextureTypes.ToList();
+        string current = Procedurals.TypeOf(t);
+        if (!types.Contains(current)) types.Add(current);
+        var type = new ComboBox { ItemsSource = types, SelectedItem = current, HorizontalAlignment = HorizontalAlignment.Stretch };
+        type.SelectionChanged += (_, _) => { if (!_loading && type.SelectedItem is string name && name != Procedurals.TypeOf(t)) SetType(name); };
+        _fields.Children.Add(new StackPanel { Children = { Label("Texture type"), type } });
         if (t.Procedural != null)
-            _fields.Children.Add(Note($"A procedural texture (\"{t.Procedural}\") from the file. It's kept and written back, but not drawn."));
-        else
         {
-            var image = new TextBox { Text = t.Image };
-            image.LostFocus += (_, _) => { if (image.Text != t.Image) { t.Image = image.Text ?? ""; Changed(); } };
-            var browse = Look.MakeButton("Browse…", () => _ = Browse(), "Choose an image file");
-            _fields.Children.Add(Label("Image"));
-            _fields.Children.Add(new DockPanel { Children = { Docked(browse, Dock.Right), image } });
-            _fields.Children.Add(_imageNote);
-            _fields.Children.Add(_preview);
+            ShowProcedural(t);
+            _loading = false;
+            return;
         }
-        _fields.Children.Add(Choice("Type", t.Projection, v => t.Projection = v));
+        var image = new TextBox { Text = t.Image };
+        image.LostFocus += (_, _) => { if (image.Text != t.Image) { t.Image = image.Text ?? ""; Changed(); } };
+        var browse = Look.MakeButton("Browse…", () => _ = Browse(), "Choose an image file");
+        _fields.Children.Add(Label("Image"));
+        _fields.Children.Add(new DockPanel { Children = { Docked(browse, Dock.Right), image } });
+        _fields.Children.Add(_imageNote);
+        _fields.Children.Add(_preview);
         var maps = _session.Document.UVMapNames();
         if (t.UVMap.Length > 0 && !maps.Contains(t.UVMap)) maps.Add(t.UVMap);
         var uvMap = new ComboBox { ItemsSource = maps, SelectedItem = t.UVMap, HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = maps.Count > 0 };
@@ -198,6 +215,39 @@ public sealed class TextureEditor : Window
         _loading = false;
         ShowImage();
     }
+
+    /// <summary>A procedural layer's fields: what it is, its colour or value, placement, falloff and its own settings.</summary>
+    private void ShowProcedural(TextureLayer t)
+    {
+        var kind = Procedurals.Find(t.Procedural);
+        _fields.Children.Add(Note(kind == null
+            ? $"A procedural texture (\"{t.Procedural}\") from the file that AVA Modeler doesn't know. It's kept and written back, but not drawn."
+            : kind.Summary + " Worked out in 3D, so it needs no image or UV map."));
+        if (kind == null) return;
+        if (_channel == TextureChannel.Color)
+            _fields.Children.Add(Vector("Texture color", () => new Vec3(t.TextureColor.R, t.TextureColor.G, t.TextureColor.B),
+                v => t.TextureColor = new Rgb(Byte(v.X), Byte(v.Y), Byte(v.Z)), " (R, G, B, 0 to 255)"));
+        else if (_channel != TextureChannel.Bump)
+            _fields.Children.Add(Number("Texture value %", () => t.Value * 100, v => t.Value = v / 100));
+        _fields.Children.Add(Choice("Texture axis", t.Axis, v => t.Axis = v));
+        _fields.Children.Add(Vector("Texture center", () => t.Center, v => t.Center = v));
+        _fields.Children.Add(Vector("Texture size", () => t.Size, v => t.Size = v));
+        _fields.Children.Add(Look.MakeButton("Automatic Sizing", AutomaticSizing, "Fit the centre and size to the surface's polygons"));
+        _fields.Children.Add(Vector("Texture falloff", () => t.Falloff * 100, v => t.Falloff = v / 100, " (% per metre)"));
+        foreach (var p in kind.Parameters)
+        {
+            var parameter = p;
+            _fields.Children.Add(Number(p.Name, () => Procedurals.Get(t, parameter.Name),
+                v => Procedurals.Set(t, parameter.Name, Math.Clamp(v, parameter.Min, parameter.Max)), parameter.Description));
+        }
+        _fields.Children.Add(Number("Opacity %", () => t.Opacity * 100, v => t.Opacity = Math.Clamp(v, 0, 100) / 100));
+        _fields.Children.Add(Choice("Blending", t.Blend, v => t.Blend = v));
+        if (_channel == TextureChannel.Bump) _fields.Children.Add(Number("Bump amplitude", () => t.Amplitude, v => t.Amplitude = v));
+        _fields.Children.Add(Check("Negative", t.Negative, v => t.Negative = v));
+        _fields.Children.Add(Check("World coordinates", t.WorldCoordinates, v => t.WorldCoordinates = v));
+    }
+
+    private static byte Byte(double v) => (byte)Math.Clamp(Math.Round(v), 0, 255);
 
     /// <summary>The chosen layer's image: a picture of it, its size, or why it can't be had.</summary>
     private void ShowImage()
@@ -283,9 +333,14 @@ public sealed class TextureEditor : Window
         return box;
     }
 
-    private Control Number(string label, Func<double> get, Action<double> set) => new StackPanel { Children = { Label(label), Box(get, set) } };
+    private Control Number(string label, Func<double> get, Action<double> set, string? tip = null)
+    {
+        var panel = new StackPanel { Children = { Label(label), Box(get, set) } };
+        if (tip != null) ToolTip.SetTip(panel, tip);
+        return panel;
+    }
 
-    private Control Vector(string label, Func<Vec3> get, Action<Vec3> set)
+    private Control Vector(string label, Func<Vec3> get, Action<Vec3> set, string units = " (X, Y, Z)")
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*") };
         for (int i = 0; i < 3; i++)
@@ -295,6 +350,6 @@ public sealed class TextureEditor : Window
             Grid.SetColumn(box, i);
             grid.Children.Add(box);
         }
-        return new StackPanel { Children = { Label(label + " (X, Y, Z)"), grid } };
+        return new StackPanel { Children = { Label(label + units), grid } };
     }
 }

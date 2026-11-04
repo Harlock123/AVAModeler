@@ -72,8 +72,9 @@ public sealed class GltfBuilder
     /// primitive per surface, triangulated. Normals follow each surface's smoothing: a smooth surface's corners take
     /// the average of the faces sharing the point within its smoothing angle, a flat one's the face's own. Where the
     /// surface has a colour image, TEXCOORD_0 comes from the UV map it uses (a UV projection) or from its projection
-    /// worked out at each corner (planar, cylindrical, spherical, cubic). Returns the mesh's index, or -1 if it has no
-    /// faces.
+    /// worked out at each corner (planar, cylindrical, spherical, cubic). A surface with colour procedurals and no
+    /// image has them baked into a picture (<see cref="ProceduralBake"/>) with the UVs to match. Returns the mesh's
+    /// index, or -1 if it has no faces.
     /// </summary>
     public int AddMesh(string name, Mesh mesh, IReadOnlyList<Surface> surfaces, string? imageBase)
     {
@@ -85,6 +86,9 @@ public sealed class GltfBuilder
             var surface = group.Key >= 0 && group.Key < surfaces.Count ? surfaces[group.Key] : null;
             var texture = surface == null ? null : ColourTexture(surface);
             bool uvs = texture != null && ImageBytes(texture, imageBase) != null;
+            // A surface with colour procedurals and no image gets them baked into one.
+            var bake = !uvs && surface != null ? ProceduralBake.Of(surface, mesh, group.ToList()) : null;
+            if (bake != null) uvs = true;
             var positions = new List<float>();
             var normals = new List<float>();
             var texcoords = new List<float>();
@@ -96,7 +100,7 @@ public sealed class GltfBuilder
                 var poly = mesh.Polygons[pi];
                 var tris = Triangulator.TriangulatePolygon(mesh, poly);
                 if (tris.Length == 0) continue;
-                var cornerUV = uvs ? CornerUVs(mesh, poly, faceNormals[pi], texture!) : null;
+                var cornerUV = bake != null ? bake.CornerUVs[pi] : uvs ? CornerUVs(mesh, poly, faceNormals[pi], texture!) : null;
                 var vertex = new int[poly.Count];
                 for (int c = 0; c < poly.Count; c++)
                 {
@@ -137,7 +141,7 @@ public sealed class GltfBuilder
             };
             if (uvs) attributes["TEXCOORD_0"] = FloatAccessor(texcoords, 2, ArrayBuffer, withBounds: false);
             var primitive = new JsonObject { ["attributes"] = attributes, ["indices"] = IndexAccessor(indices, positions.Count / 3), ["mode"] = 4 };
-            if (surface != null) primitive["material"] = Material(surface, imageBase, uvs ? texture : null);
+            if (surface != null) primitive["material"] = bake != null ? BakedMaterial(surface, bake) : Material(surface, imageBase, uvs ? texture : null);
             primitives.Add(primitive);
         }
         if (primitives.Count == 0) return -1;
@@ -186,6 +190,40 @@ public sealed class GltfBuilder
         if (s.DoubleSided) m["doubleSided"] = true;
         _materials.Add(m);
         return _materialOf[(s, imageBase)] = _materials.Count - 1;
+    }
+
+    /// <summary>
+    /// A material for a surface whose colour procedurals were baked into an image (one per mesh, as the bake depends on
+    /// the faces): as <see cref="Material"/>, with the baked picture as its base colour texture, clamped at its edges.
+    /// </summary>
+    private int BakedMaterial(Surface s, ProceduralBake bake)
+    {
+        var c = s.Color.ToVec();
+        double diffuse = Math.Clamp(s.Diffuse, 0, 1);
+        var linear = new Vec3(ToLinear(c.X), ToLinear(c.Y), ToLinear(c.Z));
+        double alpha = Math.Clamp(1 - s.Transparency, 0, 1);
+        int view = View(Png.Encode(bake.Width, bake.Height, bake.Rgba), target: null);
+        _images.Add(new JsonObject { ["bufferView"] = view, ["mimeType"] = "image/png", ["name"] = s.Name + " (procedural)" });
+        if (!_samplerOf.TryGetValue((ClampToEdge, ClampToEdge), out int sampler))
+        {
+            _samplers.Add(new JsonObject { ["wrapS"] = ClampToEdge, ["wrapT"] = ClampToEdge });
+            _samplerOf[(ClampToEdge, ClampToEdge)] = sampler = _samplers.Count - 1;
+        }
+        _textures.Add(new JsonObject { ["sampler"] = sampler, ["source"] = _images.Count - 1 });
+        var pbr = new JsonObject
+        {
+            ["baseColorFactor"] = Numbers(diffuse, diffuse, diffuse, alpha),
+            ["metallicFactor"] = 0.0,
+            ["roughnessFactor"] = Math.Round(Roughness(s), 6),
+            ["baseColorTexture"] = new JsonObject { ["index"] = _textures.Count - 1 },
+        };
+        var m = new JsonObject { ["name"] = s.Name, ["pbrMetallicRoughness"] = pbr };
+        double glow = Math.Clamp(s.Luminosity, 0, 1);
+        if (glow > 0) m["emissiveFactor"] = Numbers(linear.X * glow, linear.Y * glow, linear.Z * glow);
+        if (alpha < 1) m["alphaMode"] = "BLEND";
+        if (s.DoubleSided) m["doubleSided"] = true;
+        _materials.Add(m);
+        return _materials.Count - 1;
     }
 
     /// <summary>A texture for an image layer: its image in the buffer and a sampler for its tiling. Null if the image can't be had.</summary>

@@ -15,7 +15,7 @@ namespace AVAModeler.Mcp.Tests;
 /// </summary>
 public class RecipeTests
 {
-    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box"];
+    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table"];
 
     /// <summary>Each recipe with arguments that keep it quick (small pictures, few frames).</summary>
     public static TheoryData<string, string> Cases => new()
@@ -31,6 +31,7 @@ public class RecipeTests
         { "wave_flag", """{"frames": "6", "width": "48"}""" },
         { "printable_part", """{"width": "0.05", "hole": "0.01"}""" },
         { "rounded_box", """{"segments": "2"}""" },
+        { "marble_table", """{"check": "0.4"}""" },
     };
 
     /// <summary>A recipe's tool calls, read from its text as an agent reads them.</summary>
@@ -182,7 +183,18 @@ public class RecipeTests
                 var panel = doc.Current.Mesh.Polygons.Where(p => p.Count == 4 && doc.Current.Mesh.Normal(p).Y > 0.99).Select(p => doc.Current.Mesh.Centroid(p)).ToList();
                 Assert.Contains(panel, c => Math.Abs(c.Y - 0.18) < 1e-9);
                 break;
+            case "marble_table":
+                Procedural("Marble", TextureChannel.Color, ProceduralKind.Marble);
+                Procedural("Legs", TextureChannel.Color, ProceduralKind.Wood);
+                Assert.Equal(new Vec3(0.4, 0.4, 0.4), Procedural("Floor", TextureChannel.Color, ProceduralKind.Checkerboard).Size);
+                Assert.Equal(0.15, Procedural("Floor", TextureChannel.Bump, ProceduralKind.FractalNoise).Amplitude, 9);
+                Assert.Equal(0.6, Procedurals.Get(Procedural("Marble", TextureChannel.Color, ProceduralKind.Marble), "Vein Spacing"), 9);
+                Assert.All(doc.Surfaces.SelectMany(x => x.Textures), t => Assert.Equal("", t.Image));
+                break;
         }
+
+        TextureLayer Procedural(string surface, TextureChannel channel, ProceduralKind kind) =>
+            Assert.Single(doc.Surfaces.Single(x => x.Name == surface).TexturesOf(channel), t => Procedurals.Find(t.Procedural)?.Kind == kind);
     }
 
     private static IEnumerable<string> Ancestors(SceneItem item)

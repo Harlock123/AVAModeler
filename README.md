@@ -97,14 +97,26 @@ phases 0 to 7 and Layout phases L1 to L6.
 - **Surfaces**: named polygon groups with colour, diffuse, specular, glossiness, luminosity, transparency,
   reflection, smoothing and smoothing angle. They are edited live in the surface editor, and smooth surfaces are
   smooth-shaded in the views.
-- **Image textures**, the LightWave 5 way: a "T" button beside a surface's colour, diffuse, specular, luminosity,
-  transparency, reflection or bump opens its texture panel.
-  - Each layer has an image (PNG, JPEG, BMP and more), a projection (planar, cylindrical, spherical, cubic, or UV
+- **Textures**, the LightWave 5 way: a "T" button beside a surface's colour, diffuse, specular, luminosity,
+  transparency, reflection or bump opens its texture panel, where each layer's **Texture type** is an image map (by
+  projection) or one of LightWave 5's procedurals. Layers of both kinds stack.
+  - An image layer has an image (PNG, JPEG, BMP and more), a projection (planar, cylindrical, spherical, cubic, or UV
     through a named UV map), an axis, a centre and size (with Automatic Sizing to fit the surface), tiling across and
     up (reset, repeat, mirror, edge), wrap amounts for cylindrical and spherical, and opacity and blending (normal,
-    additive, multiply). Layers stack.
-  - The perspective view shows colour textures, in both renderers; Layout's view shows them too, and the ray tracer
-    uses every channel, bump included.
+    additive, multiply).
+  - **Procedural textures** are patterns worked out in 3D from where each point is, so they need no image and no UV
+    map: Checkerboard, Grid, Dots, Fractal Noise, Marble, Wood, Ripples, Underwater, Crumple, Turbulence, Value and
+    Bump Array. Each has LightWave's settings (Frequencies, Contrast, Small Power, Turbulence, Vein Spacing and
+    Sharpness, Ring Spacing and Sharpness, Line Thickness, Dot Diameter, Fuzziness, Wave Sources, Wavelength, Wave
+    Speed, Band Sharpness, Bump Radius and Spacing), a texture colour (on the colour channel) or texture value (on the
+    others) laid over the surface by the pattern's amount, a texture centre, size (one pattern unit: a check's width),
+    axis and falloff (fading away from the centre), opacity, blending, Negative and world coordinates. On the bump
+    channel the amount is a height: a fractal-noise bump roughens a rock, ripples ruffle water.
+  - The noise under them is Ken Perlin's improved noise with his fixed permutation table, so the same object renders
+    the same every time, on every machine.
+  - The perspective view shows colour textures, images and procedurals, in both renderers (procedurals are worked
+    out at every pixel, on the GPU too); Layout's view shows them too, and the ray tracer uses every channel, bump
+    included.
   - An image that can't be found or read shows as a magenta checker, and the status bar says which.
 - **UV maps**: named per-point UVs, with per-polygon-corner UVs where a seam needs them (as LWO2's VMAP and VMAD).
   - **Make UVs** (Polygon tab) lays out the selection by a planar, cylindrical, spherical, cubic or atlas projection,
@@ -119,10 +131,11 @@ phases 0 to 7 and Layout phases L1 to L6.
 - **Files**:
   - LightWave objects: LWOB (and the LWLO layered form) read and written; an unchanged object writes back
     byte for byte. Surfaces' textures (CTEX, DTEX, STEX, RTEX, TTEX, LTEX, BTEX and their TFLG, TSIZ, TCTR, TIMG,
-    TWRP, TFP0/1, TOPC, TAMP… sub-chunks) are read and written, keeping any sub-chunk this doesn't model. UV maps go
-    in LWO2-style VMAP and VMAD chunks, which LightWave 5 skips.
-  - LWO2 (LightWave 6 and later) is read only, with its UV maps (VMAP and VMAD) and image-map textures (BLOK and
-    CLIP).
+    TWRP, TFP0/1, TOPC, TAMP… sub-chunks) are read and written, keeping any sub-chunk this doesn't model; so are
+    procedural textures ("Fractal Noise", "Marble"… with TCLR, TVAL, TFAL, TFP0 to TFP3 and TIP0), so the procedurals
+    in LightWave 5 objects now draw. UV maps go in LWO2-style VMAP and VMAD chunks, which LightWave 5 skips.
+  - LWO2 (LightWave 6 and later) is read only, with its UV maps (VMAP and VMAD), image-map textures (BLOK and CLIP)
+    and procedural texture blocks (PROC) of the kinds above, with their colour or value, centre, size, falloff and axis.
   - VideoScape GEO is read and written.
   - Wavefront OBJ is read and written, with its .mtl: texture coordinates (`vt`, faces as `v/vt`) and `map_Kd`,
     `map_Ks`, `map_Ke` and `bump` maps.
@@ -134,7 +147,9 @@ phases 0 to 7 and Layout phases L1 to L6.
       metal, luminosity as emission, transparency as alpha with blending, double-sided); and the surface's first colour
       image, embedded, with TEXCOORD_0 from the UV map it uses. A planar, cylindrical, spherical or cubic colour map
       is worked out at each corner and written as UVs too, so it looks the same elsewhere. Tiling becomes the
-      sampler's wrap mode.
+      sampler's wrap mode. A surface with colour procedurals and no image has them baked into a PNG: through its UV
+      map (512 × 512) when every face has UVs there, or else as a box map (an atlas of six 256-pixel cells, one per
+      side of the surface's bounds).
     - Read: the default scene's nodes with their transforms, each node with a mesh becoming a layer (past the usual
       ten if need be), triangles, strips and fans, points at the same place merged; materials' base colour, alpha,
       emission, roughness and double-sidedness; TEXCOORD_0 as the UV map "UV"; and the base colour texture, from a
@@ -159,6 +174,10 @@ phases 0 to 7 and Layout phases L1 to L6.
 
 ![Textures in the perspective view, and the planet's UV map in the UV view](Images/AVAModeler-textures.png)
 
+![Procedural textures in the perspective view: a marble ball, a wooden block and a rock on a checkerboard floor, no images](Images/AVAModeler-procedurals.png)
+
+![The texture panel with Marble chosen as the Texture type, and its settings](Images/AVAModeler-procedural-panel.png)
+
 ![The UV view with part of the map chosen to work on](Images/AVAModeler-uv.png)
 
 ### Macros and plugins
@@ -166,11 +185,12 @@ phases 0 to 7 and Layout phases L1 to L6.
 - **Macros** are Lua scripts (through MoonSharp), in the spirit of classic Modeler's ARexx macros.
   - What they can do: run any tool with any parameters, build geometry point by point, select (edges too, with
     `seledges`, and their loops and rings with `selloop()` and `selring()`), set layers, undo,
-    make and choose UV maps, texture surfaces, and load and save (in any format above, chosen by the extension:
+    make and choose UV maps, texture surfaces (with images, or with procedurals through `proctex()`), and load and save (in any format above, chosen by the extension:
     `save("ship.glb")`, `load("part.stl")`). Macros › Macro Reference lists every command.
   - Samples: `samples/scripts/spaceship.lua` models a classic spaceship from scratch, `logo.lua` makes bevelled
     flying-logo type, and `still-life.lua` builds a crate, a planet and a floor and textures them three ways (cubic,
-    UV and planar), with the images in `samples/images` (drawn by `make_textures.py` there).
+    UV and planar), with the images in `samples/images` (drawn by `make_textures.py` there). `procedurals.lua` builds a
+    marble ball, a wooden block and a bumpy rock on a checkerboard floor with procedural textures alone.
   - `checkmesh()` checks the foreground as Mesh Info does and returns a table (`verdict`, `printable`, `volume`,
     `area`, `holes`, `boundary_edges`, `flipped_polygons` and the rest, and `report`, its lines of text), so a macro
     can test its own result: `if not checkmesh().printable then tool("Align") end`.
@@ -180,7 +200,12 @@ phases 0 to 7 and Layout phases L1 to L6.
   tool("Extrude", { Offset = {0, 0.5, 0} })
   makeuvs("Wrap", "cylindrical", "y")
   texture("Default", "brick.png", { Projection = "uv", UVMap = "Wrap" })
+  proctex("Default", "marble", { Color = {60, 80, 70}, Axis = "x", Size = {0.3, 0.3, 0.3}, VeinSpacing = 0.5 })
+  proctex("Default", "fractal_noise", { Channel = "bump", Amplitude = 0.2, Size = {0.1, 0.1, 0.1} })
   ```
+  `proctex(surface, kind, {…})` (or `texture()` with a procedural's name in place of the image) sets the channel's
+  first layer of that kind; its options are Channel, Color, Value, Size, Center, Axis, Falloff, Opacity, Blend,
+  Amplitude, Negative, World, NewLayer, and the kind's settings by name (`Frequencies`, `VeinSpacing`…).
 - **Plugins** are .NET assemblies.
   - Any public `Tool` class in one becomes a tool in its tab. An `IModelerPlugin` class can also add file formats
     (loaders and savers).
@@ -238,7 +263,10 @@ Modeler and Layout shows the change at once.
   - Shading: Phong with glossiness, luminosity, smoothing within each surface's angle, reflection, and transparency
     with refraction.
   - Textures: image layers on every channel, filtered bilinearly between mipmap levels (trilinear) so distant
-    textures don't shimmer, and bump maps that tilt the shading by the image's slope.
+    textures don't shimmer, and bump maps that tilt the shading by the image's slope. Procedural layers on every
+    channel too, worked out in 3D at each hit in the object's coordinates (or the world's), with procedural bumps
+    tilting the normal by the pattern's slope (by finite differences): amplitude 1 tilts it 45° where the amount
+    rises by 1 over one texture size.
   - Lights and backdrop: ray-traced shadows with soft-edged spots, ambient light, a gradient backdrop, and fog.
   - Antialiasing, and saving to PNG with or without alpha.
   - Render › Render Animation (F10) renders a run of frames, with a step, into numbered PNGs (`frame0001.png`…), in
@@ -255,6 +283,8 @@ Modeler and Layout shows the change at once.
 ![Rendering an animation](Images/AVAModeler-animation.png)
 
 ![A ray-traced still life: a cubic-mapped, bump-mapped crate, a UV-mapped planet and a tiled floor](Images/AVAModeler-textured-render.png)
+
+![Procedural textures ray-traced: a marble ball, a wooden block with its growth rings, a rock with a fractal-noise bump, on a checkerboard floor](Images/AVAModeler-procedural-render.png)
 
 ## Download and run
 
@@ -360,7 +390,7 @@ and it works offline.
   on Linux and macOS), sent only in the Authorization header to that server, and only ever shown masked. A server on
   `localhost` needs no key.
 - **Core tools only** (on unless you untick it): small models choose much better among fewer tools, so the chat
-  offers them 23 of the 67 instead of all of them: `run_tool` (any Modeler tool by name, with `list_tools` and
+  offers them 23 of the 68 instead of all of them: `run_tool` (any Modeler tool by name, with `list_tools` and
   `describe_tool`), `add_points` and `add_polygons`, a few selection commands, layers, undo, new and save, surfaces,
   `get_document`, `check_mesh`, `render_view`, and the main scene tools (`get_scene`, `add_object`, `add_light`,
   `set_transform`, `look_at`, `set_key`, `render_scene`). Untick it for a large model on a gateway.
@@ -447,6 +477,7 @@ Or, for everyone working in a folder, in its `.mcp.json`:
 | `copy_layer` | Copies a layer into an empty one, points in the same order: the start of a morph target. |
 | `undo`, `redo`, `new`, `open`, `save` | The history and files: `.lwo`, `.obj`, `.geo`, `.glb`, `.gltf` and `.stl` (and plugin formats), chosen by the extension; `save` takes `ascii` for text STL and `separate_bin` for a `.gltf` with a `.bin` beside it. |
 | `set_surface`, `set_texture`, `remove_textures`, `make_uvs`, `set_uv_map` | Surfaces, image textures and UV maps. |
+| `set_procedural` | A LightWave 5 procedural texture on a surface's channel (checkerboard, grid, dots, fractal_noise, marble, wood, ripples, underwater, crumple, turbulence, value, bump_array) with its colour or value, size, centre, axis, falloff and settings by name: no image file or UV map needed. |
 | `run_lua` | Runs a Lua macro as one undo step, returning what it printed. |
 | `get_document`, `get_points`, `get_polygons` | Reads the object: layers, bounds, surfaces, UV maps, selection, history; points and polygons a page at a time. |
 | `check_mesh` | Checks the object numerically, changing nothing (Mesh Info's check): a verdict, printable and watertight flags, counts, bounds and size in metres, area, and when closed the volume and centre of mass; holes, boundary and non-manifold edges, shells, flipped faces and inside-out shells, degenerate and non-planar polygons, duplicate and unused points, with example indices per layer and `how_to_fix` naming the tool for each. `run_tool "Select Problems"` selects a kind so `render_view` shows it. |
@@ -486,7 +517,8 @@ polygon on a surface whose name starts with "Skelegon": its first point is the b
 one whose base is on another's tip becomes its child. A mistake (an unknown tool, a bad value, an index that isn't there) comes back as an error
 that says what was wrong, and changes nothing. Agents are also told to check their models with `check_mesh` after
 booleans and hand-built faces and before saving for 3D printing, so they can see numerically that a solid is closed,
-faces outward and has the volume they meant. They're told about the edge tools too: `select_edges`, `select_loop` and
+faces outward and has the volume they meant. They're told about procedural textures (`set_procedural`, no image
+files needed) and the edge tools too: `select_edges`, `select_loop` and
 `select_ring`, and Loop Cut, Chamfer, Inset (Group with a Depth for a group bevel), Bridge and Fill Hole through
 `run_tool`.
 
@@ -564,6 +596,7 @@ arguments such as a size, a colour or a frame count. The tests follow every one,
 | `wave_flag` | A flag waving on its pole, through a travelling wave displacement with a keyed amplitude. |
 | `printable_part` | A block with a hole bored through it by a boolean, checked with `check_mesh` (closed, printable, the volume it should have) and saved as STL. |
 | `rounded_box` | A box with every edge rounded by Chamfer and a panel sunk into its top by Inset, checked with `check_mesh`. |
+| `marble_table` | A table with a marble top and wooden legs on a checkerboard floor with a faint fractal-noise bump, all textured with `set_procedural` (no images), and rendered. |
 
 ## Building and testing
 
@@ -573,20 +606,20 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 718 tests cover every layer:
+It needs the .NET 10 SDK. 760 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
-| Core | 41 | Math, the mesh and its edge maps, layers, selection modes, undo and grouped edits; UV maps through edits and undo, every projection's maths, image sampling and tiling, PNG and BMP reading, finding images |
-| Formats | 85 | LWOB byte-identical round trips (textures included), LWLO layers, detail polygons, LWO2 (UV maps, seams and image blocks), GEO, OBJ (`vt` and .mtl maps), image paths, malformed files; glTF: a .glb's structure checked by hand (header, 4-byte chunk alignment, the JSON, POSITION's min and max, buffer views inside the buffer), round trips as .glb, .gltf and .gltf with a .bin (triangle counts, positions, UVs, materials and the embedded image), a known triangle facing the right way after conversion, smooth and flat normals, projected maps baked into UVs, node transforms, strips and outside files, malformed files; STL binary and ASCII round trips, Z up and winding, a binary file that starts with "solid" |
+| Core | 53 | Math, the mesh and its edge maps, layers, selection modes, undo and grouped edits; UV maps through edits and undo, every projection's maths, image sampling and tiling, PNG and BMP reading, finding images; the noise (its table a permutation, reference values fixed for good, its range and mean), and each procedural at known points or by its statistics: the checkerboard alternating (a floor on a cube's side not speckling), grid lines at their spacing and thickness, dots' size and fuzziness, fractal noise from 0 to 1 with a mean of a half and contrast spreading it, marble's veins along the axis and wood's rings round it, ripples in circles, falloff, settings by name and their limits, and changing a layer's type |
+| Formats | 93 | LWOB byte-identical round trips (textures included, and hand-built procedural CTEX/BTEX/DTEX/STEX sub-chunk sets: their colours, values, falloff and settings read, an unknown kind kept, edits rewriting only what changed, new procedurals of every kind written and read back), LWLO layers, detail polygons, LWO2 (UV maps, seams and image blocks), GEO, OBJ (`vt` and .mtl maps), image paths, malformed files; glTF: a .glb's structure checked by hand (header, 4-byte chunk alignment, the JSON, POSITION's min and max, buffer views inside the buffer), round trips as .glb, .gltf and .gltf with a .bin (triangle counts, positions, UVs, materials and the embedded image), a known triangle facing the right way after conversion, smooth and flat normals, projected maps baked into UVs, node transforms, strips and outside files, malformed files; STL binary and ASCII round trips, Z up and winding, a binary file that starts with "solid"; LWO2 procedural blocks (known kinds read, others skipped); colour procedurals baked into glTF images, as a box map (each side's checks where they are on a box and a floor) and through a UV map |
 | Geometry | 110 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation; the mesh check on known shapes (a closed box's volume, area and centre, a missing face's 4-edge hole, two holes, two shells, a flipped face, an inside-out box with negative volume, a cavity, duplicate and unused points, degenerate and non-manifold polygons, a ball's volume against 4/3·π·r³, non-planar quads, dots and lines, millimetre sizes) and Remove Degenerate; the edge and face tools, each followed by the mesh check: loops across a grid, round a hole's rim and stopped by a triangle, rings round a cylinder and a box, Loop Cut round a box (one cut and three) and a cylinder and across one into its caps, Fill Hole every way on a box missing a face and as quads on an octagon, Bridge between two open boxes (at every starting rotation, without twist, and in segments), between two faces and between edge loops, refusing 4 points against 8, Inset one face (with a frustum's exact volume) and as a group or face by face, Chamfer of one box edge (the prism's volume), rounded (against a quarter circle), three edges at a corner, every edge and a loop of four; UVs on the new points checked against their positions |
-| Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
-| Tools | 79 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands, macros saving and loading glTF and STL; Select Problems for each kind (and its undo), Align fixing what the check calls flipped, Remove Degenerate (and its undo), and `checkmesh()`; Select Loop and Ring (from an edge or two points), and Loop Cut, Inset (group and individual), Chamfer, Fill Hole and Bridge on UV-mapped boxes: closed, mapped, undone exactly and redone, their errors, and a macro using `seledges`, `selloop`, `selring` and the new tools |
-| Scene | 144 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
-| Layout | 32 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed); glTF scene export (the hierarchy, a camera and lights, a heading turning the same way, keyed motion sampled every frame, a .gltf with its .bin, and what it leaves out) |
-| Mcp | 81 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes; saving and opening .glb, .gltf (with and without a .bin) and .stl (binary and ASCII) through the handlers, a macro and a client, never over someone else's .bin, and export_scene; check_mesh (volumes in m³, inside-out and open meshes with their fixes, layers from 1, bad arguments) and an agent checking, selecting, fixing and checking again through a client; `select_edges`, `select_loop` and `select_ring` (and their mistakes), Loop Cut through `run_tool` as one undo step, and an agent bridging two boxes, rounding every edge and filling a hole through a client, checking each time |
+| Rendering | 35 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one); a checkerboard drawn at every pixel of a four-cornered face, value-channel and unknown procedurals leaving the view alone, and marble, fractal noise, wood, dots and a checkerboard drawn by the OpenGL shader as the software renderer draws them (its vertex data and sums, and on a real context) |
+| Tools | 81 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands, macros saving and loading glTF and STL; Select Problems for each kind (and its undo), Align fixing what the check calls flipped, Remove Degenerate (and its undo), and `checkmesh()`; Select Loop and Ring (from an edge or two points), and Loop Cut, Inset (group and individual), Chamfer, Fill Hole and Bridge on UV-mapped boxes: closed, mapped, undone exactly and redone, their errors, and a macro using `seledges`, `selloop`, `selring` and the new tools; `proctex()` and `texture()` with a procedural's name (settings by name, each call one undo step, mistakes changing nothing) and the procedurals sample |
+| Scene | 150 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; procedurals rendered (a marble ball differing from a plain one and the same every time, a checkerboard moving with its object or staying put in world coordinates, a luminosity procedural, fractal-noise and ripple bumps changing the shading but not the silhouette) and kept in .avascene files; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
+| Layout | 33 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw (a colour procedural moving with its object); undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed); glTF scene export (the hierarchy, a camera and lights, a heading turning the same way, keyed motion sampled every frame, a .gltf with its .bin, and what it leaves out) |
+| Mcp | 86 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes; saving and opening .glb, .gltf (with and without a .bin) and .stl (binary and ASCII) through the handlers, a macro and a client, never over someone else's .bin, and export_scene; check_mesh (volumes in m³, inside-out and open meshes with their fixes, layers from 1, bad arguments) and an agent checking, selecting, fixing and checking again through a client; `select_edges`, `select_loop` and `select_ring` (and their mistakes), Loop Cut through `run_tool` as one undo step, and an agent bridging two boxes, rounding every edge and filling a hole through a client, checking each time; `set_procedural` (settings by name, the same layer or a new one, values and amplitudes, its mistakes changing nothing, its description naming every kind and setting with its default) and an agent texturing a floor through a client, seen in render_view and render; the marble table recipe |
 | Chat | 45 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap, and Auto-continue carrying on past it by itself, then stopping at its ceiling; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking. The same against a fake OpenAI-compatible server (no real server): streamed text, tool calls whose names and arguments arrive in pieces put together and run, several calls in one turn, the request's tools, tool messages and image parts checked as JSON, pictures as a note for a model that can't see them, the core tool set, 401, 404 (model not found), 400 (no tool support, no images), 429, 500 and a refused connection as one line with Retry, a gateway's key only in its header and masked even when echoed back, Stop mid-reply, the tool limit and Auto-continue, arguments that aren't JSON, an answer that isn't streamed, a reply cut short, a missing model or bad base URL, switching provider, model lists in OpenAI's and Ollama's shapes, and the gateway key's own owner-only file |
-| UI | 70 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy; switching to a fake local server in Setup…, Refresh listing its models, building with it and switching back; Preferences reaching the panel; a server that isn't running), the chat settings' preferences round trip, Mesh Info (W, following the object, its Select button and Ctrl+Z, its Align button sparing a cavity, the menu and tabs), the new tools' buttons, keys (Alt+L, Alt+R, I, Ctrl+B) and menu items, a Loop Cut dragged with no edge saying why and changing nothing, Mesh Info's Fill Hole button, and the screenshots (one of the still life opened again from a .glb, one of Mesh Info, one of the edge tools, one of the chat on a local model) |
+| UI | 74 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel (its Texture type list turning a layer into a procedural and back, the procedural's settings shown, one undo step, an unknown kind shown as not drawn), Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy; switching to a fake local server in Setup…, Refresh listing its models, building with it and switching back; Preferences reaching the panel; a server that isn't running), the chat settings' preferences round trip, Mesh Info (W, following the object, its Select button and Ctrl+Z, its Align button sparing a cavity, the menu and tabs), the new tools' buttons, keys (Alt+L, Alt+R, I, Ctrl+B) and menu items, a Loop Cut dragged with no edge saying why and changing nothing, Mesh Info's Fill Hole button, and the screenshots (one of the still life opened again from a .glb, one of Mesh Info, one of the edge tools, one of the chat on a local model, the procedurals in the view, the texture panel and a ray-traced frame) |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -601,8 +634,8 @@ Layout reuses them.
 
 | Project | What's in it |
 |---|---|
-| `AVAModeler.Core` | Double-precision math, the mesh (indexed points and n-gon polygons, with lazy edge and adjacency maps, and UV maps), layers, surfaces and their texture layers, the projections, texture images (PNG and BMP read here), selection, undo (copy-on-write snapshots of the layers an edit changes), the document, PNG writing |
-| `AVAModeler.Formats` | LWOB/LWLO read and write, LWO2 read, VideoScape GEO, OBJ, glTF 2.0 (written by hand with System.Text.Json) and STL |
+| `AVAModeler.Core` | Double-precision math, the mesh (indexed points and n-gon polygons, with lazy edge and adjacency maps, and UV maps), layers, surfaces and their texture layers, the projections, the procedural textures and their noise, texture images (PNG and BMP read here), selection, undo (copy-on-write snapshots of the layers an edit changes), the document, PNG writing |
+| `AVAModeler.Formats` | LWOB/LWLO read and write, LWO2 read, VideoScape GEO, OBJ, glTF 2.0 (written by hand with System.Text.Json, colour procedurals baked into images) and STL |
 | `AVAModeler.Geometry` | Triangulation (LibTessDotNet), BSP booleans and drills, Catmull–Clark subdivision, the extrude/lathe/bevel family, the mesh check (Mesh Info and `check_mesh`) |
 | `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp), plugins, SkiaSharp image reading |
 | `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing, the view cameras, picking |
@@ -641,16 +674,25 @@ Layout reuses them.
   - Inset's Thickness isn't limited either: too much folds the inset face over. In Group mode a point the region
     shares with other faces only at a corner (not along an edge) stays put. The strip and corner polygons of a rounded
     chamfer, and Bridge's band, take UVs interpolated between their sides rather than laid out afresh.
-- **Textures**: the views show colour layers (up to four a surface); the other channels and bump maps show in the
-  ray tracer. Cylindrical and spherical maps are worked out per corner in the views (and exactly per pixel in the ray
-  tracer), so a big face can differ slightly. Procedural textures from LWOB files are kept but not drawn, and LWO2's
-  procedural, gradient and front-projection layers are skipped. LWOB has nowhere for a layer's blending mode, so it
-  isn't saved there (the native .avascene keeps it). Tools that make new geometry from nothing (Box, Text and so on)
+- **Textures**: the views show colour layers (up to four a surface, images and procedurals together); the other
+  channels and bump maps show in the ray tracer. Cylindrical and spherical maps are worked out per corner in the views
+  (and exactly per pixel in the ray tracer), so a big face can differ slightly. Procedurals are worked out at every
+  pixel, which makes a view with many of them on screen slower to draw; the OpenGL renderer does it in single
+  precision, so the edges of checks and dots can fall a pixel differently from the software renderer's. LightWave 5's
+  Brick, Veins, Crust, Smoky and other procedurals this doesn't draw are kept from LWOB files and written back but not
+  drawn. Grid, Dots, Bump Array and Wood's rings are seen down the texture axis (straight through along it), rather
+  than as LightWave's fully 3D lattice; Ripples' and Underwater's wave speed is kept but the waves don't move; and the
+  patterns are this program's own sums on Perlin noise, so they look like LightWave's rather than match them pixel
+  for pixel. LWO2's procedurals come in at their kind's default settings (each LWO2 kind keeps its own in a layout of
+  its own, which isn't read), and its gradient, unknown procedural and front-projection layers are skipped. LWOB has
+  nowhere for a layer's blending mode, so it isn't saved there (the native .avascene keeps it). Tools that make new geometry from nothing (Box, Text and so on)
   leave it without UVs, and a swept wall takes its edge's UVs at both ends rather than new ones.
 
 - **glTF and STL** are for exchange, not for keeping work: save as .lwo to keep everything. Writing glTF leaves out
-  points, 2-point lines and detail polygons, every texture but each surface's first colour image (no specular,
-  bump, luminosity or transparency maps, procedural textures or blending modes), and LightWave's specular level beyond
+  points, 2-point lines and detail polygons, every texture but each surface's first colour image or its baked colour
+  procedurals (no specular, bump, luminosity or transparency maps, procedurals on other channels, or blending modes;
+  a box-map bake is exact for faces lying on the surface's bounding box, a floor or a box, and an approximation on
+  curved ones; a layer in world coordinates is baked in the object's), and LightWave's specular level beyond
   roughness; images that aren't PNG or JPEG are re-encoded as PNG. Reading glTF takes meshes and base colour textures
   only: no normal, metallic-roughness, occlusion or emissive maps, extra UV sets, vertex colours, points or lines,
   skins, morph targets, animations, cameras or lights, sparse accessors or Draco and other compression extensions;

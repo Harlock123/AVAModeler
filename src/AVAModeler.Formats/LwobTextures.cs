@@ -7,8 +7,10 @@ namespace AVAModeler.Formats;
 /// colour, DTEX diffuse, STEX specular, RTEX reflection, TTEX transparency, LTEX luminosity, BTEX bump, holding
 /// "Planar Image Map" and so on), followed by its settings: TFLG (axis and flags), TSIZ, TCTR, TIMG (the image), TWRP
 /// (width and height tiling), TFP0 and TFP1 (the cylindrical and spherical wrap amounts), TAAS, TOPC (opacity), TAMP
-/// (bump amplitude), TVAL and the rest. Every texture sub-chunk is kept with its layer, so a layer reads and writes back
-/// byte for byte, and changes rewrite only the sub-chunks they touch. A UV-mapped layer, which LightWave 5 didn't have,
+/// (bump amplitude), TVAL and the rest. A procedural texture names its kind instead ("Fractal Noise", "Checkerboard"…)
+/// and has TCLR (its colour), TVAL (its value), TFAL (falloff) and its settings in TFP0 to TFP3 and TIP0, whose meaning
+/// depends on the kind (<see cref="Procedurals"/>). Every texture sub-chunk is kept with its layer, so a layer reads and
+/// writes back byte for byte, and changes rewrite only the sub-chunks they touch. A UV-mapped layer, which LightWave 5 didn't have,
 /// is written as a planar image map with a TVMP sub-chunk naming its UV map (skipped by LightWave, read back here).
 /// </summary>
 internal static class LwobTextures
@@ -66,7 +68,12 @@ internal static class LwobTextures
         var t = new TextureLayer { Channel = Channels[raw[0].Id] };
         string type = Reader(raw[0], context).S0();
         if (Types.TryGetValue(type, out var projection)) t.Projection = projection;
-        else t.Procedural = type;
+        else
+        {
+            // A known procedural starts from its defaults, as LightWave did for settings the file leaves out.
+            if (Procedurals.Find(type) is { } kind) Procedurals.Apply(t, kind);
+            t.Procedural = type;
+        }
         foreach (var c in raw.Skip(1))
         {
             var r = Reader(c, context);
@@ -89,6 +96,10 @@ internal static class LwobTextures
                     break;
                 case "TFP0" when t.Projection is TextureProjection.Cylindrical or TextureProjection.Spherical && t.IsImage: t.WidthWrap = r.F4(); break;
                 case "TFP1" when t.Projection == TextureProjection.Spherical && t.IsImage: t.HeightWrap = r.F4(); break;
+                case "TFP0" or "TFP1" or "TFP2" or "TFP3" when !t.IsImage: t.Parameters[Procedurals.SlotIndex(c.Id)] = r.F4(); break;
+                case "TIP0" when !t.IsImage: t.Parameters[Procedurals.SlotIndex("TIP0")] = r.I2(); break;
+                case "TCLR": t.TextureColor = new Rgb(r.U1(), r.U1(), r.U1()); break;
+                case "TFAL": t.Falloff = r.Vec12(); break;
                 case "TAAS": t.AntialiasingStrength = r.F4(); break;
                 case "TOPC": t.Opacity = r.F4(); break;
                 case "TAMP": t.Amplitude = r.F4(); break;
@@ -153,16 +164,35 @@ internal static class LwobTextures
         Set("TCTR", true, w => { w.F4((float)t.Center.X); w.F4((float)t.Center.Y); w.F4((float)t.Center.Z); });
         if (t.IsImage)
         {
+            foreach (var id in new[] { "TCLR", "TIP0", "TFP2", "TFP3" }) Set(id, false, _ => { });
             Set("TIMG", true, w => w.S0(t.Image.Length > 0 ? t.Image : "(none)"));
             Set("TWRP", true, w => { w.U2(Code(t.WidthTiling)); w.U2(Code(t.HeightTiling)); });
             Set("TFP0", wraps, w => w.F4((float)t.WidthWrap));
             Set("TFP1", wraps && t.Projection == TextureProjection.Spherical, w => w.F4((float)t.HeightWrap));
             Set("TVMP", t.Projection == TextureProjection.UV, w => w.S0(t.UVMap));
         }
+        else
+        {
+            foreach (var id in new[] { "TIMG", "TWRP", "TVMP" }) Set(id, false, _ => { });
+            bool Has(string id) => list.Any(c => c.Id == id);
+            var kind = Procedurals.Find(t.Procedural);
+            Set("TFAL", t.Falloff != Vec3.Zero || Has("TFAL"), w => { w.F4((float)t.Falloff.X); w.F4((float)t.Falloff.Y); w.F4((float)t.Falloff.Z); });
+            Set("TCLR", t.Channel == TextureChannel.Color && kind != null || Has("TCLR"), w => { w.U1(t.TextureColor.R); w.U1(t.TextureColor.G); w.U1(t.TextureColor.B); w.U1(0); });
+            for (int i = 0; i < Procedurals.Slots.Length; i++)
+            {
+                string slot = Procedurals.Slots[i];
+                double v = t.Parameters[i];
+                // A known kind's setting is written when the file had it, for a new layer, or when it's moved off the default.
+                bool wanted = Has(slot) || kind?.Parameters.FirstOrDefault(p => p.Slot == slot) is { } p && (t.Raw == null || v != p.Default);
+                if (slot == "TIP0") Set(slot, wanted, w => w.I2((short)Math.Clamp(Math.Round(v), short.MinValue, short.MaxValue)));
+                else Set(slot, wanted, w => w.F4((float)v));
+            }
+        }
         Set("TAAS", t.Antialiasing || list.Any(c => c.Id == "TAAS"), w => w.F4((float)t.AntialiasingStrength));
         Set("TOPC", t.Opacity != 1 || list.Any(c => c.Id == "TOPC"), w => w.F4((float)t.Opacity));
         Set("TAMP", t.Channel == TextureChannel.Bump || list.Any(c => c.Id == "TAMP"), w => w.F4((float)t.Amplitude));
-        Set("TVAL", list.Any(c => c.Id == "TVAL"), w => w.U2(Fixed(t.Value)));
+        bool valued = !t.IsImage && t.Channel is not (TextureChannel.Color or TextureChannel.Bump) && Procedurals.Find(t.Procedural) != null;
+        Set("TVAL", valued || list.Any(c => c.Id == "TVAL"), w => w.U2(Fixed(t.Value)));
         return list;
     }
 }

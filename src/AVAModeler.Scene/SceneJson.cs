@@ -490,6 +490,10 @@ public static class SceneJson
         public bool Negative { get; set; }
         public bool WorldCoordinates { get; set; }
         public string? Procedural { get; set; }
+        public double Value { get; set; } = 1;
+        public int[]? TextureColor { get; set; }
+        public double[]? Parameters { get; set; }
+        public double[]? Falloff { get; set; }
 
         public static TextureDto Of(TextureLayer t) => new()
         {
@@ -497,6 +501,10 @@ public static class SceneJson
             Center = Arr(t.Center), Size = Arr(t.Size), WidthTiling = t.WidthTiling, HeightTiling = t.HeightTiling,
             WidthWrap = t.WidthWrap, HeightWrap = t.HeightWrap, Opacity = t.Opacity, Blend = t.Blend, Amplitude = t.Amplitude,
             PixelBlending = t.PixelBlending, Negative = t.Negative, WorldCoordinates = t.WorldCoordinates, Procedural = t.Procedural,
+            Value = t.Value,
+            TextureColor = t.Procedural == null ? null : [t.TextureColor.R, t.TextureColor.G, t.TextureColor.B],
+            Parameters = t.Procedural == null ? null : (double[])t.Parameters.Clone(),
+            Falloff = t.Falloff == Vec3.Zero ? null : Arr(t.Falloff),
         };
 
         public TextureLayer ToLayer() => new()
@@ -504,7 +512,10 @@ public static class SceneJson
             Channel = Channel, Projection = Projection, Image = Image, UVMap = UVMap ?? "", Axis = Axis, Center = Vec(Center),
             Size = Size == null ? Vec3.One : Vec(Size), WidthTiling = WidthTiling, HeightTiling = HeightTiling, WidthWrap = WidthWrap,
             HeightWrap = HeightWrap, Opacity = Opacity, Blend = Blend, Amplitude = Amplitude, PixelBlending = PixelBlending,
-            Negative = Negative, WorldCoordinates = WorldCoordinates, Procedural = Procedural,
+            Negative = Negative, WorldCoordinates = WorldCoordinates, Procedural = Procedural, Value = Value,
+            TextureColor = TextureColor is { Length: >= 3 } c ? new Rgb((byte)Math.Clamp(c[0], 0, 255), (byte)Math.Clamp(c[1], 0, 255), (byte)Math.Clamp(c[2], 0, 255)) : new Rgb(0, 0, 0),
+            Parameters = Parameters is { } p ? [.. p.Concat(new double[Procedurals.Slots.Length]).Take(Procedurals.Slots.Length)] : new double[Procedurals.Slots.Length],
+            Falloff = Falloff == null ? Vec3.Zero : Vec(Falloff),
         };
     }
 

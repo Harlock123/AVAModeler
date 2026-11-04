@@ -154,6 +154,7 @@ internal static class Census
 
     public static JsonObject Texture(TextureLayer t)
     {
+        if (!t.IsImage) return ProceduralTexture(t);
         var o = new JsonObject
         {
             ["channel"] = t.Channel.ToString().ToLowerInvariant(),
@@ -165,7 +166,35 @@ internal static class Census
             ["opacity"] = Round(t.Opacity),
         };
         if (t.Projection == TextureProjection.UV) o["uv_map"] = t.UVMap;
-        if (t.Procedural != null) o["procedural"] = t.Procedural;
+        return o;
+    }
+
+    /// <summary>A procedural layer: its kind, channel, colour or value, placement and settings by name.</summary>
+    private static JsonObject ProceduralTexture(TextureLayer t)
+    {
+        var type = Procedurals.Find(t.Procedural);
+        var o = new JsonObject
+        {
+            ["channel"] = t.Channel.ToString().ToLowerInvariant(),
+            ["procedural"] = type?.Key ?? t.Procedural,
+        };
+        if (type == null) o["note"] = "A procedural from the file that AVA Modeler keeps but doesn't draw.";
+        if (t.Channel == TextureChannel.Color) o["color"] = new JsonArray(t.TextureColor.R, t.TextureColor.G, t.TextureColor.B);
+        else if (t.Channel != TextureChannel.Bump) o["value"] = Round(t.Value);
+        else o["amplitude"] = Round(t.Amplitude);
+        o["axis"] = t.Axis.ToString().ToLowerInvariant();
+        o["center"] = Vec(t.Center);
+        o["size"] = Vec(t.Size);
+        o["opacity"] = Round(t.Opacity);
+        if (t.Falloff != Vec3.Zero) o["falloff"] = Vec(t.Falloff);
+        if (t.Negative) o["negative"] = true;
+        if (t.WorldCoordinates) o["world_coordinates"] = true;
+        if (type != null)
+        {
+            var settings = new JsonObject();
+            foreach (var p in type.Parameters) settings[p.Key] = Round(t.Parameters[Procedurals.SlotIndex(p.Slot)]);
+            o["settings"] = settings;
+        }
         return o;
     }
 

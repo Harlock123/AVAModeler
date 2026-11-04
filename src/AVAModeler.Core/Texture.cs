@@ -29,8 +29,14 @@ public enum TextureBlend { Normal, Additive, Multiply }
 /// image round the axis <see cref="WidthWrap"/> times (spherical also <see cref="HeightWrap"/> times pole to pole),
 /// with the seam at the back.
 /// </para>
+/// <para>
+/// A layer can instead be a procedural texture (<see cref="Procedural"/>, see <see cref="Procedurals"/>): a pattern
+/// worked out in 3D from where a point is, laying <see cref="TextureColor"/> (colour) or <see cref="Value"/> (the
+/// other channels) over the surface by its amount, or using that as the height (bump). Its settings are in
+/// <see cref="Parameters"/>; the projection, image and tiling don't apply to it.
+/// </para>
 /// A layer read from an LWOB file keeps its sub-chunks (<see cref="Raw"/>), so an unchanged layer writes back exactly,
-/// and a procedural texture this program doesn't draw (<see cref="Procedural"/>) is still kept.
+/// and a procedural texture this program doesn't know is still kept, though not drawn.
 /// </summary>
 public sealed class TextureLayer
 {
@@ -56,10 +62,25 @@ public sealed class TextureLayer
     public bool Negative, Antialiasing, WorldCoordinates;
     /// <summary>LWOB's antialiasing strength, kept for writing back.</summary>
     public double AntialiasingStrength = 1;
-    /// <summary>LWOB's texture value (for procedural textures), kept for writing back.</summary>
+    /// <summary>A procedural's texture value, laid on diffuse, specular, luminosity, reflection or transparency (LWOB's TVAL; 1 is 100%).</summary>
     public double Value = 1;
-    /// <summary>The LWOB type name of a procedural texture (such as "Fractal Noise"), which is kept but not drawn; null for an image map.</summary>
+    /// <summary>
+    /// The LightWave name of a procedural texture (such as "Fractal Noise"; see <see cref="Procedurals"/>); null for an
+    /// image map. One this doesn't know is kept but not drawn.
+    /// </summary>
     public string? Procedural;
+    /// <summary>A procedural's colour, laid on the colour channel (LWOB's TCLR).</summary>
+    public Rgb TextureColor = new(0, 0, 0);
+    /// <summary>
+    /// A procedural's settings by LWOB sub-chunk: TFP0, TFP1, TFP2, TFP3 and TIP0 (<see cref="Procedurals.Slots"/>);
+    /// what each means depends on the procedural (<see cref="ProceduralType.Parameters"/>).
+    /// </summary>
+    public double[] Parameters = new double[5];
+    /// <summary>
+    /// How fast a procedural fades away from its centre along each axis, as a fraction per metre (LWOB's TFAL): 0.5
+    /// has it gone 2 m from the centre that way. Zero doesn't fade.
+    /// </summary>
+    public Vec3 Falloff;
     /// <summary>The layer's sub-chunks as read from an LWOB file (its xTEX first), for writing back unchanged.</summary>
     public List<RawChunk>? Raw;
     /// <summary>The settings <see cref="Raw"/> was read with: while they still match, the raw sub-chunks are written back.</summary>
@@ -69,17 +90,32 @@ public sealed class TextureLayer
     {
         var t = (TextureLayer)MemberwiseClone();
         t.Raw = Raw == null ? null : [.. Raw];
+        t.Parameters = (double[])Parameters.Clone();
         return t;
     }
 
     /// <summary>Whether this layer is an image the program can draw.</summary>
     public bool IsImage => Procedural == null;
 
+    /// <summary>Whether this layer is a procedural texture the program can draw (one of <see cref="Procedurals.All"/>).</summary>
+    public bool IsProcedural => Procedurals.Find(Procedural) != null;
+
+    /// <summary>Whether the views and the ray tracer draw this layer: an image, or a procedural this knows.</summary>
+    public bool IsDrawn => IsImage || IsProcedural;
+
     /// <summary>The layer's settings in one string, to tell whether it has changed since it was read.</summary>
     public string Signature() => FormattableString.Invariant(
-        $"{Channel}|{Projection}|{Image}|{UVMap}|{Axis}|{Center}|{Size.X:R},{Size.Y:R},{Size.Z:R},{Center.X:R},{Center.Y:R},{Center.Z:R}|{WidthTiling}|{HeightTiling}|{WidthWrap:R}|{HeightWrap:R}|{Opacity:R}|{Blend}|{Amplitude:R}|{PixelBlending}|{Negative}|{Antialiasing}|{WorldCoordinates}|{AntialiasingStrength:R}|{Value:R}|{Procedural}");
+        $"{Channel}|{Projection}|{Image}|{UVMap}|{Axis}|{Center}|{Size.X:R},{Size.Y:R},{Size.Z:R},{Center.X:R},{Center.Y:R},{Center.Z:R}|{WidthTiling}|{HeightTiling}|{WidthWrap:R}|{HeightWrap:R}|{Opacity:R}|{Blend}|{Amplitude:R}|{PixelBlending}|{Negative}|{Antialiasing}|{WorldCoordinates}|{AntialiasingStrength:R}|{Value:R}|{Procedural}|{TextureColor}|{Falloff.X:R},{Falloff.Y:R},{Falloff.Z:R}|{string.Join(",", Parameters.Select(p => p.ToString("R", System.Globalization.CultureInfo.InvariantCulture)))}");
 
     public override string ToString() => $"{Channel}: {(Procedural ?? Projection.ToString())} {Image}";
+
+    /// <summary>A new procedural layer of a kind on a channel, with its default settings.</summary>
+    public static TextureLayer NewProcedural(ProceduralKind kind, TextureChannel channel = TextureChannel.Color)
+    {
+        var t = new TextureLayer { Channel = channel };
+        Procedurals.Apply(t, Procedurals.Of(kind));
+        return t;
+    }
 }
 
 /// <summary>The maths of the projections: where a point on a surface falls on a texture layer's image.</summary>

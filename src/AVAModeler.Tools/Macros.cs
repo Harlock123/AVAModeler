@@ -15,6 +15,8 @@ namespace AVAModeler.Tools;
 /// </summary>
 public static class Macros
 {
+    private static readonly string ProceduralKinds = string.Join(", ", Procedurals.All.Select(t => "\"" + t.Key + "\""));
+
     /// <summary>The functions a macro can call, with one line each, for the Help.</summary>
     public static readonly (string Signature, string Does)[] Reference =
     [
@@ -39,7 +41,8 @@ public static class Macros
         ("uvmap(name) / uvmap()", "chooses the UV map to work on (the UV view shows it), or returns the one chosen"),
         ("uvmaps()", "the names of the UV maps"),
         ("setuv(n, u, v) / getuv(n)", "a point's UVs in the chosen UV map"),
-        ("texture(surface, image, {Option = value, ...})", "gives a surface an image texture; options: Channel (\"color\", \"diffuse\", \"specular\", \"luminosity\", \"reflection\", \"transparency\", \"bump\"), Projection (\"planar\", \"cylindrical\", \"spherical\", \"cubic\", \"uv\"), Axis, UVMap, Center, Size, Fit (automatic sizing), WidthTiling/HeightTiling (\"reset\", \"repeat\", \"mirror\", \"edge\"), WidthWrap/HeightWrap, Opacity, Blend, Amplitude"),
+        ("texture(surface, image, {Option = value, ...})", "gives a surface an image texture; options: Channel (\"color\", \"diffuse\", \"specular\", \"luminosity\", \"reflection\", \"transparency\", \"bump\"), Projection (\"planar\", \"cylindrical\", \"spherical\", \"cubic\", \"uv\"), Axis, UVMap, Center, Size, Fit (automatic sizing), WidthTiling/HeightTiling (\"reset\", \"repeat\", \"mirror\", \"edge\"), WidthWrap/HeightWrap, Opacity, Blend, Amplitude. With a procedural's name in place of the image (\"checkerboard\", no extension) it does what proctex() does"),
+        ("proctex(surface, kind, {Option = value, ...})", "gives a surface a LightWave 5 procedural texture (no image needed): kind is " + ProceduralKinds + "; it sets the channel's first layer of that kind (NewLayer = true adds another). Options: Channel, Color ({r, g, b}, 0 to 255: the texture colour, for the colour channel), Value (0 to 1: the texture value, for the other channels), Size (one pattern unit, e.g. a check's width, in metres), Center, Axis, Fit, Falloff ({x, y, z}, fraction per metre), Opacity, Blend, Amplitude (bump), Negative, World (world coordinates), and the kind's settings by name: Frequencies, Contrast, SmallPower, Turbulence, VeinSpacing, VeinSharpness, RingSpacing, RingSharpness, LineThickness, DotDiameter, Fuzziness, WaveSources, Wavelength, WaveSpeed, BandSharpness, BumpRadius, BumpSpacing"),
         ("notexture(surface, channel)", "removes a surface's textures (for one channel, or all)"),
         ("checkmesh()", "checks the foreground layers as Mesh Info does, changing nothing; returns a table: verdict, printable, watertight, points, polygons, faces, area (m²), volume (m³, nil unless closed), center (centre of mass {x, y, z}), size, min, max, shells, holes, boundary_edges, nonmanifold_edges, inconsistent_edges, flipped_polygons, inward_shells, cavities, degenerate_polygons, nonplanar_polygons, duplicate_points, unused_points, points_and_lines, and report (the lines of text). tool(\"Select Problems\", {Problem = \"BoundaryEdges\"}) selects them"),
         ("print(...)", "writes to the macro's output"),
@@ -105,7 +108,19 @@ public static class Macros
         {
             var o = options == null ? [] : ToArgs(options);
             var channel = o.TryGetValue("Channel", out var c) && c is string cs ? Enum.Parse<TextureChannel>(cs, ignoreCase: true) : TextureChannel.Color;
+            if (!Path.HasExtension(image) && Procedurals.Find(image) is { } type)
+            {
+                SetProcedural(commands, surface, type, channel, o);
+                return;
+            }
             commands.SetTexture(surface, image, channel, t => SetTextureOptions(t, o, commands.Document, surface));
+        });
+        g["proctex"] = (Action<string, string, Table?>)((surface, kind, options) =>
+        {
+            var o = options == null ? [] : ToArgs(options);
+            var channel = o.TryGetValue("Channel", out var c) && c is string cs ? Enum.Parse<TextureChannel>(cs, ignoreCase: true) : TextureChannel.Color;
+            var type = Procedurals.Find(kind) ?? throw new ArgumentException($"There's no procedural texture \"{kind}\": the kinds are {Procedurals.Keys}.");
+            SetProcedural(commands, surface, type, channel, o);
         });
         g["notexture"] = (Func<string, string?, int>)((surface, channel) =>
             commands.ClearTextures(surface, channel == null ? null : Enum.Parse<TextureChannel>(channel, ignoreCase: true)));
@@ -170,6 +185,56 @@ public static class Macros
                 default: throw new ArgumentException($"texture() has no option \"{key}\".");
             }
         if (fit)
+            (t.Center, t.Size) = TextureMapping.AutoSize(TextureMapping.SurfaceBounds(doc.Layers.Select(l => l.Mesh), doc.SurfaceIndex(surface)));
+    }
+
+    /// <summary>A procedural texture layer from a macro's options, checked on a spare layer first so a bad option changes nothing.</summary>
+    private static void SetProcedural(Commands commands, string surface, ProceduralType type, TextureChannel channel, Dictionary<string, object?> o)
+    {
+        var probe = new TextureLayer { Channel = channel };
+        Procedurals.Apply(probe, type);
+        SetProceduralOptions(probe, type, o, null, surface);
+        bool newLayer = o.TryGetValue("NewLayer", out var n) && n is true;
+        commands.SetProcedural(surface, type, channel, newLayer, t => SetProceduralOptions(t, type, o, commands.Document, surface));
+    }
+
+    /// <summary>A procedural layer's settings from a macro's options table (names as in the Macro Reference, any case).</summary>
+    private static void SetProceduralOptions(TextureLayer t, ProceduralType type, Dictionary<string, object?> o, Document? doc, string surface)
+    {
+        T Enum<T>(object? v) where T : struct, Enum => v is string s ? System.Enum.Parse<T>(s, ignoreCase: true) : throw new ArgumentException($"{typeof(T).Name} must be a name.");
+        double Num(object? v) => v is double d ? d : throw new ArgumentException("A number is needed.");
+        Vec3 Vec(object? v) => v is double[] a && a.Length >= 3 ? new Vec3(a[0], a[1], a[2]) : throw new ArgumentException("A vector is needed: {x, y, z}.");
+        bool fit = false;
+        foreach (var (key, v) in o)
+            switch (key.ToLowerInvariant())
+            {
+                case "channel" or "newlayer": break;
+                case "axis": t.Axis = Enum<Axis>(v); break;
+                case "center": t.Center = Vec(v); break;
+                case "size": t.Size = Vec(v); break;
+                case "fit": fit = v is true; break;
+                case "opacity": t.Opacity = Math.Clamp(Num(v), 0, 1); break;
+                case "blend": t.Blend = Enum<TextureBlend>(v); break;
+                case "amplitude": t.Amplitude = Num(v); break;
+                case "negative": t.Negative = v is true; break;
+                case "world" or "worldcoordinates": t.WorldCoordinates = v is true; break;
+                case "color" or "colour" or "texturecolor":
+                    var c = Vec(v);
+                    if (new[] { c.X, c.Y, c.Z }.Any(x => x < 0 || x > 255)) throw new ArgumentException("Color is {r, g, b}, each 0 to 255.");
+                    t.TextureColor = new Rgb((byte)Math.Round(c.X), (byte)Math.Round(c.Y), (byte)Math.Round(c.Z));
+                    break;
+                case "value": t.Value = Num(v); break;
+                case "falloff": t.Falloff = Vec(v); break;
+                case "projection" or "uvmap" or "widthtiling" or "heighttiling" or "widthwrap" or "heightwrap" or "pixelblending":
+                    throw new ArgumentException($"{key} is for image textures; a procedural is worked out in 3D from Center, Size and Axis.");
+                default:
+                    if (type.Find(key) is { } p) Procedurals.Set(t, p.Name, Num(v));
+                    else throw new ArgumentException(type.Parameters.Count == 0
+                        ? $"proctex() has no option \"{key}\" (and {type.Name} has no settings of its own)."
+                        : $"proctex() has no option \"{key}\"; {type.Name}'s settings are {string.Join(", ", type.Parameters.Select(x => x.Name.Replace(" ", "")))}.");
+                    break;
+            }
+        if (fit && doc != null)
             (t.Center, t.Size) = TextureMapping.AutoSize(TextureMapping.SurfaceBounds(doc.Layers.Select(l => l.Mesh), doc.SurfaceIndex(surface)));
     }
 

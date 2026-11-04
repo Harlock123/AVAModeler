@@ -67,6 +67,12 @@ public sealed class RenderImage(int width, int height, byte[] rgba)
 /// so distant textures don't shimmer. Projections work from the object's own coordinates (moving with it), or the
 /// world's for a layer that says so. A bump layer tilts the shading normal by the slope of its image's brightness.
 /// </para>
+/// <para>
+/// Procedural texture layers (<see cref="Procedurals"/>) are worked out in 3D at the hit point, in the same coordinates:
+/// the colour channel takes the layer's texture colour and the others its texture value, by the procedural's amount
+/// there. A procedural bump tilts the normal by the amount's slope, found by finite differences along the triangle's
+/// sides: amplitude 1 tilts it 45° where the amount rises by 1 over one texture size.
+/// </para>
 /// Rendering is deterministic: the antialiasing jitter comes from a hash of the pixel and sample number.
 /// </summary>
 public static class RayTracer
@@ -74,8 +80,10 @@ public static class RayTracer
     private sealed record Material(Vec3 Color, double Diffuse, double Specular, double Glossiness, double Luminosity,
         double Reflection, double Transparency, double Ior, bool CastShadows, bool ReceiveShadows)
     {
-        /// <summary>The image texture layers, in order, with their images.</summary>
+        /// <summary>The texture layers, in order, with their images (a blank one for a procedural).</summary>
         public IReadOnlyList<(TextureLayer Layer, TextureImage Image)> Layers { get; init; } = [];
+        /// <summary>Each layer's procedural, ready to evaluate, or null for an image layer.</summary>
+        public IReadOnlyList<ProceduralTexture?> Procedurals { get; init; } = [];
         public bool Textured => Layers.Count > 0;
         public bool TexturedTransparency => Layers.Any(l => l.Layer.Channel == TextureChannel.Transparency);
     }
@@ -215,12 +223,20 @@ public static class RayTracer
             }
         }
 
-        private static Material MaterialOf(Surface s, ObjectItem o, RenderSettings settings, string? images) => new(
-            s.Color.ToVec(), s.Diffuse, s.Specular, Math.Max(1, s.Glossiness), s.Luminosity, Math.Clamp(s.Reflection, 0, 1),
-            Math.Clamp(s.Transparency, 0, 1), settings.RefractionIndices.GetValueOrDefault(s.Name, 1), o.CastShadows, o.ReceiveShadows)
+        private static Material MaterialOf(Surface s, ObjectItem o, RenderSettings settings, string? images)
         {
-            Layers = s.Textures.Where(t => t.IsImage && t.Opacity > 0).Select(t => (t, TextureImages.Load(t.Image, images))).ToList(),
-        };
+            var layers = s.Textures.Where(t => t.IsDrawn && t.Opacity > 0)
+                .Select(t => (t, t.IsImage ? TextureImages.Load(t.Image, images) : Blank)).ToList();
+            return new(s.Color.ToVec(), s.Diffuse, s.Specular, Math.Max(1, s.Glossiness), s.Luminosity, Math.Clamp(s.Reflection, 0, 1),
+                Math.Clamp(s.Transparency, 0, 1), settings.RefractionIndices.GetValueOrDefault(s.Name, 1), o.CastShadows, o.ReceiveShadows)
+            {
+                Layers = layers,
+                Procedurals = layers.Select(l => l.t.IsImage ? null : Core.Procedurals.Prepare(l.t)).ToList(),
+            };
+        }
+
+        /// <summary>The image a procedural layer is paired with: it is never sampled.</summary>
+        private static readonly TextureImage Blank = new(1, 1, [255, 255, 255, 255]);
 
         /// <summary>
         /// Triangulates a world-space mesh, with corner normals smoothed per surface where it asks, and the texturing of
@@ -282,7 +298,8 @@ public static class RayTracer
                 var uv = new Vec2[3];
                 mapped[k] = true;
                 int[] pts = [a, b, c];
-                if (t.Projection != TextureProjection.UV)
+                if (!t.IsImage) { }
+                else if (t.Projection != TextureProjection.UV)
                     TextureMapping.ProjectFace(t, pts.Select(p => t.WorldCoordinates ? mesh.Points[p] : P(p)).ToArray(), t.WorldCoordinates ? mesh.Normal(poly) : normal, uv);
                 else
                     for (int j = 0; j < 3; j++)
@@ -312,6 +329,26 @@ public static class RayTracer
             {
                 var (t, img) = m.Layers[k];
                 if (!tex.Mapped[k]) continue;
+                if (m.Procedurals[k] is { } proc)
+                {
+                    var at = t.WorldCoordinates ? p : local;
+                    if (t.Channel == TextureChannel.Bump)
+                    {
+                        n = ProceduralBump(t, proc, at, tri, tex, n);
+                        continue;
+                    }
+                    double w = Math.Clamp(t.Opacity, 0, 1) * proc.Amount(at);
+                    switch (t.Channel)
+                    {
+                        case TextureChannel.Color: color = TextureMapping.Blend(color, proc.Color, w, t.Blend); break;
+                        case TextureChannel.Diffuse: diffuse = TextureMapping.Blend(diffuse, proc.Value, w, t.Blend); break;
+                        case TextureChannel.Specular: specular = TextureMapping.Blend(specular, proc.Value, w, t.Blend); break;
+                        case TextureChannel.Luminosity: luminosity = TextureMapping.Blend(luminosity, proc.Value, w, t.Blend); break;
+                        case TextureChannel.Reflection: reflection = TextureMapping.Blend(reflection, proc.Value, w, t.Blend); break;
+                        case TextureChannel.Transparency: transparency = TextureMapping.Blend(transparency, proc.Value, w, t.Blend); break;
+                    }
+                    continue;
+                }
                 var c = tex.Corners[k];
                 var uv = t.Projection == TextureProjection.UV
                     ? c[0] * w0 + c[1] * hit.U + c[2] * hit.V
@@ -376,6 +413,35 @@ public static class RayTracer
             var tu = (du - n * Vec3.Dot(du, n)).Normalized();
             var tv = (dv - n * Vec3.Dot(dv, n)).Normalized();
             var tilted = (n - (tu * gu + tv * gv) * (t.Amplitude * Math.Clamp(t.Opacity, 0, 1))).Normalized();
+            return tilted.LengthSquared > 0 ? tilted : n;
+        }
+
+        /// <summary>
+        /// A normal tilted by a procedural bump: the amount is the height, its slope found by central differences along
+        /// the triangle's two sides (in the layer's coordinates) and turned into a direction across the triangle in the
+        /// world. The normal leans away from the way the height rises, by the rise per texture size times the amplitude.
+        /// </summary>
+        private static Vec3 ProceduralBump(TextureLayer t, ProceduralTexture proc, Vec3 at, in Triangle tri, TriangleTexture tex, Vec3 n)
+        {
+            var e1 = t.WorldCoordinates ? tri.E1 : tex.B - tex.A;
+            var e2 = t.WorldCoordinates ? tri.E2 : tex.C - tex.A;
+            double l1 = e1.Length, l2 = e2.Length;
+            if (l1 == 0 || l2 == 0) return n;
+            var size = proc.Size;
+            double unit = (Math.Abs(size.X) + Math.Abs(size.Y) + Math.Abs(size.Z)) / 3;
+            double eps = unit * 1e-3;
+            // The height's change per step of 1 along each side (in barycentric terms, so it carries to the world).
+            double Along(Vec3 dir, double length) => (proc.Amount(at + dir * (eps / length)) - proc.Amount(at - dir * (eps / length))) / (2 * eps) * length;
+            double d1 = Along(e1, l1), d2 = Along(e2, l2);
+            if (d1 == 0 && d2 == 0) return n;
+            // The gradient in the world, in the triangle's plane: g·E1 = d1 and g·E2 = d2.
+            double a11 = Vec3.Dot(tri.E1, tri.E1), a12 = Vec3.Dot(tri.E1, tri.E2), a22 = Vec3.Dot(tri.E2, tri.E2);
+            double det = a11 * a22 - a12 * a12;
+            if (Math.Abs(det) < 1e-30) return n;
+            double ca = (d1 * a22 - d2 * a12) / det, cb = (d2 * a11 - d1 * a12) / det;
+            var g = (tri.E1 * ca + tri.E2 * cb) * unit;
+            g -= n * Vec3.Dot(g, n);
+            var tilted = (n - g * (t.Amplitude * Math.Clamp(t.Opacity, 0, 1))).Normalized();
             return tilted.LengthSquared > 0 ? tilted : n;
         }
 

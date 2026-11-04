@@ -419,8 +419,92 @@ public sealed partial class ModelerTools(IModelerHost host)
             return result;
         }, cancel);
 
+    /// <summary>What set_procedural says about the kinds and their settings (a test checks it against <see cref="Procedurals.All"/>).</summary>
+    internal const string ProceduralKinds =
+        "checkerboard (alternating cubes one size across; no settings), " +
+        "grid (lines one size apart, seen down axis; line_thickness 0.1, a fraction of the spacing), " +
+        "dots (round dots one size apart, seen down axis; dot_diameter 0.5, fuzziness 0), " +
+        "fractal_noise (cloudy patches over about half the surface; frequencies 3, contrast 1, small_power 0.5), " +
+        "marble (thin veins layered along axis; frequencies 4, turbulence 0.5, vein_spacing 0.5, vein_sharpness 4), " +
+        "wood (rings round axis; frequencies 3, turbulence 0.25, ring_spacing 0.1, ring_sharpness 2), " +
+        "ripples (circular waves, best on bump; wave_sources 3, wavelength 0.3, wave_speed 0.05), " +
+        "underwater (the bright web on a pool's floor; wave_sources 4, wavelength 0.4, wave_speed 0.05, band_sharpness 4), " +
+        "crumple (creased folds, good on bump; frequencies 3, small_power 0.5), " +
+        "turbulence (billowing noise with sharp creases; frequencies 3, contrast 1, small_power 0.5), " +
+        "value (the colour or value everywhere: with falloff, a gradient from center; no settings), " +
+        "bump_array (rows of round bumps seen down axis, good on bump; bump_radius 0.25, bump_spacing 0.5)";
+
+    [McpServerTool(Name = "set_procedural", Destructive = true)]
+    [Description("Lays a LightWave 5 procedural texture on a surface's channel: a pattern worked out in 3D from where each point is, so it needs no image file and no UV map. Sets the channel's first layer of that kind (or a new one; new_layer always adds one), making the surface if new. One undo step. On the color channel the texture color is laid over the surface's own colour by the pattern's amount (0 to 1 at each point); on diffuse, specular, luminosity, reflection or transparency the texture value is; on bump the amount is the height (amplitude sets the strength). The pattern is in the object's coordinates from center, one pattern unit per size (in metres along x, y, z: a check's width, the spacing of grid lines or dots; vein and ring spacings are fractions of it). Kinds, with their settings and defaults (settings are numbers by these names): " + ProceduralKinds + ". render shows every channel; render_view's textured mode and Layout's view show color ones.")]
+    public Task<string> SetProcedural(
+        [Description("The surface's name.")] string surface,
+        [Description("The procedural: checkerboard, grid, dots, fractal_noise, marble, wood, ripples, underwater, crumple, turbulence, value or bump_array.")] string kind,
+        [Description("color (default), diffuse, specular, luminosity, reflection, transparency or bump.")] string channel = "color",
+        [Description("Color channel: the texture color [r, g, b], whole numbers 0 to 255 (a new layer starts black).")] double[]? color = null,
+        [Description("Other channels but bump: the texture value, 0 to 1 (default 1), laid over the surface's own value.")] double? value = null,
+        [Description("One pattern unit along [x, y, z], in metres (a new layer starts at [1, 1, 1]).")] double[]? size = null,
+        [Description("The pattern's centre [x, y, z] in metres (a new layer starts at the origin).")] double[]? center = null,
+        [Description("x, y or z: the axis grid, dots, bump_array and wood's rings are seen down, and marble's veins are layered along (a new layer starts at z).")] string? axis = null,
+        [Description("The kind's settings by name, e.g. {\"frequencies\": 4, \"vein_spacing\": 0.2}; those left out keep their values (defaults for a new layer).")] Dictionary<string, JsonElement>? settings = null,
+        [Description("0 to 1 (default 1): how much of the pattern shows.")] double? opacity = null,
+        [Description("normal (default), additive or multiply.")] string? blend = null,
+        [Description("Bump only: the bump's strength; 1 tilts the surface 45 degrees where the amount rises by 1 over one size. Ripples and other busy patterns want 0.02 to 0.2.")] double? amplitude = null,
+        [Description("How fast the pattern fades away from center along [x, y, z], as a fraction per metre (0 doesn't fade).")] double[]? falloff = null,
+        [Description("Turn the amount round (1 - amount).")] bool? negative = null,
+        [Description("Work in world coordinates instead of the object's (the pattern stays put as the object moves in Layout).")] bool? world_coordinates = null,
+        [Description("Always add a new layer, even if the channel has one of this kind.")] bool new_layer = false,
+        CancellationToken cancel = default) =>
+        Do($"set a {kind} procedural on {surface}", c =>
+        {
+            if (string.IsNullOrWhiteSpace(surface)) throw new ArgumentException("A surface name is needed.");
+            var type = Procedurals.Find(kind) ?? throw new McpException($"kind must be one of {Procedurals.Keys}, not \"{kind}\".");
+            var ch = Json.Choice<TextureChannel>(channel, "channel");
+            Rgb? rgb = color == null ? null : Json.Colour(color, "color");
+            var siz = size == null ? (Vec3?)null : Json.Vector(size, "size");
+            if (siz is { } sz && (sz.X <= 0 || sz.Y <= 0 || sz.Z <= 0)) throw new McpException("size must be three positive numbers [x, y, z] in metres.");
+            var cen = center == null ? (Vec3?)null : Json.Vector(center, "center");
+            var fal = falloff == null ? (Vec3?)null : Json.Vector(falloff, "falloff");
+            var ax = axis == null ? (Axis?)null : Json.Choice<Axis>(axis, "axis");
+            var bl = blend == null ? (TextureBlend?)null : Json.Choice<TextureBlend>(blend, "blend");
+            Json.Fraction(opacity, "opacity");
+            Json.Fraction(value, "value");
+            if (rgb != null && ch != TextureChannel.Color) throw new McpException("color is the texture colour of the color channel; for other channels give value.");
+            if (value != null && ch is TextureChannel.Color or TextureChannel.Bump) throw new McpException("value is for the diffuse, specular, luminosity, reflection and transparency channels; on color give color, on bump amplitude.");
+            // The settings are checked on a spare layer first, so a bad one changes nothing.
+            var values = new List<(string Name, double Value)>();
+            var probe = new TextureLayer { Channel = ch };
+            Procedurals.Apply(probe, type);
+            foreach (var (name, v) in settings ?? [])
+            {
+                if (v.ValueKind != JsonValueKind.Number) throw new McpException($"settings.{name} must be a number.");
+                if (type.Find(name) is not { } p)
+                    throw new McpException(type.Parameters.Count == 0 ? $"{type.Key} has no settings." : $"{type.Key} has no setting \"{name}\"; its settings are {string.Join(", ", type.Parameters.Select(x => x.Key))}.");
+                Procedurals.Set(probe, p.Name, v.GetDouble());
+                values.Add((p.Name, v.GetDouble()));
+            }
+            var before = Census.Of(c.Document);
+            var layer = c.SetProcedural(surface, type, ch, new_layer, t =>
+            {
+                if (rgb is { } col) t.TextureColor = col;
+                if (value is { } va) t.Value = va;
+                if (siz is { } s1) t.Size = s1;
+                if (cen is { } c1) t.Center = c1;
+                if (ax is { } a1) t.Axis = a1;
+                if (fal is { } f1) t.Falloff = f1;
+                if (opacity is { } op) t.Opacity = op;
+                if (bl is { } b1) t.Blend = b1;
+                if (amplitude is { } am) t.Amplitude = am;
+                if (negative is { } ne) t.Negative = ne;
+                if (world_coordinates is { } wc) t.WorldCoordinates = wc;
+                foreach (var (name, v) in values) Procedurals.Set(t, name, v);
+            });
+            var result = Census.Changes(c.Document, before, "Procedural texture");
+            result["texture"] = Census.Texture(layer);
+            return result;
+        }, cancel);
+
     [McpServerTool(Name = "remove_textures", Destructive = true)]
-    [Description("Removes a surface's texture layers: those of one channel, or all of them. One undo step.")]
+    [Description("Removes a surface's texture layers, image and procedural: those of one channel, or all of them. One undo step.")]
     public Task<string> RemoveTextures(
         [Description("The surface's name.")] string surface,
         [Description("color, diffuse, specular, luminosity, reflection, transparency or bump; leave out for all.")] string? channel = null,
@@ -477,7 +561,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "run_lua", Destructive = true)]
-    [Description("Runs a Lua macro, as Macros › Run Macro does, as one undo step: if it fails, everything it did is put back. Macros number points and polygons from 1 (these tools number them from 0); layers are 1 to 10 in both. Functions: tool(name, {Param = value}), addpoint(x, y, z), addpolygon({p1, p2, ...}, surface), pointcount(), polycount(), getpoint(n), polypoints(n), selmode(\"points\"|\"polygons\"|\"edges\"|\"volume\"), selpoints({...}), selpolygons({...}), selbox(x0, y0, z0, x1, y1, z1), selectall(), deselect(), invert(), setlayers({fg}, {bg}), makeuvs(map, projection, axis), uvmap(name), uvmaps(), setuv(n, u, v), getuv(n), texture(surface, image, {options}), notexture(surface, channel), new(), load(path), save(path) (paths inside the working folder, the format by extension as open and save choose it; save won't replace a file it didn't write), print(...). undo() and redo() can't be used here. Returns what it printed.")]
+    [Description("Runs a Lua macro, as Macros › Run Macro does, as one undo step: if it fails, everything it did is put back. Macros number points and polygons from 1 (these tools number them from 0); layers are 1 to 10 in both. Functions: tool(name, {Param = value}), addpoint(x, y, z), addpolygon({p1, p2, ...}, surface), pointcount(), polycount(), getpoint(n), polypoints(n), selmode(\"points\"|\"polygons\"|\"edges\"|\"volume\"), selpoints({...}), selpolygons({...}), selbox(x0, y0, z0, x1, y1, z1), selectall(), deselect(), invert(), setlayers({fg}, {bg}), makeuvs(map, projection, axis), uvmap(name), uvmaps(), setuv(n, u, v), getuv(n), texture(surface, image, {options}), proctex(surface, kind, {options}) (a procedural texture, as set_procedural), notexture(surface, channel), new(), load(path), save(path) (paths inside the working folder, the format by extension as open and save choose it; save won't replace a file it didn't write), print(...). undo() and redo() can't be used here. Returns what it printed.")]
     public Task<string> RunLua(
         [Description("The Lua source.")] string script,
         [Description("Stop the macro after this many seconds (default 30, at most 300).")] double time_limit_seconds = 30,
@@ -588,7 +672,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "render_view", ReadOnly = true, Idempotent = true)]
-    [Description("Draws one of the Modeler's views of the object as a PNG, framed to fit the visible layers, as the app draws it: grey grid, foreground in black wire, background layers dimmed, selection in yellow, faces seen from behind tinted blue. top looks down -Y (X right, Z up the picture); front looks along +Z (X right, Y up); side looks along -X (Z right, Y up); perspective orbits the object. Only perspective shades: mode wireframe, shaded (lit faces with wire) or textured (also image textures). Use it to check your work.")]
+    [Description("Draws one of the Modeler's views of the object as a PNG, framed to fit the visible layers, as the app draws it: grey grid, foreground in black wire, background layers dimmed, selection in yellow, faces seen from behind tinted blue. top looks down -Y (X right, Z up the picture); front looks along +Z (X right, Y up); side looks along -X (Z right, Y up); perspective orbits the object. Only perspective shades: mode wireframe, shaded (lit faces with wire) or textured (also colour textures, image and procedural). Use it to check your work.")]
     public async Task<CallToolResult> RenderView(
         [Description("perspective (default), top, front or side.")] string view = "perspective",
         [Description("Width in pixels, 16 to 2048 (default 640).")] int width = 640,

@@ -278,6 +278,61 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Procedural_textures_in_the_view_and_the_texture_panel()
+    {
+        var w = WithMacro("procedurals.lua");
+        var doc = w.Session.Document;
+        w.Session.SetSelectionMode(SelectionMode.Polygons);
+        w.Modeler.Execute("Style Shaded");
+        Persp(w, 190, 24, 2.6);
+        Shot(w, "procedurals");
+        // The marble's colour texture panel, Marble chosen in its Texture type list.
+        var editor = new SurfaceEditor(w.Session) { Width = 520, Height = 640 };
+        editor.Show(w);
+        editor.Choose(doc.SurfaceIndex("Marble"));
+        Ui.Pump();
+        var panel = editor.OpenTexture(doc.Surfaces[doc.SurfaceIndex("Marble")], TextureChannel.Color);
+        panel.Width = 380;
+        panel.Height = 880;
+        Ui.Pump();
+        Assert.Equal("Marble", Assert.Single(panel.Layers).Procedural);
+        Shot(panel, "procedural-panel");
+        panel.Close();
+        editor.Close();
+    }
+
+    [AvaloniaFact]
+    public void A_ray_traced_frame_with_procedural_textures()
+    {
+        var w = WithMacro("procedurals.lua");
+        var doc = w.Session.Document;
+        void Look(string name, Action<Surface> set) => set(doc.Surfaces[doc.SurfaceIndex(name)]);
+        Look("Marble", s => { s.Specular = 0.6; s.Glossiness = 256; s.Reflection = 0.06; });
+        Look("Wood", s => s.Specular = 0.15);
+        Look("Rock", s => { s.Specular = 0.1; s.Diffuse = 0.9; });
+        Look("Floor", s => { s.Reflection = 0.1; s.Specular = 0.2; });
+        var s = new LayoutSession();
+        s.ShowModelerObject(doc);
+        s.Scene.GradientBackground = true;
+        s.Scene.GradientTop = new Vec3(0.12, 0.16, 0.3);
+        s.Scene.GradientBottom = new Vec3(0.4, 0.36, 0.42);
+        s.Scene.AmbientIntensity = 0.3;
+        var cam = s.Scene.CurrentCamera!;
+        cam.SetPosition(1, new Vec3(-0.3, 1.7, -3.6));
+        cam.SetRotation(1, new Vec3(4, 20, 0));
+        s.Scene.Lights.First().SetRotation(1, new Vec3(35, 40, 0));
+        var img = RayTracer.Render(s.Scene, 1, new RenderSettings { Width = 640, Height = 400, SamplesPerPixel = 4 }, null, TestContext.Current.CancellationToken);
+        // The same picture every time: the noise is Perlin's, with its fixed table.
+        var again = RayTracer.Render(s.Scene, 1, new RenderSettings { Width = 64, Height = 40, SamplesPerPixel = 1 }, null, TestContext.Current.CancellationToken);
+        Assert.Equal(again.Rgba, RayTracer.Render(s.Scene, 1, new RenderSettings { Width = 64, Height = 40, SamplesPerPixel = 1 }, null, TestContext.Current.CancellationToken).Rgba);
+        if (Folder is { } dir)
+        {
+            Directory.CreateDirectory(dir);
+            img.SavePng(Path.Combine(dir, "AVAModeler-procedural-render.png"), alpha: false);
+        }
+    }
+
+    [AvaloniaFact]
     public void A_textured_ray_traced_frame()
     {
         var w = WithMacro("still-life.lua");

@@ -406,6 +406,32 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
         return layer!;
     }
 
+    /// <summary>
+    /// Sets a procedural texture on a surface's channel: the channel's first layer of that kind, or a new one (always a
+    /// new one with <paramref name="newLayer"/>), with the kind's default settings when new. The surface is made if
+    /// it's new. Returns the layer (change it within <paramref name="setup"/> so the change is one undo step).
+    /// </summary>
+    public TextureLayer SetProcedural(string surface, ProceduralType type, TextureChannel channel = TextureChannel.Color, bool newLayer = false,
+        Action<TextureLayer>? setup = null)
+    {
+        TextureLayer? layer = null;
+        Document.Edit("Procedural texture", () =>
+        {
+            var s = Document.Surfaces[Document.SurfaceIndex(surface)];
+            layer = newLayer ? null : s.TexturesOf(channel).FirstOrDefault(t => Procedurals.Find(t.Procedural) == type);
+            if (layer == null)
+            {
+                layer = new TextureLayer { Channel = channel };
+                Procedurals.Apply(layer, type);
+                // After the channel's last layer, so a channel's layers stay together; at the end if it's the first.
+                int at = s.Textures.FindLastIndex(t => t.Channel == channel);
+                s.Textures.Insert(at < 0 ? s.Textures.Count : at + 1, layer);
+            }
+            setup?.Invoke(layer);
+        }, []);
+        return layer!;
+    }
+
     /// <summary>Removes a surface's texture layers for a channel (or all of them); returns how many went.</summary>
     public int ClearTextures(string surface, TextureChannel? channel = null)
     {

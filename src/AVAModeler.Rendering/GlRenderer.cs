@@ -75,28 +75,47 @@ public sealed unsafe class GlRenderer : IRenderer
         layout(location = 2) in vec4 uv01;
         layout(location = 3) in vec4 uv23;
         layout(location = 4) in vec4 on;
+        layout(location = 5) in vec3 local;
+        layout(location = 6) in vec3 world;
         uniform mat4 mvp;
         out vec4 vLight;
         out vec4 vUv01;
         out vec4 vUv23;
         out vec4 vOn;
+        out vec3 vLocal;
+        out vec3 vWorld;
         void main() {
             gl_Position = mvp * vec4(position, 1.0);
             vLight = light;
             vUv01 = uv01;
             vUv23 = uv23;
             vOn = on;
+            vLocal = local;
+            vWorld = world;
         }
         """;
 
     // Texturing.Fragment and TextureImage.Sample in GLSL: the same tiling, the same alpha-weighted bilinear blend,
-    // the same layering and lighting, so a textured face looks as the software renderer draws it.
+    // the same layering and lighting, so a textured face looks as the software renderer draws it. Procedural layers
+    // repeat Noise and ProceduralTexture's sums, with Perlin's permutation table in a 256 × 1 texture.
     private const string TextureFragment = """
         in vec4 vLight;
         in vec4 vUv01;
         in vec4 vUv23;
         in vec4 vOn;
+        in vec3 vLocal;
+        in vec3 vWorld;
         out vec4 fragColor;
+        uniform sampler2D permTable;
+        uniform int procKind[4];
+        uniform vec3 procCenter[4];
+        uniform vec3 procSize[4];
+        uniform int procAxis[4];
+        uniform vec4 procF[4];
+        uniform int procI[4];
+        uniform vec3 procColor[4];
+        uniform vec3 procFalloff[4];
+        uniform int procWorld[4];
         uniform vec3 baseColor;
         uniform int layerCount;
         uniform sampler2D image0;
@@ -150,10 +169,120 @@ public sealed unsafe class GlRenderer : IRenderer
             return vec4((a.rgb * wa + b.rgb * wb + c.rgb * wc + d.rgb * wd) / sum, min(1.0, sum));
         }
 
+        int perm(int i) { return int(texelFetch(permTable, ivec2(i & 255, 0), 0).r * 255.0 + 0.5); }
+        float fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+        float grad(int hash, float x, float y, float z) {
+            int h = hash & 15;
+            float u = h < 8 ? x : y;
+            float v = h < 4 ? y : (h == 12 || h == 14 ? x : z);
+            return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+        }
+        float perlin(vec3 p) {
+            vec3 f = floor(p);
+            int X = int(f.x) & 255, Y = int(f.y) & 255, Z = int(f.z) & 255;
+            vec3 r = p - f;
+            float x = r.x, y = r.y, z = r.z;
+            float u = fade(x), v = fade(y), w = fade(z);
+            int a = perm(X) + Y, aa = perm(a) + Z, ab = perm(a + 1) + Z;
+            int b = perm(X + 1) + Y, ba = perm(b) + Z, bb = perm(b + 1) + Z;
+            return mix(mix(mix(grad(perm(aa), x, y, z), grad(perm(ba), x - 1.0, y, z), u),
+                           mix(grad(perm(ab), x, y - 1.0, z), grad(perm(bb), x - 1.0, y - 1.0, z), u), v),
+                       mix(mix(grad(perm(aa + 1), x, y, z - 1.0), grad(perm(ba + 1), x - 1.0, y, z - 1.0), u),
+                           mix(grad(perm(ab + 1), x, y - 1.0, z - 1.0), grad(perm(bb + 1), x - 1.0, y - 1.0, z - 1.0), u), v), w);
+        }
+        const vec3 octaveShift = vec3(19.1, 33.4, 47.3);
+        float fractalNoise(vec3 p, int octaves, float smallPower) {
+            float sum = 0.0, weights = 0.0, weight = 1.0, scale = 1.0;
+            for (int i = 0; i < 8; i++) {
+                if (i >= octaves) break;
+                sum += weight * perlin(p * scale + octaveShift * float(i));
+                weights += weight;
+                weight *= smallPower;
+                scale *= 2.0;
+            }
+            return weights > 0.0 ? sum / weights : 0.0;
+        }
+        float turbulence(vec3 p, int octaves, float smallPower) {
+            float sum = 0.0, weights = 0.0, weight = 1.0, scale = 1.0;
+            for (int i = 0; i < 8; i++) {
+                if (i >= octaves) break;
+                sum += weight * abs(perlin(p * scale + octaveShift * float(i)));
+                weights += weight;
+                weight *= smallPower;
+                scale *= 2.0;
+            }
+            return weights > 0.0 ? sum / weights : 0.0;
+        }
+        vec3 waveSource(int i) { return vec3(float(perm(3 * i)), float(perm(3 * i + 1)), float(perm(3 * i + 2))) / 127.5 - 1.0; }
+        float wavePhase(int i) { return float(perm(3 * i + 100)) / 255.0 * 6.283185307179586; }
+        float pattern(int kind, int axis, vec4 F, int I, vec3 q) {
+            vec3 c = axis == 0 ? vec3(q.z, q.y, q.x) : (axis == 1 ? vec3(q.x, q.z, q.y) : q);
+            float s = c.x, t = c.y, along = c.z;
+            if (kind == 1) {
+                float sum = floor(q.x + 1.0e-4) + floor(q.y + 1.0e-4) + floor(q.z + 1.0e-4);
+                return mod(sum, 2.0) < 0.5 ? 0.0 : 1.0;
+            }
+            if (kind == 2) return min(abs(s - round(s)), abs(t - round(t))) < F.x / 2.0 ? 1.0 : 0.0;
+            if (kind == 3) {
+                float ds = s - round(s), dt = t - round(t);
+                float dist = sqrt(ds * ds + dt * dt), r = F.x / 2.0, soft = F.y * r;
+                if (soft <= 0.0) return dist < r ? 1.0 : 0.0;
+                return 1.0 - smoothstep(r - soft, r, dist);
+            }
+            if (kind == 4) return 0.5 + F.x * fractalNoise(q, I, F.y);
+            if (kind == 5) {
+                float v = (along + F.x * turbulence(q, I, 0.5)) / max(F.y, 1.0e-6);
+                return pow(1.0 - abs(sin(3.141592653589793 * v)), max(F.z, 1.0e-3));
+            }
+            if (kind == 6) {
+                float r = sqrt(s * s + t * t);
+                float v = (r + F.x * turbulence(q, I, 0.5)) / max(F.y, 1.0e-6);
+                return pow(v - floor(v), max(F.z, 1.0e-3));
+            }
+            if (kind == 7 || kind == 8) {
+                float k = 6.283185307179586 / max(F.x, 1.0e-6), sum = 0.0;
+                for (int i = 0; i < 16; i++) {
+                    if (i >= I) break;
+                    float d = length(q - waveSource(i)) * k;
+                    sum += kind == 7 ? cos(d) : sin(d + wavePhase(i));
+                }
+                if (kind == 7) return 0.5 + 0.5 * sum / float(I);
+                return pow(1.0 - abs(sum / float(I)), max(F.z, 1.0e-3));
+            }
+            if (kind == 9) {
+                vec3 warp = vec3(fractalNoise(q + vec3(5.2, 1.3, 7.7), I, F.x), fractalNoise(q + vec3(1.7, 9.2, 3.4), I, F.x),
+                                 fractalNoise(q + vec3(8.3, 2.8, 4.1), I, F.x));
+                return 2.5 * turbulence(q + warp, I, F.x);
+            }
+            if (kind == 10) return F.x * 2.5 * turbulence(q, I, F.y);
+            if (kind == 12) {
+                float spacing = max(F.y, 1.0e-6);
+                float cs = s / spacing, ct = t / spacing;
+                float ds = (cs - round(cs)) * spacing, dt = (ct - round(ct)) * spacing;
+                float r = max(F.x, 1.0e-6), x = (ds * ds + dt * dt) / (r * r);
+                return x >= 1.0 ? 0.0 : sqrt(1.0 - x);
+            }
+            return 1.0;
+        }
+        float amount(int i) {
+            vec3 d = (procWorld[i] != 0 ? vWorld : vLocal) - procCenter[i];
+            float f = clamp(pattern(procKind[i], procAxis[i], procF[i], procI[i], d / procSize[i]), 0.0, 1.0);
+            if (negative[i] != 0) f = 1.0 - f;
+            vec3 fall = max(vec3(0.0), vec3(1.0) - procFalloff[i] * abs(d));
+            return f * fall.x * fall.y * fall.z;
+        }
+
         vec3 layer(vec3 col, int i, sampler2D t, vec2 uv, float reach) {
             if (reach <= 0.0) return col;
-            vec4 s = sampleImage(t, size[i], uv, tiling[i], smoothing[i]);
-            vec3 c = negative[i] != 0 ? vec3(1.0) - s.rgb : s.rgb;
+            vec4 s;
+            vec3 c;
+            if (procKind[i] != 0) {
+                s = vec4(1.0, 1.0, 1.0, amount(i));
+                c = procColor[i];
+            } else {
+                s = sampleImage(t, size[i], uv, tiling[i], smoothing[i]);
+                c = negative[i] != 0 ? vec3(1.0) - s.rgb : s.rgb;
+            }
             float w = clamp(opacity[i], 0.0, 1.0) * s.a * min(reach, 1.0);
             if (blend[i] == 1) return col + c * w;
             if (blend[i] == 2) return col * mix(vec3(1.0), c, w);
@@ -404,10 +533,13 @@ public sealed unsafe class GlRenderer : IRenderer
         }
     }
 
-    /// <summary>How many floats a textured vertex has: position, lighting (add, mul), two pairs of UVs per vec4, and the layers' reach.</summary>
-    public const int TexturedVertexFloats = 19;
+    /// <summary>
+    /// How many floats a textured vertex has: position, lighting (add, mul), two pairs of UVs per vec4, the layers'
+    /// reach, and the point in object and world coordinates (for procedurals).
+    /// </summary>
+    public const int TexturedVertexFloats = 25;
 
-    /// <summary>One textured vertex: position, the lighting's offset and multiplier, the four layers' UVs, and their reach.</summary>
+    /// <summary>One textured vertex: position, the lighting's offset and multiplier, the four layers' UVs, their reach, and the point in object and world coordinates.</summary>
     public static void AddTextured(List<float> v, Vec3 p, in TexturedCorner c)
     {
         v.Add((float)p.X); v.Add((float)p.Y); v.Add((float)p.Z);
@@ -415,7 +547,12 @@ public sealed unsafe class GlRenderer : IRenderer
         v.Add((float)c.Uv0.X); v.Add((float)c.Uv0.Y); v.Add((float)c.Uv1.X); v.Add((float)c.Uv1.Y);
         v.Add((float)c.Uv2.X); v.Add((float)c.Uv2.Y); v.Add((float)c.Uv3.X); v.Add((float)c.Uv3.Y);
         v.Add((float)c.On0); v.Add((float)c.On1); v.Add((float)c.On2); v.Add((float)c.On3);
+        v.Add((float)c.Local.X); v.Add((float)c.Local.Y); v.Add((float)c.Local.Z);
+        v.Add((float)c.World.X); v.Add((float)c.World.Y); v.Add((float)c.World.Z);
     }
+
+    /// <summary>Perlin's permutation table (<see cref="Noise.Permutation"/>) as a 256 × 1 image, in its red channel, for the shader.</summary>
+    private static readonly TextureImage PermutationImage = new(256, 1, Noise.Permutation.SelectMany(b => new[] { b, (byte)0, (byte)0, (byte)255 }).ToArray());
 
     /// <summary>The UV view's image as two textured triangles over the 0–1 square, as the software renderer draws it.</summary>
     public static (TexturedSurface Surface, List<float> Vertices) BackdropTriangles(TextureImage image)
@@ -473,14 +610,30 @@ public sealed unsafe class GlRenderer : IRenderer
             _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, $"opacity[{i}]"), (float)layer.Opacity);
             _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, $"negative[{i}]"), layer.Negative ? 1 : 0);
             _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, $"smoothing[{i}]"), layer.PixelBlending ? 1 : 0);
+            var proc = i < ts.Layers.Count ? ts.ProceduralOf(i) : null;
+            _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, $"procKind[{i}]"), proc == null ? 0 : (int)proc.Kind);
+            if (proc == null) continue;
+            static float F(double d) => (float)d;
+            _gl.Uniform3(_gl.GetUniformLocation(_textureProgram, $"procCenter[{i}]"), F(proc.Center.X), F(proc.Center.Y), F(proc.Center.Z));
+            _gl.Uniform3(_gl.GetUniformLocation(_textureProgram, $"procSize[{i}]"), F(proc.Size.X), F(proc.Size.Y), F(proc.Size.Z));
+            _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, $"procAxis[{i}]"), (int)proc.Axis);
+            var f = proc.Parameters;
+            _gl.Uniform4(_gl.GetUniformLocation(_textureProgram, $"procF[{i}]"), F(f[0]), F(f[1]), F(f[2]), F(f[3]));
+            _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, $"procI[{i}]"), proc.Count);
+            _gl.Uniform3(_gl.GetUniformLocation(_textureProgram, $"procColor[{i}]"), F(proc.Color.X), F(proc.Color.Y), F(proc.Color.Z));
+            _gl.Uniform3(_gl.GetUniformLocation(_textureProgram, $"procFalloff[{i}]"), F(proc.Falloff.X), F(proc.Falloff.Y), F(proc.Falloff.Z));
+            _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, $"procWorld[{i}]"), proc.WorldCoordinates ? 1 : 0);
         }
+        _gl.ActiveTexture(TextureUnit.Texture0 + Texturing.MaxLayers);
+        _gl.BindTexture(TextureTarget.Texture2D, TextureOf(PermutationImage));
+        _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, "permTable"), Texturing.MaxLayers);
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.Uniform3(_gl.GetUniformLocation(_textureProgram, "baseColor"), (float)ts.Color.X, (float)ts.Color.Y, (float)ts.Color.Z);
         _gl.Uniform1(_gl.GetUniformLocation(_textureProgram, "layerCount"), ts.Layers.Count);
         SetMatrix(_textureProgram, "mvp", mvp);
         Upload(data);
         const int stride = TexturedVertexFloats * sizeof(float);
-        int[] sizes = [3, 4, 4, 4, 4];
+        int[] sizes = [3, 4, 4, 4, 4, 3, 3];
         int offset = 0;
         for (int a = 0; a < sizes.Length; a++)
         {
@@ -489,8 +642,7 @@ public sealed unsafe class GlRenderer : IRenderer
             offset += sizes[a];
         }
         _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)(data.Count / TexturedVertexFloats));
-        _gl.DisableVertexAttribArray(3);
-        _gl.DisableVertexAttribArray(4);
+        for (uint a = 3; a < sizes.Length; a++) _gl.DisableVertexAttribArray(a);
     }
 
     private void Upload(List<float> data)

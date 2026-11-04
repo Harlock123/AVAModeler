@@ -31,6 +31,8 @@ public static class ModelerServer
 
         A good way to model: list_tools, then describe_tool for the tools you'll use; build with run_tool (or add_points and add_polygons); check counts with get_document and the shape with render_view (perspective, then top, front and side to check alignment); set_surface for colours; save as .lwo.
 
+        Check your work numerically with check_mesh, which changes nothing: after booleans, drills and faces you built by hand, and always before saving for 3D printing (.stl) or handing a solid on. It says whether the object is closed and printable (no holes, no edge shared by 3 or more polygons, faces wound consistently and facing outward, no degenerate faces), and gives its size, area, volume and centre of mass in metres. If it isn't, its how_to_fix names the tool (Align for flipped faces, Merge Points for duplicate points, Remove Degenerate for faces with no area); run_tool "Select Problems" with the kind of problem selects them so render_view shows them. Check again after fixing.
+
         Files: save and open choose the format by extension. .lwo is the native format and keeps everything. For other programs, save a copy as .glb (glTF 2.0, one file: meshes, PBR materials, images; for game engines, three.js, Blender) or .gltf, .obj, or .stl (binary, or ascii; Z up for 3D printing). glTF and STL files open too (triangles; glTF's base colours and textures). Converting to and from these right-handed formats is done for you: never flip Z or reverse faces yourself.
 
         Layout (the scene tools) stages, lights, animates and renders what you model:
@@ -47,7 +49,7 @@ public static class ModelerServer
 
         A good way to make a scene: build the object; add_object; add_light (a key light from above to one side, e.g. distant with look_at the object, and maybe a weaker fill); set the camera with set_transform and look_at the object (or add_camera); render_scene_view (view camera, then top) to check placement; key the motion with set_transform or set_key at the first and later frames (look_at at each key for a camera that should keep watching); check an in-between frame with get_scene; render_scene a frame small and look at it; then larger, render_animation for a run of frames (with movie "mp4" or "gif" to join them, if ffmpeg is installed; for more frames than one call allows, render it in parts into one folder and join them all with make_movie), and save_scene as .avascene. export_scene writes the scene as glTF (.glb) for other programs, with its hierarchy, cameras, lights and keyed motion.
 
-        The server's prompts are saved recipes (a lathed vase, a table, a chess pawn, three-point lighting, a turntable render, a bouncing ball, the carbon atom, a morph and a waving flag): step-by-step plans with the exact tool calls, to follow or adapt.
+        The server's prompts are saved recipes (a lathed vase, a table, a chess pawn, three-point lighting, a turntable render, a bouncing ball, the carbon atom, a morph, a waving flag, and a printable part checked with check_mesh): step-by-step plans with the exact tool calls, to follow or adapt.
         """;
 
     /// <summary>The MCP tools, bound to a host.</summary>

@@ -191,6 +191,36 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Mesh_info_finds_a_hole_and_a_flipped_face()
+    {
+        // A ball with its top cut off and one face turned the wrong way, as a careless edit might leave it: Mesh Info
+        // says why it won't print, and its Select button has picked out the rim of the hole.
+        var w = Ui.Open(1400, 860);
+        var cmd = w.Session.Commands;
+        var doc = w.Session.Document;
+        cmd.Run("Ball", new Dictionary<string, object?> { ["Radius"] = new[] { 1.0, 1, 1 }, ["Sides"] = 32, ["Segments"] = 16, ["Surface"] = "Clay" });
+        doc.Surfaces[doc.SurfaceIndex("Clay")].Color = new Rgb(214, 140, 92);
+        var mesh = doc.Current.Mesh;
+        cmd.SelectPolygons(Enumerable.Range(0, mesh.Polygons.Count).Where(i => mesh.Centroid(mesh.Polygons[i]).Y > 0.8));
+        cmd.Run("Remove");
+        var front = Enumerable.Range(0, mesh.Polygons.Count).OrderBy(i => mesh.Centroid(mesh.Polygons[i]).Z + Math.Abs(mesh.Centroid(mesh.Polygons[i]).Y - 0.1) + Math.Abs(mesh.Centroid(mesh.Polygons[i]).X)).First();
+        cmd.SelectPolygons([front]);
+        cmd.Run("Flip");
+        cmd.SelectNone();
+        w.Modeler.Execute("Mesh Info");
+        Ui.Pump();
+        var panel = w.Modeler.MeshInfo;
+        Assert.StartsWith("Open: 1 hole along 32 edges; inconsistent winding: 4 edges", panel.Verdict.Text);
+        Assert.Equal(1, panel.Report!.FlippedPolygons);
+        panel.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "SelectBoundaryEdges").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Ui.Pump();
+        Assert.Equal(32, doc.Selection.EdgesIn(0).Count);
+        Ui.Fit(w);
+        Persp(w, 20, 32, 1.3);
+        Shot(w, "mesh-info");
+    }
+
+    [AvaloniaFact]
     public void The_surface_editor_and_its_texture_panel()
     {
         var w = WithMacro("still-life.lua");

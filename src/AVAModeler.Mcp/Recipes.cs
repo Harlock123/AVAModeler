@@ -107,6 +107,34 @@ public static class Recipes
         return recipe.Text("For the other side's pawns, run it again with color 30, 30, 30.");
     }
 
+    [McpServerPrompt(Name = "printable_part", Title = "Printable part, checked")]
+    [Description("Models a part for 3D printing (a block with a hole bored through it by a boolean), checks it's a closed, outward-facing solid with check_mesh, and saves it as STL.")]
+    public static string PrintablePart(
+        [Description("The block's width and depth in metres (default 0.04: 40 mm).")] string? width = null,
+        [Description("Its height in metres (default 0.02).")] string? height = null,
+        [Description("The hole's diameter in metres (default 0.012), less than the width.")] string? hole = null,
+        [Description("The STL file to save (default part.stl).")] string? file = null)
+    {
+        double w = Number(width, 0.04, "width", 0.002, 2), h = Number(height, 0.02, "height", 0.001, 2), d = Number(hole, 0.012, "hole", 0.0005, 2);
+        if (d >= w * 0.9) throw new McpException("hole must be less than nine tenths of the width, so the block keeps its walls.");
+        string path = Text(file, "part.stl");
+        if (!path.EndsWith(".stl", StringComparison.OrdinalIgnoreCase)) throw new McpException("file must end in .stl.");
+        var recipe = new Recipe($"Model a {F(w * 1000)} × {F(w * 1000)} × {F(h * 1000)} mm block with a {F(d * 1000)} mm hole bored through it, check it is a sound solid, and save it for 3D printing. Units are metres, so 1 mm is 0.001.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("The block, standing on y = 0, in layer 1.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0, h / 2, 0), ["Size"] = V(w, h, w), ["Surface"] = "Part" } });
+        recipe.Step("The drill bit in layer 2: a cylinder along Y, longer than the block so it cuts right through.", "set_layers", new { foreground = new[] { 2 } });
+        recipe.Step(null, "run_tool", new { name = "Disc", @params = new Dictionary<string, object> { ["Center"] = V(0, h / 2, 0), ["Radius"] = V(d / 2, d / 2, d / 2), ["Height"] = R(h * 2), ["Axis"] = "Y", ["Sides"] = 32, ["Surface"] = "Part" } });
+        recipe.Step("The block in the foreground, the bit in the background.", "set_layers", new { foreground = new[] { 1 }, background = new[] { 2 } });
+        recipe.Step("Subtract the bit from the block.", "run_tool", new { name = "Boolean", @params = new Dictionary<string, object> { ["Operation"] = "Subtract" } });
+        recipe.Step("Clear the bit out of layer 2, so only the part is saved.", "set_layers", new { foreground = new[] { 2 } });
+        recipe.Step(null, "run_tool", new { name = "Remove" });
+        recipe.Step("Back to the part.", "set_layers", new { foreground = new[] { 1 } });
+        recipe.Step($"Check it. It should say \"Closed and printable (1 shell)\", with no holes, and a volume of about {Geometry.MeshReport.Num(Math.Round((w * w - Math.PI * d * d / 4) * h * 1e6, 2))} cm³ ({Geometry.MeshReport.Num((w * w - Math.PI * d * d / 4) * h)} m³, a little more with a 32-sided bit). If it doesn't, follow its how_to_fix (Align for flipped faces, Merge Points for duplicate points, Remove Degenerate for faces with no area) and check again.", "check_mesh", new { });
+        recipe.Step("Save it as binary STL: Z up for the slicer, so it stands on the bed the way it stands here.", "save", new { path });
+        recipe.Step("Look at it.", "render_view", new { view = "perspective", width = 320, height = 240 });
+        return recipe.Text("For a print, keep walls at least a millimetre or two thick (0.001 to 0.002), and check_mesh again after any further boolean.");
+    }
+
     // ───────────────────────────── scenes ─────────────────────────────
 
     [McpServerPrompt(Name = "three_point_lighting", Title = "Three-point lighting")]

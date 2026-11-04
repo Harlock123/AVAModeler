@@ -107,6 +107,31 @@ public static class PolygonOps
     }
 
     /// <summary>
+    /// Remove Degenerate: tidies faces (of those given, or all) that have no area to speak of. A point repeated
+    /// straight after itself is dropped from the face first; then a face with fewer than three distinct points, one
+    /// that still uses a point twice, or one whose points all lie within <paramref name="tolerance"/> of a line, is
+    /// removed. Points and lines (1- and 2-point polygons) are left alone, as are the points. Returns how many faces went.
+    /// </summary>
+    public static int RemoveDegenerate(Mesh mesh, IEnumerable<int>? polygons = null, double tolerance = 1e-6)
+    {
+        var gone = new List<int>();
+        foreach (int f in Chosen(mesh, polygons))
+        {
+            var poly = mesh.Polygons[f];
+            if (poly.Count < 3) continue;
+            var pts = new List<int>(poly.Count);
+            foreach (int i in poly.Points)
+                if (pts.Count == 0 || pts[^1] != i) pts.Add(i);
+            while (pts.Count > 1 && pts[0] == pts[^1]) pts.RemoveAt(pts.Count - 1);
+            if (pts.Count != poly.Count) poly.SetPoints(pts);
+            if (pts.Count < 3 || pts.Distinct().Count() != pts.Count || MeshCleanup.IsDegenerate(mesh, pts, tolerance)) gone.Add(f);
+        }
+        mesh.RemovePolygons(gone);
+        mesh.Touch();
+        return gone.Count;
+    }
+
+    /// <summary>
     /// Align: makes the faces of each connected piece wind the same way as their neighbours. A closed piece is turned
     /// to face outward; an open one follows the direction most of its faces already had. Returns how many faces were
     /// flipped.

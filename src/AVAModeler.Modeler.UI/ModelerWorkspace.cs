@@ -19,6 +19,8 @@ public sealed class ModelerWorkspace : DockPanel
     public ModelerSession Session { get; }
     public QuadView Views { get; private set; }
     public NumericPanel Numeric { get; }
+    /// <summary>Mesh Info (W): the mesh check of the foreground, beside the numeric panel; hidden until asked for.</summary>
+    public MeshInfoPanel MeshInfo { get; }
     public ToolTabs Tabs { get; }
     public Menu Menu { get; }
     private readonly Dictionary<string, Action> _commands;
@@ -41,6 +43,7 @@ public sealed class ModelerWorkspace : DockPanel
         Background = Look.Panel;
         Views = new QuadView(session, session.Preferences.Renderer == "OpenGL");
         Numeric = new NumericPanel(session);
+        MeshInfo = new MeshInfoPanel(session);
         Tabs = new ToolTabs(session);
         _commands = BuildCommands();
         Menu = BuildMenu();
@@ -58,6 +61,8 @@ public sealed class ModelerWorkspace : DockPanel
         Children.Add(left);
         SetDock(Numeric, Dock.Right);
         Children.Add(Numeric);
+        SetDock(MeshInfo, Dock.Right);
+        Children.Add(MeshInfo);
         Children.Add(Views);
 
         Tabs.Picked += (name, isTool) => { if (isTool) PickTool(name); else Execute(name); };
@@ -137,6 +142,7 @@ public sealed class ModelerWorkspace : DockPanel
             ["Fit Selected"] = Views.FitSelected,
             ["Maximize View"] = () => Views.ToggleMaximize(Views.Focused),
             ["Numeric Panel"] = () => Numeric.Collapsed = !Numeric.Collapsed,
+            ["Mesh Info"] = MeshInfo.Toggle,
             ["UV View"] = () => Views.ToggleUV(),
             ["Next UV Map"] = NextUVMap,
             ["Zoom In"] = () => Zoom(1.5),
@@ -495,7 +501,7 @@ public sealed class ModelerWorkspace : DockPanel
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",
                     Item("Select _All", "Select All"), Item("_Deselect", "Deselect"), Item("_Invert", "Invert Selection"), Item("Select C_onnected", "Select Connected"),
                     Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),
-                Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), "-",
+                Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), Item("Mesh _Info", "Mesh Info"), "-",
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
                     Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",
                     Item("Meta_NURBS", "MetaNURBS"), Item("_Backface Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-", Item("_Layout", "Show Layout")),

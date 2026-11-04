@@ -40,9 +40,18 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     `Stl.cs` is STL, binary and ASCII.
 - `src/AVAModeler.Geometry/`: triangulation (LibTessDotNet), BSP booleans and drills, subdivision, and the
   extrude, lathe and bevel family.
+  - `MeshCheck.cs` is the mesh check (Mesh Info, `check_mesh`, Lua's `checkmesh()`): `MeshCheck.Document` gives a
+    `MeshReport` of `LayerCheck`s (counts, bounds, area, shells, holes, boundary, non-manifold and inconsistent edges,
+    the faces Align would turn, cavities, degenerate and non-planar polygons, duplicate and unused points, volume and
+    centre of mass), its verdict, issues, notes and text lines. It changes nothing; the volume is
+    `MeshMeasure.Volume`'s, so a closed shell wound LightWave's way (clockwise from outside) is positive.
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
   - `Tool.cs` is the base class and `[Param]`. `Commands.cs` has the `ToolRegistry` and the command API.
   - `Macros.cs` runs Lua; the other files hold the tools, grouped by kind (`ModifyTools.cs`, `UVTools.cs` and so on).
+    `CheckTools.cs` has Select Problems (selects one kind of problem the mesh check finds, as an undo step that changes
+    only the selection: `Tool.SelectsOnly` keeps the object unmodified) and Remove Degenerate; `SelectProblemsTool.FixFor`
+    names the existing tool that fixes each kind (Align, Merge Points, Remove Degenerate). Don't add a second tool for a
+    fix one of those already makes.
 - `src/AVAModeler.Rendering/`: `IRenderer` with the software and OpenGL (Silk.NET) renderers, view cameras and
   picking.
 - `src/AVAModeler.Scene/`: Layout's model: items, envelopes, bones, LWS and JSON scenes, and the ray tracer.
@@ -76,7 +85,7 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     `ILiveModeler.Layout`, and waits while `ILiveModeler.Busy` says the person is busy.
   - `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
     proxy to that pipe), `McpCommandLine.cs` (`--mcp`), `Workspace.cs` (the working folder's file rules),
-    `Pictures.cs` (render_view and render), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
+    `Pictures.cs` (render_view and render), `CheckReport.cs` (check_mesh's JSON, with `how_to_fix`), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
 - `src/AVAModeler.Chat/`: the AI Chat panel's logic, no UI, on the official Anthropic C# SDK (NuGet `Anthropic`).
   - `ChatSession.cs` is the conversation and the agent loop: a streamed Messages API request with the MCP server's
     tools, each `tool_use` run through the bridge, results back (pictures as image blocks, failures as `is_error`),
@@ -88,6 +97,8 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - `src/AVAModeler.Modeler.UI/` and `src/AVAModeler.Layout.UI/`: the two workspaces. `Session.cs` holds
   `Preferences`. The Layout workspace shows a `LayoutSession` (from `AVAModeler.Layout`) and keeps no state of its own.
   - `AnimationWindow.cs` is Render › Render Animation (F10), a thin window over `AnimationRender` and `MovieEncoder`.
+  - `MeshInfoPanel.cs` is Mesh Info (W), docked beside the numeric panel and hidden until asked for: a thin view of
+    `MeshCheck`, checking again (on the dispatcher, after a burst of changes) whenever the document changes while it's open.
 - `src/AVAModeler/`: the application, one window hosting both workspaces. `Program.cs` sends `--mcp` to the MCP
   server before Avalonia starts; `LiveAgents.cs` is the app's side of live mode (it hands the live host both the
   Modeler's session and the window's `LayoutSession`, which exists before Layout is first shown, and gives the chat
@@ -173,6 +184,8 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   runs its calls through the server, which checks the arguments against each tool's schema, then checks the result:
   add the new one to its cases and to its checks. Prompt arguments arrive as text: read numbers and colours with
   `Recipes.Number`, `Whole` and `Colour`.
+- When an agent should check its own work, say so in `ModelerServer.Instructions` and give it something to measure:
+  `check_mesh` is how an agent learns that a solid is closed, faces outward and has the volume it meant.
 - If the change shows on screen, refresh the screenshots with the command above and look at them.
 - Update `README.md` (features, keys, the test table, known limits) to match.
 

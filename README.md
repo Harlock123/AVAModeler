@@ -47,12 +47,28 @@ phases 0 to 7 and Layout phases L1 to L6.
     Quantize.
   - **Multiply**: Extrude, Lathe, Mirror, Clone, Array (rectangular and radial), Path Extrude, Rail Extrude, Bevel and
     Smooth Shift.
-  - **Polygon**: Flip, Triple, Merge Points, Align, Unify, Subdivide (faceted or smooth), Metaform, Surface, Make UVs,
-    Merge Polygons, Split and Remove.
+  - **Polygon**: Flip, Triple, Merge Points, Align, Unify, Remove Degenerate, Select Problems, Subdivide (faceted or
+    smooth), Metaform, Surface, Make UVs, Merge Polygons, Split and Remove.
   - **Tools**:
     - Boolean against the background layers: Union, Subtract, Intersect and Add.
     - Drill with the background's outline: Core, Tunnel, Stencil and Slice.
     - Cut, copy and paste between layers, and swapping the foreground and background.
+- **Mesh Info** (W, View › Mesh Info, or the Display tab): a panel beside the numeric panel that checks the foreground
+  layers as you work and says whether the object is a clean solid, ready for 3D printing, booleans and rendering.
+  - The verdict: "Closed and printable (1 shell)", or what's wrong ("Open: 1 hole along 32 edges; inconsistent winding:
+    4 edges between neighbours facing opposite ways").
+  - The numbers: points and polygons by type, the size (in the grid's units, millimetres for small parts, with metres
+    beside), the bounds, the surface area, how many separate shells; and for a closed mesh the enclosed volume and its
+    centre of mass (even density). The volume is the sum of signed tetrahedra over each face's triangles, positive for
+    LightWave's clockwise faces seen from outside.
+  - The problems: boundary edges (used by one polygon: the rims of holes, counted as loops), non-manifold edges (used
+    by three or more), neighbours wound against each other, closed shells inside out (an inward shell inside another is
+    a cavity, a hollow, and is left alone), degenerate polygons (no area, or a point twice), non-planar polygons,
+    duplicate and unused points, and 1- and 2-point polygons.
+  - Each kind of problem has a **Select** button (the Select Problems tool: edges, polygons or points, in their own
+    mode, one undo step so Ctrl+Z puts the selection back) and, where a tool already fixes it safely, a button for it:
+    Align for flipped faces (it makes each piece's winding agree and turns closed pieces outward), Merge Points for
+    duplicates, and Remove Degenerate for faces with no area and unused points.
 - **MetaNURBS**: Tab shows the foreground as the smooth (Catmull–Clark) surface of its cage, with the cage drawn in
   blue. Metaform bakes the smoothing into the mesh.
 - **Surfaces**: named polygon groups with colour, diffuse, specular, glossiness, luminosity, transparency,
@@ -109,6 +125,8 @@ phases 0 to 7 and Layout phases L1 to L6.
     Images folders beside it), then from the working folder.
   - Recent files, auto-save, and crash recovery: if the app didn't close cleanly, it offers the auto-save back.
 
+![Mesh Info on a ball with its top cut off and one face flipped, the hole's rim selected](Images/AVAModeler-mesh-info.png)
+
 ![The still life exported as a .glb, with its images inside, and opened again](Images/AVAModeler-gltf.png)
 
 ![MetaNURBS](Images/AVAModeler-metanurbs.png)
@@ -126,6 +144,9 @@ phases 0 to 7 and Layout phases L1 to L6.
   - Samples: `samples/scripts/spaceship.lua` models a classic spaceship from scratch, `logo.lua` makes bevelled
     flying-logo type, and `still-life.lua` builds a crate, a planet and a floor and textures them three ways (cubic,
     UV and planar), with the images in `samples/images` (drawn by `make_textures.py` there).
+  - `checkmesh()` checks the foreground as Mesh Info does and returns a table (`verdict`, `printable`, `volume`,
+    `area`, `holes`, `boundary_edges`, `flipped_polygons` and the rest, and `report`, its lines of text), so a macro
+    can test its own result: `if not checkmesh().printable then tool("Align") end`.
   ```lua
   tool("Box", { Size = {2, 1, 1}, SegmentsX = 4 })
   selmode("polygons"); selbox(-1, 0.4, -1, 1, 1, 1)
@@ -239,7 +260,8 @@ On Windows, unzip and run `AVAModeler.exe`. On macOS, if Gatekeeper refuses to o
 | Files | | Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Q quit (File › Quit) |
 
 The default tool keys follow the classic layout: T Move, Y Rotate, H Size, Shift+H Stretch, Shift+X Box, Shift+O
-Ball, Shift+C Disc, P Make Polygon, F Flip, M Merge Points, E Extrude, L Lathe, V Mirror, B Bevel, Tab MetaNURBS.
+Ball, Shift+C Disc, P Make Polygon, F Flip, M Merge Points, E Extrude, L Lathe, V Mirror, B Bevel, Tab MetaNURBS, and
+W Mesh Info (LightWave's Statistics key).
 Help › Keyboard lists them all, and Edit › Preferences changes any of them.
 
 ## The AI Chat panel
@@ -345,6 +367,7 @@ Or, for everyone working in a folder, in its `.mcp.json`:
 | `set_surface`, `set_texture`, `remove_textures`, `make_uvs`, `set_uv_map` | Surfaces, image textures and UV maps. |
 | `run_lua` | Runs a Lua macro as one undo step, returning what it printed. |
 | `get_document`, `get_points`, `get_polygons` | Reads the object: layers, bounds, surfaces, UV maps, selection, history; points and polygons a page at a time. |
+| `check_mesh` | Checks the object numerically, changing nothing (Mesh Info's check): a verdict, printable and watertight flags, counts, bounds and size in metres, area, and when closed the volume and centre of mass; holes, boundary and non-manifold edges, shells, flipped faces and inside-out shells, degenerate and non-planar polygons, duplicate and unused points, with example indices per layer and `how_to_fix` naming the tool for each. `run_tool "Select Problems"` selects a kind so `render_view` shows it. |
 | `render_view` | A PNG of the top, front, side or perspective view, as the app draws it (wireframe, shaded or textured). |
 | `render` | A ray-traced PNG of the object, lit and framed. |
 
@@ -379,7 +402,9 @@ numbered from 1). A morph target is made from a copy of the base layer (`copy_la
 the object goes in the scene by its own layer, so the target's layer isn't merged into it. A skelegon is a 2-point
 polygon on a surface whose name starts with "Skelegon": its first point is the bone's base, its second the tip, and
 one whose base is on another's tip becomes its child. A mistake (an unknown tool, a bad value, an index that isn't there) comes back as an error
-that says what was wrong, and changes nothing.
+that says what was wrong, and changes nothing. Agents are also told to check their models with `check_mesh` after
+booleans and hand-built faces and before saving for 3D printing, so they can see numerically that a solid is closed,
+faces outward and has the volume they meant.
 
 A short session, as an agent might run it (the table in the picture above):
 
@@ -453,6 +478,7 @@ arguments such as a size, a colour or a frame count. The tests follow every one,
 | `carbon_atom` | The carbon atom of `samples/mcp/carbon_atom.py`. |
 | `morph_smile` | A smiley badge whose mouth smiles, through a morph keyed on `morph.Smile`. |
 | `wave_flag` | A flag waving on its pole, through a travelling wave displacement with a keyed amplitude. |
+| `printable_part` | A block with a hole bored through it by a boolean, checked with `check_mesh` (closed, printable, the volume it should have) and saved as STL. |
 
 ## Building and testing
 
@@ -462,20 +488,20 @@ dotnet run --project src/AVAModeler
 dotnet test AVAModeler.slnx
 ```
 
-It needs the .NET 10 SDK. 622 tests cover every layer:
+It needs the .NET 10 SDK. 659 tests cover every layer:
 
 | Tests | Count | What they cover |
 |---|---|---|
 | Core | 41 | Math, the mesh and its edge maps, layers, selection modes, undo and grouped edits; UV maps through edits and undo, every projection's maths, image sampling and tiling, PNG and BMP reading, finding images |
 | Formats | 85 | LWOB byte-identical round trips (textures included), LWLO layers, detail polygons, LWO2 (UV maps, seams and image blocks), GEO, OBJ (`vt` and .mtl maps), image paths, malformed files; glTF: a .glb's structure checked by hand (header, 4-byte chunk alignment, the JSON, POSITION's min and max, buffer views inside the buffer), round trips as .glb, .gltf and .gltf with a .bin (triangle counts, positions, UVs, materials and the embedded image), a known triangle facing the right way after conversion, smooth and flat normals, projected maps baked into UVs, node transforms, strips and outside files, malformed files; STL binary and ASCII round trips, Z up and winding, a binary file that starts with "solid" |
-| Geometry | 79 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation |
+| Geometry | 97 | Booleans and drills (exact volumes, watertight results, UVs kept), subdivision, the Multiply algorithms, triangulation; the mesh check on known shapes (a closed box's volume, area and centre, a missing face's 4-edge hole, two holes, two shells, a flipped face, an inside-out box with negative volume, a cavity, duplicate and unused points, degenerate and non-manifold polygons, a ball's volume against 4/3·π·r³, non-planar quads, dots and lines, millimetre sizes) and Remove Degenerate |
 | Rendering | 31 | The four views' projections; a document as the views draw it; the OpenGL camera matrix landing every point where the software one does; shading, smoothing, picking; textures, with the OpenGL renderer's textured picture checked against the software one (on a real OpenGL or OpenGL ES context where there is one) |
-| Tools | 63 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands, macros saving and loading glTF and STL |
+| Tools | 71 | Every tool, the numeric parameters and their checks, the command API, Lua macros (and their time limit), a plugin loaded from its own assembly, the spaceship and logo built from scratch; Make UVs, UVs through every kind of edit, the UV space, the texture commands, macros saving and loading glTF and STL; Select Problems for each kind (and its undo), Align fixing what the check calls flipped, Remove Degenerate (and its undo), and `checkmesh()` |
 | Scene | 144 | Transforms, TCB envelopes, cameras, lights, LWS v1/v3 and JSON scenes, bones, morphs, the ray tracer and its textures, filtering and bump maps; scene snapshots (morph and displacement settings included) and copies, aiming an item at a point, object paths relative to the scene |
 | Layout | 32 | Layout's session without its controls: how values become keys (the controls' and agents' alike), the modified flag, loading and saving scenes, looking through a camera, what the views draw; undo and redo of every kind of step, a drag as one step, the depth limit, clearing on a new or loaded scene, undoing back to the saved scene; rendering animations (numbering and step, progress, cancelling, the scene copy) and joining them into movies with ffmpeg (its arguments, finding it, doing without it, and a real MP4 and GIF where it's installed); glTF scene export (the hierarchy, a camera and lights, a heading turning the same way, keyed motion sampled every frame, a .gltf with its .bin, and what it leaves out) |
-| Mcp | 71 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes; saving and opening .glb, .gltf (with and without a .bin) and .stl (binary and ASCII) through the handlers, a macro and a client, never over someone else's .bin, and export_scene |
+| Mcp | 77 | Every MCP tool group with its errors and undo, the Layout tools included (unknown items and channels, frames out of range, paths outside the working folder, a failed call leaving the scene as it was and no undo step, undo_scene and redo_scene on the shared history, the look-at maths, keys read between frames); morphs (targets copied, mismatches refused, weights keyed), displacements (the wave's maths, renumbering), skelegons → bones and bones' rest settings, each undone; render_animation's movies (with ffmpeg, and without it) and make_movie joining frames rendered in parts (missing frames, mixed sizes); every recipe (prompt) followed call by call through the server and its result checked; whole agent sessions building a table and then staging, animating, rendering, saving and reopening a scene; the live mode through a pipe and the bridge, its UI-thread marshalling, the person's undo taking back an agent's scene step, and its waiting for a busy person; the built app as an MCP server and as a bridge, as real processes; saving and opening .glb, .gltf (with and without a .bin) and .stl (binary and ASCII) through the handlers, a macro and a client, never over someone else's .bin, and export_scene; check_mesh (volumes in m³, inside-out and open meshes with their fixes, layers from 1, bad arguments) and an agent checking, selecting, fixing and checking again through a client |
 | Chat | 20 | The chat's agent loop against a fake Anthropic API (no real calls): a conversation that makes a ball, looks at it and answers, with the picture going back as an image block; the tools sent being exactly the MCP server's; prompt-cache breakpoints; tool errors, 401, 429, 529, 500 and network failures with Retry; the step cap, and Auto-continue carrying on past it by itself, then stopping at its ceiling; Stop while a reply streams and while a call waits for a busy person; New Chat in the middle of a request; the API key's file (owner-only) and masking |
-| UI | 56 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), and the screenshots (one of the still life opened again from a .glb) |
+| UI | 61 | The window, mouse and keyboard driven through a headless window, the numeric panel folding (N) and a requester opening it, the chat's Auto-continue box, the UV view, the texture panel, Layout (its Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, and Edit › Undo and Redo) and its Render Animation window, an AI agent working in the open window and in its Layout scene, the AI Chat panel (a fake Claude making a ball that Ctrl+Z undoes, a missing key, Retry, Stop while the person is busy), Mesh Info (W, following the object, its Select button and Ctrl+Z, its Align button sparing a cavity, the menu and tabs), and the screenshots (one of the still life opened again from a .glb, one of Mesh Info) |
 
 The screenshots are drawn by the tests in a real (headless) window:
 
@@ -492,7 +518,7 @@ Layout reuses them.
 |---|---|
 | `AVAModeler.Core` | Double-precision math, the mesh (indexed points and n-gon polygons, with lazy edge and adjacency maps, and UV maps), layers, surfaces and their texture layers, the projections, texture images (PNG and BMP read here), selection, undo (copy-on-write snapshots of the layers an edit changes), the document, PNG writing |
 | `AVAModeler.Formats` | LWOB/LWLO read and write, LWO2 read, VideoScape GEO, OBJ, glTF 2.0 (written by hand with System.Text.Json) and STL |
-| `AVAModeler.Geometry` | Triangulation (LibTessDotNet), BSP booleans and drills, Catmull–Clark subdivision, the extrude/lathe/bevel family |
+| `AVAModeler.Geometry` | Triangulation (LibTessDotNet), BSP booleans and drills, Catmull–Clark subdivision, the extrude/lathe/bevel family, the mesh check (Mesh Info and `check_mesh`) |
 | `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp), plugins, SkiaSharp image reading |
 | `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing, the view cameras, picking |
 | `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones, LWS and JSON scenes, the ray tracer |
@@ -538,6 +564,13 @@ Layout reuses them.
   LightWave's 100% = 1 (not in physical units), and motion sampled linearly every frame, not as TCB curves. glTF has
   no shear, so a non-uniform scale under a turned parent comes out slightly different. There's no Khronos validator
   in the tests; the files are checked structurally (header, chunk alignment, accessor bounds, buffer views).
+
+- **Mesh Info and `check_mesh`** check the whole foreground layers (not the selection), each layer on its own. They
+  don't find faces that cross each other (self-intersections) or walls too thin to print. An inward shell counts as
+  a cavity when its bounding box lies inside another closed shell's, which is a quick test rather than a proof. Align run on
+  everything turns cavities outward too; Mesh Info's Align button leaves them out. A face that uses one
+  point twice is reported as degenerate and left out of the edge counts. The Fix buttons clear the selection first,
+  so the tool acts on everything in the foreground. Closing a hole is left to you (Make Polygon on the rim's points).
 
 - **Render Animation** needs ffmpeg on the PATH for MP4 and GIF (it isn't bundled); without it, the PNG frames are
   still written. Frames are numbered from 1 in the order rendered, not by scene frame. It renders frames one after

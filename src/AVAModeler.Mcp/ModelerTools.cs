@@ -522,6 +522,30 @@ public sealed partial class ModelerTools(IModelerHost host)
             return new JsonObject { ["layer"] = l + 1, ["total"] = all.Count, ["offset"] = offset, ["count"] = rows.Count, ["polygons"] = rows, ["more"] = offset + rows.Count < all.Count };
         }, cancel);
 
+    [McpServerTool(Name = "check_mesh", ReadOnly = true, Idempotent = true)]
+    [Description("Checks the object numerically, as the app's Mesh Info panel does, and changes nothing: is it a clean closed solid (watertight, consistently wound, facing outward) ready for 3D printing, booleans and rendering? Returns a verdict (\"Closed and printable (1 shell)\", \"Open: 2 holes along 8 edges\"...), printable and watertight flags, counts (points; polygons by type), bounds (min, max, size in metres), area_m2, and when closed volume_m3 and center_of_mass (metres, even density); then the problems: holes and boundary_edges (edges of one polygon), non_manifold_edges (3 or more polygons), shells (separate connected pieces), inconsistent_edges and flipped_polygons (faces wound against their neighbours, or closed shells inside out: what Align would turn), inward_shells, cavities (an inward shell inside another is a hollow, not a mistake), degenerate_polygons (no area, or a point twice), non_planar_polygons, duplicate_points, unused_points, points_and_lines (1- and 2-point polygons, not part of a solid). how_to_fix names the tool for each, and per_layer gives a few example indices (from 0). Check your model after booleans, drills, Make Polygon or hand-built faces, and before saving for 3D printing; to see a problem, run_tool \"Select Problems\" with its Problem, then render_view.")]
+    public Task<string> CheckMesh(
+        [Description("The layers to check, numbered from 1, each on its own. Default: the foreground layers (whole layers, not the selection).")] int[]? layers = null,
+        [Description("Points closer than this, in metres, count as duplicates, and faces thinner than it as degenerate (default 0.000001).")] double tolerance = 1e-6,
+        [Description("How many example indices of each problem to list per layer, 0 to 200 (default 20).")] int examples = 20,
+        CancellationToken cancel = default) =>
+        Do("checked the mesh", c =>
+        {
+            if (tolerance < 0 || !double.IsFinite(tolerance)) throw new ArgumentException("tolerance must be 0 or more, in metres.");
+            if (examples is < 0 or > 200) throw new ArgumentException("examples must be from 0 to 200.");
+            var doc = c.Document;
+            List<int> which;
+            if (layers is { Length: > 0 })
+            {
+                foreach (int l in layers)
+                    if (l < 1 || l > doc.Layers.Count) throw new ArgumentException($"There's no layer {l}: layers are numbered 1 to {doc.Layers.Count}.");
+                which = layers.Select(l => l - 1).ToList();
+            }
+            else which = doc.ForegroundLayers.ToList();
+            var report = AVAModeler.Geometry.MeshCheck.Layers(doc, which, new AVAModeler.Geometry.MeshCheckOptions { PointTolerance = tolerance });
+            return CheckReport.Json(report, examples);
+        }, cancel);
+
     [McpServerTool(Name = "render_view", ReadOnly = true, Idempotent = true)]
     [Description("Draws one of the Modeler's views of the object as a PNG, framed to fit the visible layers, as the app draws it: grey grid, foreground in black wire, background layers dimmed, selection in yellow, faces seen from behind tinted blue. top looks down -Y (X right, Z up the picture); front looks along +Z (X right, Y up); side looks along -X (Z right, Y up); perspective orbits the object. Only perspective shades: mode wireframe, shaded (lit faces with wire) or textured (also image textures). Use it to check your work.")]
     public async Task<CallToolResult> RenderView(

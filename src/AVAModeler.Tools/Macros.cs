@@ -39,6 +39,7 @@ public static class Macros
         ("setuv(n, u, v) / getuv(n)", "a point's UVs in the chosen UV map"),
         ("texture(surface, image, {Option = value, ...})", "gives a surface an image texture; options: Channel (\"color\", \"diffuse\", \"specular\", \"luminosity\", \"reflection\", \"transparency\", \"bump\"), Projection (\"planar\", \"cylindrical\", \"spherical\", \"cubic\", \"uv\"), Axis, UVMap, Center, Size, Fit (automatic sizing), WidthTiling/HeightTiling (\"reset\", \"repeat\", \"mirror\", \"edge\"), WidthWrap/HeightWrap, Opacity, Blend, Amplitude"),
         ("notexture(surface, channel)", "removes a surface's textures (for one channel, or all)"),
+        ("checkmesh()", "checks the foreground layers as Mesh Info does, changing nothing; returns a table: verdict, printable, watertight, points, polygons, faces, area (m²), volume (m³, nil unless closed), center (centre of mass {x, y, z}), size, min, max, shells, holes, boundary_edges, nonmanifold_edges, inconsistent_edges, flipped_polygons, inward_shells, cavities, degenerate_polygons, nonplanar_polygons, duplicate_points, unused_points, points_and_lines, and report (the lines of text). tool(\"Select Problems\", {Problem = \"BoundaryEdges\"}) selects them"),
         ("print(...)", "writes to the macro's output"),
     ];
 
@@ -99,6 +100,7 @@ public static class Macros
         });
         g["notexture"] = (Func<string, string?, int>)((surface, channel) =>
             commands.ClearTextures(surface, channel == null ? null : Enum.Parse<TextureChannel>(channel, ignoreCase: true)));
+        g["checkmesh"] = (Func<Table>)(() => CheckMesh(lua, commands.Document));
         lua.Options.DebugPrint = commands.Print;
         try
         {
@@ -160,6 +162,45 @@ public static class Macros
             }
         if (fit)
             (t.Center, t.Size) = TextureMapping.AutoSize(TextureMapping.SurfaceBounds(doc.Layers.Select(l => l.Mesh), doc.SurfaceIndex(surface)));
+    }
+
+    /// <summary>The mesh check of the foreground layers as a Lua table (see the Macro Reference).</summary>
+    private static Table CheckMesh(Script lua, Document doc)
+    {
+        var r = Geometry.MeshCheck.Document(doc);
+        Table V(Vec3 v) => List(lua, new object[] { v.X, v.Y, v.Z });
+        var t = new Table(lua);
+        t["verdict"] = r.Verdict;
+        t["printable"] = r.Printable;
+        t["watertight"] = r.Watertight;
+        t["points"] = r.Points;
+        t["polygons"] = r.Polygons;
+        t["faces"] = r.Faces;
+        t["area"] = r.Area;
+        if (r.Volume is { } v) t["volume"] = v;
+        if (r.CenterOfMass is { } c) t["center"] = V(c);
+        var b = r.Bounds;
+        if (!b.IsEmpty)
+        {
+            t["size"] = V(b.Size);
+            t["min"] = V(b.Min);
+            t["max"] = V(b.Max);
+        }
+        t["shells"] = r.Shells;
+        t["holes"] = r.Holes;
+        t["boundary_edges"] = r.BoundaryEdges;
+        t["nonmanifold_edges"] = r.NonManifoldEdges;
+        t["inconsistent_edges"] = r.InconsistentEdges;
+        t["flipped_polygons"] = r.FlippedPolygons;
+        t["inward_shells"] = r.InwardShells;
+        t["cavities"] = r.Cavities;
+        t["degenerate_polygons"] = r.DegeneratePolygons;
+        t["nonplanar_polygons"] = r.NonPlanarPolygons;
+        t["duplicate_points"] = r.DuplicatePoints;
+        t["unused_points"] = r.UnusedPoints;
+        t["points_and_lines"] = r.PointsAndLines;
+        t["report"] = List(lua, r.Lines());
+        return t;
     }
 
     private static Table List(Script lua, IEnumerable<object> items)

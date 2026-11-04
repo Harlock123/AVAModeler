@@ -213,6 +213,11 @@ public abstract class Tool
     /// only works from mouse clicks in a view (Points, Drag) says no.
     /// </summary>
     public virtual bool Scriptable => true;
+    /// <summary>
+    /// Whether the tool changes only the selection, never the object (Select Problems): its step can still be undone,
+    /// but it doesn't mark the object as having unsaved changes.
+    /// </summary>
+    protected virtual bool SelectsOnly => false;
 
     protected ToolContext Context { get; private set; } = null!;
     protected Document Doc => Context.Document;
@@ -294,7 +299,9 @@ public abstract class Tool
         var before = _before;
         _before = null;
         _originals = [];
+        bool modified = Doc.Modified;
         Doc.Commit(before);
+        if (SelectsOnly) Doc.Modified = modified;
     }
 
     public void Cancel()

@@ -15,7 +15,7 @@ namespace AVAModeler.Mcp.Tests;
 /// </summary>
 public class RecipeTests
 {
-    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag"];
+    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part"];
 
     /// <summary>Each recipe with arguments that keep it quick (small pictures, few frames).</summary>
     public static TheoryData<string, string> Cases => new()
@@ -29,6 +29,7 @@ public class RecipeTests
         { "carbon_atom", """{"width": "96"}""" },
         { "morph_smile", """{"frames": "10", "width": "96"}""" },
         { "wave_flag", """{"frames": "6", "width": "48"}""" },
+        { "printable_part", """{"width": "0.05", "hole": "0.01"}""" },
     };
 
     /// <summary>A recipe's tool calls, read from its text as an agent reads them.</summary>
@@ -160,6 +161,15 @@ public class RecipeTests
                 Assert.Equal(Axis.X, wave.Along);
                 Assert.True(flag.DeformedMesh(6).Bounds().Size.Z > 0.1);
                 Assert.True(File.Exists(b.Folder.File("flag/flag0005.png")));
+                break;
+            case "printable_part":
+                var check = AVAModeler.Geometry.MeshCheck.Document(doc);
+                Assert.True(check.Printable, check.Verdict);
+                Assert.Equal(1, check.Shells);
+                Assert.True(doc.Layers[1].Mesh.IsEmpty);
+                double bored = (0.05 * 0.05 - Math.PI * 0.01 * 0.01 / 4) * 0.02;
+                Assert.InRange(check.Volume!.Value, bored, bored * 1.01);
+                Assert.True(new FileInfo(b.Folder.File("part.stl")).Length > 84);
                 break;
         }
     }

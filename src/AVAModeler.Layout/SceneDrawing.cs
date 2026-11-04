@@ -14,7 +14,7 @@ public static class SceneDrawing
     /// <summary>
     /// The scene at a worked-out frame, as a view draws it: every visible object's deformed, placed mesh as a layer
     /// (<paramref name="selected"/> boxed in yellow), and lines for lights, cameras, nulls and bones (with a line from a
-    /// bone's tip to its IK goal).
+    /// bone's tip to its IK goal), and the paths items follow.
     /// </summary>
     public static ViewScene Build(SceneFrame frame, IEnumerable<SceneItem> items, bool shaded, SceneItem? selected = null)
     {
@@ -46,7 +46,25 @@ public static class SceneDrawing
             if (item is Bone { IKGoal: { } goal } bone && frame.World.TryGetValue(goal, out var g))
                 scene.Overlay.Add(new OverlayLine(m.TransformPoint(new Vec3(0, 0, bone.RestLength)), g.TransformPoint(goal.Pivot), IKLink));
         }
+        // Paths items follow, as curves through their points.
+        foreach (var item in items)
+            if (item.Path != null && PathLine(item, frame.Frame) is { } line)
+            {
+                uint color = item == selected ? Palette.Selected : PathColor;
+                for (int i = 1; i < line.Count; i++) scene.Overlay.Add(new OverlayLine(line[i - 1], line[i], color));
+            }
         return scene;
+    }
+
+    /// <summary>The colour of a path an item follows (the chosen item's path is drawn in the selection's yellow).</summary>
+    public const uint PathColor = 0xFFFF70D0;
+
+    /// <summary>The path an item follows at a frame, as points along it in the world for drawing (null if it has none it can use).</summary>
+    public static IReadOnlyList<Vec3>? PathLine(SceneItem item, double frame)
+    {
+        if (item.Path is not { } path || path.Points.Count < path.Fewest || path.Points.Any(p => p.Scene != item.Scene)) return null;
+        var curve = new MotionPath(path.Points.Select(p => p.WorldPosition(frame)).ToList(), path.Closed);
+        return curve.Polyline(48 * path.Points.Count);
     }
 
     /// <summary>The colour of the line from a bone's tip to its IK goal.</summary>

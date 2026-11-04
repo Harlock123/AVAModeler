@@ -346,6 +346,16 @@ Modeler and Layout shows the change at once.
     [ffmpeg](https://ffmpeg.org) is on the PATH, it also joins the frames into an MP4 (H.264) and a looping GIF.
 - **Deformation**: bones bend objects, weighted by distance as classic LightWave's were. Skelegons in the Modeler
   turn into bones. Morph targets blend by envelope, and there is wave and ripple displacement.
+- **Following a path** (the Path section of any item's settings but a bone's): the item travels along a smooth curve
+  (a centripetal Catmull–Rom spline, which doesn't overshoot) through other items, usually nulls placed for it, in
+  the item list's order, open or **closed** into a loop; move or animate a null and the path changes with it. Where
+  along it the item is, from 0 at the start to 1 at the end (a loop's positions wrap round, so 2 is twice round), is
+  a channel of its own, `path.position`, keyed like any other (in the panel, the graph's keys, the dope sheet, and
+  agents' `set_key`), measured evenly along the curve's length; **Even speed** keys it once round from the first frame
+  to the last. **Align to path** turns its heading and pitch to face along the curve (looking a **look-ahead** in
+  metres ahead, or along the tangent), as LightWave's Align to Path did; **Banking** leans it into turns (degrees on
+  a 1 m radius turn, less on wider ones). The view draws the path. **Bake path** turns the motion into ordinary
+  position and rotation keys.
 - **Inverse kinematics** (a bone's settings in the item panel), as LightWave 5 had it: give the bone at the end of a
   chain a **goal** (a null, or any item that doesn't ride on the chain) and the chain (that bone and its parent bones,
   up to one marked **Anchor**, LightWave's "unaffected by IK of descendants") turns so its tip reaches it. With
@@ -358,6 +368,10 @@ Modeler and Layout shows the change at once.
   the keyed pose, so it gives the same answer every time.
 
 ![Layout](Images/AVAModeler-layout.png)
+
+![The dope sheet with a bouncing ball's keys from frame 12 to 36 chosen (yellow), its channels shown; above, a toy car following a closed path (pink) through six nulls round the ground](Images/AVAModeler-dope-sheet.png)
+
+![An arm reaching for a ball by inverse kinematics, seen through a camera banked 12° (the floor tilts as in its render), with the forearm bone's IK settings: the ball as its goal, full-time IK, the chain and a heading limit](Images/AVAModeler-ik.png)
 
 ![A ray-traced frame](Images/AVAModeler-render.png)
 
@@ -590,6 +604,7 @@ The Layout tools:
 | `set_ik`, `bake_ik` | Inverse kinematics: a bone's goal (its chain reaches for it), full-time IK, anchor, locked channels and heading, pitch and bank limits; and baking the chain's solved rotations into keys over a run of frames. `get_scene` shows each bone's chain, reach, `tip_to_goal` and `ik_rotation`. |
 | `set_transform`, `look_at` | Position, rotation and scale at a frame, as keys or as plain values (the rule is in the tool's description); turning anything to face a point or another item. |
 | `set_key`, `delete_key`, `set_end_behavior` | One key on one channel with tension, continuity, bias and the linear flag; removing keys; what a channel does before its first key and after its last. |
+| `set_follow_path`, `bake_path` | Following a path: an item travels along a smooth curve through other items (nulls), open or closed, by its keyable `path.position` channel (`from_frame` and `to_frame` key an even speed), aligned to face along it with a look-ahead, and banking into turns; and baking that into position and rotation keys. `get_scene` shows `follow_path` with the path's length and where it puts the item. |
 | `shift_keys`, `scale_keys` | Moving keys in time, as the dope sheet does: an item's keys (or every item's), on one channel or all, between two frames, shifted by whole frames or scaled about a pivot frame (snapped to frames, keeping their values and TCB settings). |
 | `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame; ambient occlusion (`ao`, samples, distance in metres, strength) and the environment (`environment`: a lat-long `.hdr`, `.png` or `.jpg` in the working folder, or `builtin:sky` or `builtin:studio`; intensity, heading, and `environment_lighting` with its samples). |
 | `undo_scene`, `redo_scene` | Layout's undo and redo, on the history the person's Ctrl+Z uses: each scene call is one step ("Agent: …"), and the person's steps can be undone too. |
@@ -691,6 +706,7 @@ arguments such as a size, a colour or a frame count. The tests follow every one,
 | `rounded_box` | A box with every edge rounded by Chamfer and a panel sunk into its top by Inset, checked with `check_mesh`. |
 | `marble_table` | A table with a marble top and wooden legs on a checkerboard floor with a faint fractal-noise bump, all textured with `set_procedural` (no images), and rendered. |
 | `product_shot` | A glossy ball on a floor as a product shot: an environment (an HDR file or a built-in one) lighting it and seen in its reflections, ambient occlusion, a big area light's soft shadow, and depth of field focused on it with `focus_on`. |
+| `car_on_loop` | A toy car driving once round an oval loop through six nulls, facing along the road (`set_follow_path` closed with Align to Path and an even speed), seen from above with its path drawn, and rendered. |
 | `reaching_arm` | A two-bone arm whose hand follows a keyed, moving ball by full-time IK (the ball is the goal, the elbow's heading limited), checked with `get_scene`'s `tip_to_goal`. |
 
 ## Building and testing
@@ -834,6 +850,14 @@ Layout reuses them.
   a light's radius, the effects' sample counts, ambient occlusion and the environment have no place there and are
   kept only in `.avascene`. glTF export leaves them all out.
 
+- **Following a path**: the path runs through items (nulls, usually), in the order given (in the panel, the item
+  list's order); a Modeler layer's lines or another item's motion path can't be used as a path. Bones can't follow
+  paths. Align to Path sets heading and pitch from the curve, so an item looking straight up or down along it can
+  spin about the vertical; banking is worked out from how fast the curve turns seen from above, over a stretch of it,
+  so it eases rather than following every wobble, and a spline through few points turns a little faster near its
+  points than between them. While an item follows a path its position keys (and, aligned, its heading and pitch keys)
+  are kept but not used. LightWave scenes have no place for path following: `.lws` gets the item's own keys and a
+  warning (bake the path first); `.avascene` keeps it, and glTF export writes the motion it makes.
 - **The dope sheet** always fits the scene's frames across its width (there's no zooming in on a stretch of frames),
   and shows only keys inside them; channels never keyed (holding a constant) have no row or keys. Keys move by whole
   frames only. Scaling that brings keys of one channel onto the same frame keeps the later one. Copied keys paste onto

@@ -15,7 +15,7 @@ namespace AVAModeler.Mcp.Tests;
 /// </summary>
 public class RecipeTests
 {
-    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table", "product_shot", "reaching_arm"];
+    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table", "product_shot", "reaching_arm", "car_on_loop"];
 
     /// <summary>Each recipe with arguments that keep it quick (small pictures, few frames).</summary>
     public static TheoryData<string, string> Cases => new()
@@ -34,6 +34,7 @@ public class RecipeTests
         { "marble_table", """{"check": "0.4"}""" },
         { "product_shot", """{"width": "48", "environment": "builtin:sky"}""" },
         { "reaching_arm", """{"frames": "12", "width": "64"}""" },
+        { "car_on_loop", """{"frames": "8", "width": "64"}""" },
     };
 
     /// <summary>A recipe's tool calls, read from its text as an agent reads them.</summary>
@@ -151,6 +152,25 @@ public class RecipeTests
                 }
                 // No rotation keys: IK does it.
                 Assert.True(upper[Channel.Heading].Keys.Count <= 1);
+                break;
+            case "car_on_loop":
+                var car = Obj("Car");
+                var path = Assert.IsType<FollowPath>(car.Path);
+                Assert.True(path.Closed);
+                Assert.Equal(6, path.Points.Count);
+                // At frame 1 it's at the first point, and at the last back there again; between, on the oval.
+                Near(new Vec3(4, 0, 0), car.WorldPosition(1), 1e-6);
+                Near(new Vec3(4, 0, 0), car.WorldPosition(8), 1e-6);
+                foreach (var f in new[] { 2.0, 3.5, 5, 7 })
+                {
+                    var p = car.WorldPosition(f);
+                    Assert.Equal(0, p.Y, 6);
+                    Assert.InRange(p.X * p.X / 16 + p.Z * p.Z / 6.25, 0.85, 1.15);
+                    // Facing along the road: its +Z points where it goes next.
+                    var ahead = (car.WorldPosition(f + 0.05) - p).Normalized();
+                    var forward = car.WorldMatrix(f).TransformVector(Vec3.UnitZ).Normalized();
+                    Assert.True(Vec3.Dot(ahead, forward) > 0.98, $"At frame {f} the car faces {forward}, going {ahead}.");
+                }
                 break;
             case "three_point_lighting":
                 Assert.Equal(["Camera", "Modeler object", "Key", "Fill", "Rim"], b.Scene.Items.Select(i => i.Name));

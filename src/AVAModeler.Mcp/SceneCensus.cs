@@ -227,6 +227,7 @@ internal static class SceneCensus
         if (item.Pivot != Vec3.Zero) o["pivot"] = Vec(item.Pivot);
         if (item.Parent != null || item is Bone || item.Pivot != Vec3.Zero) o["world_position"] = Vec(world.TransformPoint(item.Pivot));
         o["keyed"] = Strings(Channels(item).Where(c => !Keying.IsConstant(c.Envelope, s)).Select(c => c.Name));
+        if (item.Path is { } path) o["follow_path"] = FollowPathJson(item, path, frame);
         switch (item)
         {
             case LightItem light:
@@ -322,6 +323,33 @@ internal static class SceneCensus
                 if (bone.IKLimits[c] is { } l) limits[names[c]] = new JsonArray(Round(l.Min), Round(l.Max));
             o["limits"] = limits;
         }
+        return o;
+    }
+
+    /// <summary>
+    /// How an item follows its path, at a frame: the points, whether it's closed, aligned, its look-ahead and banking,
+    /// the path's length, where along it the item is (path.position and metres), and the position and rotation it gives.
+    /// </summary>
+    public static JsonObject FollowPathJson(SceneItem item, FollowPath path, double frame)
+    {
+        var o = new JsonObject
+        {
+            ["points"] = Strings(path.Points.Select(p => p.Name)),
+            ["closed"] = path.Closed,
+            ["align_to_path"] = path.AlignToPath,
+            ["look_ahead"] = Round(path.LookAhead),
+            ["banking"] = Round(path.Banking),
+            ["position_channel"] = SceneChannels.PathPosition,
+            ["path_position"] = Round(item.PathPosition.Evaluate(frame)),
+        };
+        if (path.Points.Count >= path.Fewest && path.Points.All(p => p.Scene == item.Scene))
+        {
+            var curve = new MotionPath(path.Points.Select(p => p.WorldPosition(frame)).ToList(), path.Closed);
+            o["length"] = Round(curve.Length);
+            o["moved_to"] = Vec(item.MotionPositionAt(frame));
+            o["turned_to"] = Vec(item.MotionRotationAt(frame));
+        }
+        else o["problem"] = $"Its path needs at least {path.Fewest} points in the scene; it moves by its keys until it has them.";
         return o;
     }
 

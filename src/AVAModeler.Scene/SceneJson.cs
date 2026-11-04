@@ -98,6 +98,15 @@ public static class SceneJson
                 Visible = item.Visible,
                 Channels = item.Channels.Select(Env).ToList(),
             };
+            if (item.Path is { } path)
+            {
+                d.Path = new PathDto
+                {
+                    Points = path.Points.Select(p => items.IndexOf(p)).Where(i => i >= 0).ToArray(), Closed = path.Closed,
+                    AlignToPath = path.AlignToPath, LookAhead = path.LookAhead, Banking = path.Banking,
+                };
+                d.PathPosition = Env(item.PathPosition);
+            }
             switch (item)
             {
                 case ObjectItem o:
@@ -214,6 +223,7 @@ public static class SceneJson
             item.Pivot = Vec(d.Pivot);
             item.Visible = d.Visible;
             for (int c = 0; c < Math.Min(9, d.Channels.Count); c++) SetEnv(item.Channels[c], d.Channels[c]);
+            SetEnv(item.PathPosition, d.PathPosition);
             scene.Add(item);
             items.Add(item);
         }
@@ -233,6 +243,20 @@ public static class SceneJson
             {
                 warnings.Add(e.Message);
             }
+        }
+        for (int i = 0; i < dto.Items.Count; i++)
+        {
+            if (items[i] is not { } follower || dto.Items[i].Path is not { } pd) continue;
+            var points = pd.Points.Where(p => p >= 0 && p < items.Count && items[p] != null).Select(p => items[p]!).ToList();
+            var path = new FollowPath
+            {
+                Points = points, Closed = pd.Closed, AlignToPath = pd.AlignToPath,
+                LookAhead = double.IsFinite(pd.LookAhead) ? Math.Max(0, pd.LookAhead) : 0, Banking = double.IsFinite(pd.Banking) ? pd.Banking : 0,
+            };
+            if (points.Count < pd.Points.Length) warnings.Add($"Some of {follower.Name}'s path points aren't in the scene.");
+            if (FollowPath.Problem(follower, points) is { } problem) warnings.Add(problem);
+            else if (points.Count < path.Fewest) warnings.Add($"{follower.Name}'s path has too few points left, so it no longer follows it.");
+            else follower.Path = path;
         }
         for (int i = 0; i < dto.Items.Count; i++)
         {
@@ -641,6 +665,16 @@ public static class SceneJson
         public EnvelopeDto? Amplitude { get; set; }
     }
 
+    /// <summary>A path an item follows: its points by item index, and its settings.</summary>
+    private sealed class PathDto
+    {
+        public int[] Points { get; set; } = [];
+        public bool Closed { get; set; }
+        public bool AlignToPath { get; set; } = true;
+        public double LookAhead { get; set; }
+        public double Banking { get; set; }
+    }
+
     private sealed class ItemDto
     {
         public string Type { get; set; } = "";
@@ -649,6 +683,8 @@ public static class SceneJson
         public double[]? Pivot { get; set; }
         public bool Visible { get; set; } = true;
         public List<EnvelopeDto> Channels { get; set; } = [];
+        public PathDto? Path { get; set; }
+        public EnvelopeDto? PathPosition { get; set; }
 
         public int? Document { get; set; }
         public int? Layer { get; set; }

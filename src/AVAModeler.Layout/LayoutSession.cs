@@ -337,6 +337,52 @@ public sealed class LayoutSession
         SetStatus($"Key at frame {Frame:0} deleted." + (kept > 0 ? $" {kept} channel(s) kept it: it's their only key." : ""));
     }
 
+    // ───────────────────────────── following a path ─────────────────────────────
+
+    /// <summary>
+    /// Sets where an item following a path is along it (path.position, 0 to 1) at the current frame, by the same keying
+    /// rule as <see cref="SetChannel"/>, as one undo step.
+    /// </summary>
+    public void SetPathPosition(SceneItem item, double value) => Edit($"Set {item.Name}'s Path Position", () =>
+    {
+        var env = item.PathPosition;
+        bool key = AutoKey || Keying.IsAnimated(env) && env.IndexOf(Frame) < 0;
+        Keying.Set(env, Scene, Frame, value, key, $"{item.Name}'s path position");
+        Scene.Notify();
+    });
+
+    /// <summary>
+    /// Keys path.position so the item goes along its path at an even speed: 0 at <paramref name="from"/> to
+    /// <paramref name="laps"/> (1: once to the end; a closed path can go round more) at <paramref name="to"/>, with
+    /// linear keys, as one undo step.
+    /// </summary>
+    public void TimePath(SceneItem item, double from, double to, double laps = 1)
+    {
+        if (!(to > from)) throw new ArgumentException($"The path's last frame ({to:0.###}) must be after its first ({from:0.###}).");
+        if (!double.IsFinite(laps) || laps == 0) throw new ArgumentException("The laps must be a number other than 0 (1 is once along the path).");
+        Edit($"Time {item.Name}'s Path", () =>
+        {
+            var env = new Envelope();
+            env.AddKey(new EnvelopeKey(from, 0, Linear: true));
+            env.AddKey(new EnvelopeKey(to, laps, Linear: true));
+            item.PathPosition.CopyFrom(env);
+            Scene.Notify();
+        });
+    }
+
+    /// <summary>
+    /// Bakes an item's path following into position (and, aligned, rotation) keys every <paramref name="step"/> frames
+    /// from <paramref name="first"/> to <paramref name="last"/>, by the keying rule, as one undo step, and stops it
+    /// following (<see cref="FollowPath.Bake"/>). Returns the frames keyed.
+    /// </summary>
+    public IReadOnlyList<double> BakePath(SceneItem item, double first, double last, double step = 1)
+    {
+        var frames = Edit($"Bake {item.Name}'s Path", () =>
+            FollowPath.Bake(item, first, last, step, (e, f, v) => Keying.Key(e, Scene, new EnvelopeKey(f, v), keepShape: true)));
+        SetStatus($"Baked {item.Name}'s path into keys at {frames.Count} frame(s); it no longer follows the path.");
+        return frames;
+    }
+
     // ───────────────────────────── inverse kinematics ─────────────────────────────
 
     /// <summary>

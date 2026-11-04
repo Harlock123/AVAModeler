@@ -5,8 +5,9 @@ namespace AVAModeler.Layout;
 
 /// <summary>
 /// Every animatable channel an item has, by the names agents and Layout's dope sheet use: its nine motion channels,
-/// a light's intensity, a camera's zoom, and an object's morph weights ("morph.Smile") and displacement amplitudes
-/// ("displacement.1.amplitude", numbered from 1). The MCP server's census reads its channel names through this, so a
+/// a light's intensity, a camera's zoom, an object's morph weights ("morph.Smile") and displacement amplitudes
+/// ("displacement.1.amplitude", numbered from 1), and for an item that follows a path, where along it it is
+/// ("path.position"). The MCP server's census reads its channel names through this, so a
 /// new animatable setting is added here once.
 /// </summary>
 public static class SceneChannels
@@ -27,7 +28,11 @@ public static class SceneChannels
             foreach (var m in o.Morphs) yield return (MorphChannel(m), m.Weight);
             for (int i = 0; i < o.Displacements.Count; i++) yield return (DisplacementChannel(i), o.Displacements[i].Amplitude);
         }
+        if (item.Path != null) yield return (PathPosition, item.PathPosition);
     }
+
+    /// <summary>The channel of where an item following a path is along it (0 the start, 1 the end).</summary>
+    public const string PathPosition = "path.position";
 
     /// <summary>An item's channel by its exact name, or null.</summary>
     public static Envelope? Find(SceneItem item, string name) => Of(item).FirstOrDefault(c => c.Name == name).Envelope;

@@ -155,6 +155,8 @@ public static class LwsWriter
 
         private void Common(SceneItem item)
         {
+            if (item.Path != null)
+                warnings.Add($"{item.Name} follows a path, which a LightWave scene has no place for: the .avascene keeps it, and the .lws has only its keys (bake the path into keys first to keep the motion).");
             if (item.Pivot != Vec3.Zero) L($"PivotPosition {V(item.Pivot)}");
             if (item.Parent != null && item is not Bone) L($"ParentItem {Id(item.Parent)}");
         }

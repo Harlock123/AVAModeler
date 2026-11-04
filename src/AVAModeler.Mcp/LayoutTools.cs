@@ -40,14 +40,14 @@ public sealed partial class ModelerTools
     // ───────────────────────────── reading the scene ─────────────────────────────
 
     [McpServerTool(Name = "get_scene", ReadOnly = true, Idempotent = true)]
-    [Description("Describes Layout's scene: the frame range, frames per second, current frame, current camera, auto-key, ambient light, background, fog, ambient occlusion and environment; then every item (object, null, light, camera, bone) with its #index, kind, name, parent, visibility, position (metres), rotation [heading, pitch, bank] (degrees), scale, which channels are animated, and its own settings (a light's type, colour, intensity, direction, area size or radius and shadow samples; a camera's zoom, field of view, frame size, depth of field and motion blur; an object's source, point and polygon counts, world bounds, bones, morphs (name, weight channel and weight) and displacements (numbered from 1, with their settings and amplitude)), all at one frame. Also any warnings (files that couldn't be loaded, missing images) and the scene's undo history (undo_scene: its depth, and what undo_scene and redo_scene would do next).")]
+    [Description("Describes Layout's scene: the frame range, frames per second, current frame, current camera, auto-key, ambient light, background, fog, ambient occlusion and environment; then every item (object, null, light, camera, bone) with its #index, kind, name, parent, visibility, position (metres), rotation [heading, pitch, bank] (degrees), scale, which channels are animated, and its own settings (a light's type, colour, intensity, direction, area size or radius and shadow samples; a camera's zoom, field of view, frame size, depth of field and motion blur; an object's source, point and polygon counts, world bounds, bones, morphs (name, weight channel and weight) and displacements (numbered from 1, with their settings and amplitude); a bone's ik (goal, chain, reach, tip_to_goal, ik_rotation, limits); an item's follow_path (points, length, path_position, moved_to, turned_to)), all at one frame. Also any warnings (files that couldn't be loaded, missing images) and the scene's undo history (undo_scene: its depth, and what undo_scene and redo_scene would do next).")]
     public Task<string> GetScene(
         [Description("The frame to describe positions and values at (default: the current frame).")] double? frame = null,
         CancellationToken cancel = default) =>
         DoScene("read the scene", (c, l) => SceneCensus.Scene(l, c.Document, SceneCensus.Frame(l, frame)), cancel, changes: false);
 
     [McpServerTool(Name = "get_keys", ReadOnly = true, Idempotent = true)]
-    [Description("Lists an item's keys, channel by channel: each key's frame, value, and tension, continuity and bias (Kochanek–Bartels TCB, -1 to 1; left out when 0) and linear flag, plus what the channel does before its first key and after its last (pre and post). A channel never keyed shows its constant value. Channels: position.x/y/z (metres), heading, pitch, bank (degrees), scale.x/y/z, a light's intensity or a camera's zoom, and an object's morph weights (morph.<name>) and displacement amplitudes (displacement.<number>.amplitude).")]
+    [Description("Lists an item's keys, channel by channel: each key's frame, value, and tension, continuity and bias (Kochanek–Bartels TCB, -1 to 1; left out when 0) and linear flag, plus what the channel does before its first key and after its last (pre and post). A channel never keyed shows its constant value. Channels: position.x/y/z (metres), heading, pitch, bank (degrees), scale.x/y/z, a light's intensity or a camera's zoom, an object's morph weights (morph.<name>) and displacement amplitudes (displacement.<number>.amplitude), and path.position for an item following a path.")]
     public Task<string> GetKeys(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("Just this channel (default: all of them).")] string? channel = null,
@@ -517,7 +517,7 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "set_key", Destructive = true)]
-    [Description("Makes or changes one key on one channel: position.x, position.y, position.z (metres), heading, pitch, bank (degrees), scale.x, scale.y, scale.z, a light's intensity or a camera's zoom, or an object's morph weight (morph.<name>, e.g. morph.Smile: 0 is the base shape, 1 the target, and values between blend; beyond 1 exaggerates) or displacement amplitude (displacement.<number>.amplitude, metres; numbered from 1 as get_scene lists them). The curve through keys is Kochanek–Bartels: tension (1 slows into and out of the key, -1 overshoots), continuity (sharp corners when away from 0) and bias (-1 leans the curve toward the previous key, 1 toward the next), each -1 to 1, default 0; linear makes the stretch leading into this key a straight line. A channel never keyed before has its constant replaced by its first key. A key already at that frame is replaced (keeping its tension, continuity and bias unless given).")]
+    [Description("Makes or changes one key on one channel: position.x, position.y, position.z (metres), heading, pitch, bank (degrees), scale.x, scale.y, scale.z, a light's intensity or a camera's zoom, or an object's morph weight (morph.<name>, e.g. morph.Smile: 0 is the base shape, 1 the target, and values between blend; beyond 1 exaggerates) or displacement amplitude (displacement.<number>.amplitude, metres; numbered from 1 as get_scene lists them), or path.position for an item following a path (0 the start, 1 the end; set_follow_path). The curve through keys is Kochanek–Bartels: tension (1 slows into and out of the key, -1 overshoots), continuity (sharp corners when away from 0) and bias (-1 leans the curve toward the previous key, 1 toward the next), each -1 to 1, default 0; linear makes the stretch leading into this key a straight line. A channel never keyed before has its constant replaced by its first key. A key already at that frame is replaced (keeping its tension, continuity and bias unless given).")]
     public Task<string> SetKey(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("The channel, e.g. \"position.y\", \"heading\", \"morph.Smile\" or \"displacement.1.amplitude\".")] string channel,
@@ -609,6 +609,75 @@ public sealed partial class ModelerTools
                 ["post"] = q is { } qa ? SceneCensus.Behavior(qa) : null,
                 ["note"] = channels.Any(x => !Keying.IsAnimated(x.Envelope)) ? "Behaviours only show on channels with two keys or more." : null,
             };
+        }, cancel);
+
+    [McpServerTool(Name = "set_follow_path", Destructive = true)]
+    [Description("Makes an item follow a path: a smooth curve (a centripetal Catmull–Rom spline, no overshoot) through other items (usually nulls: add_null at each point; animate them and the path changes), in the order given, open or closed into a loop. Where along it the item is comes from its keyable channel path.position: 0 is the start (the first point), 1 the end (back at the first point on a closed path, whose positions wrap: 2 is twice round), evenly by length. from_frame and to_frame key it for you: 0 at from_frame to laps (default 1) at to_frame, with linear keys, so it moves at an even speed; or key path.position yourself with set_key for speeding up and slowing down. With align_to_path (default true) its heading and pitch turn its +Z axis along the path (model the item facing +Z), looking look_ahead metres ahead (0: along the tangent); banking leans it into turns (degrees of bank on a 1 m radius turn, proportionally less on wider ones: try 30 to 60 for a plane, 0 for a car). While it follows, its position keys (and, aligned, its heading and pitch) are ignored; its bank key adds to the banking. Give points [] to stop following. Layout's views draw the path. get_scene shows follow_path with the path's length, the item's place and turn. bake_path turns it into keys.")]
+    public Task<string> SetFollowPath(
+        [Description("The item that follows, by name or #index (not a bone).")] string item,
+        [Description("The items the path runs through, in order, by name (at least 2; 3 for a closed path); [] to stop following. Leave out to keep them.")] string[]? points = null,
+        [Description("Close the path into a loop (default: as it was, false for a new path).")] bool? closed = null,
+        [Description("Turn the item to face along the path (default: as it was, true for a new path).")] bool? align_to_path = null,
+        [Description("Metres ahead along the path an aligned item looks, 0 or more (0: the tangent).")] double? look_ahead = null,
+        [Description("Degrees of bank on a 1 m radius turn (bank = banking ÷ radius, at most 90°, into the turn); 0 for none.")] double? banking = null,
+        [Description("With to_frame: key path.position 0 here (linear keys, an even speed).")] double? from_frame = null,
+        [Description("With from_frame: key path.position laps here.")] double? to_frame = null,
+        [Description("With from_frame and to_frame: how far along it gets by to_frame, 1 = once to the end (default 1; a closed path can go round several times).")] double laps = 1,
+        CancellationToken cancel = default) =>
+        DoScene("set an item's path", (c, l) =>
+        {
+            var s = l.Scene;
+            var it = Item(s, item);
+            if (it is Bone) throw new ArgumentException($"{it.Name} is a bone: bones can't follow paths (give the object, or a null the bone's chain reaches for with set_ik, the path instead).");
+            if (points == null && closed == null && align_to_path == null && look_ahead == null && banking == null && from_frame == null && to_frame == null)
+                throw new ArgumentException("Give points (to start following), or closed, align_to_path, look_ahead, banking or from_frame and to_frame to change a path.");
+            if (points is { Length: 0 })
+            {
+                it.Path = null;
+                s.Notify();
+                var stopped = ItemNow(c, l, it, l.Frame);
+                stopped["note"] = "It no longer follows a path; it moves by its own keys again.";
+                return stopped;
+            }
+            var path = it.Path ?? new FollowPath();
+            if (points == null && it.Path == null) throw new ArgumentException($"{it.Name} doesn't follow a path yet: give points, the items it runs through.");
+            if (points != null)
+            {
+                var chosen = points.Select(p => Item(s, p, "point")).ToList();
+                if (FollowPath.Problem(it, chosen) is { } problem) throw new ArgumentException(problem);
+                path = path with { Points = chosen };
+            }
+            if (closed is { } cl) path = path with { Closed = cl };
+            if (align_to_path is { } al) path = path with { AlignToPath = al };
+            if (look_ahead is { } la) path = path with { LookAhead = la };
+            if (banking is { } bk) path = path with { Banking = bk };
+            it.Path = path.Checked();
+            if ((from_frame == null) != (to_frame == null)) throw new ArgumentException("Give from_frame and to_frame together (or neither, and key path.position with set_key).");
+            if (from_frame is { } ff && to_frame is { } tf) l.TimePath(it, SceneCensus.Frame(l, ff), SceneCensus.Frame(l, tf), laps);
+            s.Notify();
+            return ItemNow(c, l, it, l.Frame);
+        }, cancel);
+
+    [McpServerTool(Name = "bake_path", Destructive = true)]
+    [Description("Bakes an item's path following into keys, as one undo step: its position (and, when aligned to the path, heading, pitch and bank) keyed every step frames from first to last, as the path moves it, then it stops following, so the keys play. For programs without path following (LightWave scenes, glTF), or to edit the motion key by key.")]
+    public Task<string> BakePath(
+        [Description("The item following a path, by name or #index.")] string item,
+        [Description("The first frame (default: the scene's first).")] double? first = null,
+        [Description("The last frame (default: the scene's last).")] double? last = null,
+        [Description("Frames between keys, 1 or more (default 1: every frame).")] double step = 1,
+        CancellationToken cancel = default) =>
+        DoScene("baked a path into keys", (c, l) =>
+        {
+            var s = l.Scene;
+            var it = Item(s, item);
+            if (it.Path == null) throw new ArgumentException($"{it.Name} doesn't follow a path. set_follow_path gives it one.");
+            double f0 = SceneCensus.Frame(l, first ?? s.FirstFrame), f1 = SceneCensus.Frame(l, last ?? s.LastFrame);
+            if (!(step >= 1) || !double.IsFinite(step)) throw new ArgumentException("step must be 1 frame or more.");
+            if (f1 < f0) throw new ArgumentException($"last ({f1:0.###}) is before first ({f0:0.###}).");
+            var frames = l.BakePath(it, f0, f1, step);
+            var result = ItemNow(c, l, it, l.Frame);
+            result["keyed_frames"] = frames.Count;
+            return result;
         }, cancel);
 
     [McpServerTool(Name = "shift_keys", Destructive = true)]

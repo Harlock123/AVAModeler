@@ -507,6 +507,47 @@ public static class Recipes
         return recipe.Text("To hand the motion to a program without IK (glTF export), bake_ik {\"bone\": \"Lower\"} keys the bones at every frame and turns full-time IK off.");
     }
 
+    [McpServerPrompt(Name = "car_on_loop", Title = "Car driving round a loop (path)")]
+    [Description("Shows path following: a toy car driving round an oval loop through six nulls, turned to face along the road by Align to Path, at an even speed from linear path.position keys.")]
+    public static string CarOnLoop(
+        [Description("The car's colour as r, g, b from 0 to 255, or a name (default red [200, 40, 40]).")] string? color = null,
+        [Description("Frames for one lap, 2 to 120 (default 90).")] string? frames = null,
+        [Description("Width of the rendered frame in pixels (default 320).")] string? width = null)
+    {
+        var c = Colour(color, [200, 40, 40]);
+        int n = Whole(frames, 90, "frames", 2, ModelerTools.MaxAnimationFrames);
+        int w = Whole(width, 320, "width", 16, ModelerTools.MaxRenderSize);
+        int mid = Math.Max(1, (1 + n) / 2);
+        var recipe = new Recipe("Make a car drive round a loop: a path through six nulls on the ground, the car following it once round in the scene's frames, always facing along the road.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("The car's paint.", "set_surface", new { name = "Car", color = c, specular = 0.6, glossiness = 128, assign = false });
+        recipe.Step("The ground's.", "set_surface", new { name = "Ground", color = new[] { 110, 120, 110 }, specular = 0.1, assign = false });
+        recipe.Step("The car's body in layer 1, its nose toward +Z (the way a path turns it to face), its wheels' bottoms on y = 0.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0, 0.2, 0), ["Size"] = V(0.5, 0.25, 1), ["Surface"] = "Car" } });
+        recipe.Step("Its cabin, set back toward the tail.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0, 0.42, -0.1), ["Size"] = V(0.42, 0.2, 0.5), ["Surface"] = "Car" } });
+        recipe.Step("The ground in layer 2.", "set_layers", new { foreground = new[] { 2 } });
+        recipe.Step(null, "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0, -0.01, 0), ["Size"] = V(11, 0.02, 7), ["Surface"] = "Ground" } });
+        recipe.Step("Back to layer 1.", "set_layers", new { foreground = new[] { 1 } });
+        recipe.Step("A new scene (save or discard the old one if it refuses).", "new_scene", new { });
+        recipe.Step($"Frames 1 to {n}.", "set_scene", new { first_frame = 1, last_frame = n, frame = 1 });
+        recipe.Step("The car and the ground as objects of their own.", "add_object", new { layer = 1, name = "Car" });
+        recipe.Step(null, "add_object", new { layer = 2, name = "Ground" });
+        string[] names = ["P1", "P2", "P3", "P4", "P5", "P6"];
+        for (int i = 0; i < names.Length; i++)
+        {
+            double a = 2 * Math.PI * i / names.Length;
+            recipe.Step(i == 0 ? "The loop's points: six nulls round an oval 8 m by 5 m on the ground (the path runs through them in this order)." : null,
+                "add_null", new { name = names[i], position = V(4 * Math.Cos(a), 0, 2.5 * Math.Sin(a)) });
+        }
+        recipe.Step($"The car follows the closed path through them, facing along it (looking 0.3 m ahead), once round from frame 1 to frame {n} at an even speed.", "set_follow_path", new { item = "Car", points = names, closed = true, align_to_path = true, look_ahead = 0.3, from_frame = 1, to_frame = n });
+        recipe.Step("A warm point light over the loop, so the ground shades away from it.", "add_light", new { type = "point", name = "Lamp", position = V(-1, 3, -2), color = new[] { 255, 230, 200 }, intensity = 0.9 });
+        recipe.Step("The camera above and behind, looking at the middle of the loop.", "set_transform", new { item = "Camera", frame = 1, position = V(0, 6, -9), key = false });
+        recipe.Step(null, "look_at", new { item = "Camera", point = V(0, 0, 0), frame = 1, key = false });
+        recipe.Step($"Look from above at frame {mid}: the path is drawn through the nulls, with the car on it.", "render_scene_view", new { view = "top", frame = mid, width = w });
+        recipe.Step("Check where it is and which way it faces (follow_path, moved_to and turned_to).", "get_scene", new { frame = mid });
+        recipe.Step("Render that frame.", "render_scene", new { frame = mid, width = w, samples = 1 });
+        return recipe.Text("For a plane, give banking (30 to 60) so it leans into the turns; move a null (set_transform) to reshape the road; bake_path turns the motion into keys for programs without paths.");
+    }
+
     // ───────────────────────────── writing them ─────────────────────────────
 
     /// <summary>A recipe's text being built: what it makes, then numbered steps, each with its tool call.</summary>

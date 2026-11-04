@@ -22,6 +22,8 @@ public abstract class SceneItem
     public string Name;
     public Vec3 Pivot;
     public bool Visible = true;
+    /// <summary>The path the item follows (null: it moves by its position keys). See <see cref="FollowPath"/>.</summary>
+    public FollowPath? Path;
 
     /// <summary>The scene the item belongs to (set when it is added to one).</summary>
     public Scene? Scene { get; internal set; }
@@ -30,7 +32,14 @@ public abstract class SceneItem
     {
         Name = name;
         for (int i = 0; i < 9; i++) _channels[i] = Watch(new Envelope(i >= 6 ? 1 : 0));
+        PathPosition = Watch(new Envelope(0));
     }
+
+    /// <summary>
+    /// Where along its <see cref="Path"/> the item is: 0 at the start, 1 at the end (a closed path's positions wrap
+    /// round). A keyable channel ("path.position"); it does nothing while the item follows no path.
+    /// </summary>
+    public Envelope PathPosition { get; }
 
     /// <summary>The channels, indexed by <see cref="Channel"/>.</summary>
     public IReadOnlyList<Envelope> Channels => _channels;
@@ -96,9 +105,15 @@ public abstract class SceneItem
     /// </summary>
     public Vec3 MotionRotationAt(double frame) => Scene is { } s ? s.Motion.Rotation(this, frame) : RotationAt(frame);
 
-    /// <summary>The item's own transform at a frame, from its position, its rotation as it moves (IK included), scale and pivot.</summary>
+    /// <summary>
+    /// The item's position (in its parent's space) as it actually moves at a frame: its keys' (<see cref="PositionAt"/>),
+    /// unless it follows a path, when it's where the path puts it.
+    /// </summary>
+    public Vec3 MotionPositionAt(double frame) => Scene is { } s ? s.Motion.Position(this, frame) : PositionAt(frame);
+
+    /// <summary>The item's own transform at a frame, from its position and rotation as it moves (path following and IK included), scale and pivot.</summary>
     public Mat4 LocalMatrix(double frame) =>
-        Mat4.Translation(PositionAt(frame)) * Rotations.Matrix(MotionRotationAt(frame)) * Mat4.Scaling(ScaleAt(frame)) * Mat4.Translation(-Pivot);
+        Mat4.Translation(MotionPositionAt(frame)) * Rotations.Matrix(MotionRotationAt(frame)) * Mat4.Scaling(ScaleAt(frame)) * Mat4.Translation(-Pivot);
 
     public Mat4 WorldMatrix(double frame) => WorldMatrix(frame, null);
 

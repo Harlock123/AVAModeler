@@ -370,7 +370,85 @@ public sealed class LayoutWorkspace : DockPanel
                 }));
                 break;
         }
+        if (item is not Bone) PathSettings(item);
         _properties.Children.Add(Look.MakeButton("Remove item", () => Session.Remove(item)));
+    }
+
+    /// <summary>The items an item's path can run through (in the item list's order).</summary>
+    public IReadOnlyList<SceneItem> PathChoices(SceneItem item) =>
+        Session.Scene.Items.Where(i => i is not Bone && FollowPath.Problem(item, [i]) == null).ToList();
+
+    /// <summary>
+    /// Following a path: Follow a path on or off, the points it runs through (chosen in a list, taken in the item list's
+    /// order), Closed, Align to path with its look-ahead, Banking, where along it the item is at this frame (keyed by
+    /// Auto key, as positions are), Even speed (keys the position from the first frame to the last) and Bake path.
+    /// </summary>
+    private void PathSettings(SceneItem item)
+    {
+        void Set(string label, Func<FollowPath, FollowPath> change)
+        {
+            if (item.Path is not { } p) return;
+            try { var next = change(p).Checked(); Change(label, () => { item.Path = next; Session.Scene.Notify(); }); }
+            catch (ArgumentException e) { Session.SetStatus(e.Message); }
+        }
+        _properties.Children.Add(new TextBlock { Text = "Path", FontWeight = FontWeight.Bold, Foreground = Look.Text, Margin = new Thickness(0, 8, 0, 0) });
+        var choices = PathChoices(item);
+        var follow = new CheckBox { Name = "FollowPath", Content = "Follow a path", IsChecked = item.Path != null, Foreground = Look.Text };
+        var entries = choices.Select(i => new ItemChoice(i)).ToList();
+        var list = new ListBox { Name = "PathPoints", SelectionMode = Avalonia.Controls.SelectionMode.Multiple, MaxHeight = 120, FontSize = 11, ItemsSource = entries };
+        ToolTip.SetTip(list, "The items the path runs through (nulls, usually), in the item list's order");
+        bool filling = true;
+        if (item.Path is { } current)
+            foreach (var e in entries.Where(e => current.Points.Contains(e.Item))) list.SelectedItems!.Add(e);
+        filling = false;
+        List<SceneItem> Chosen() => list.SelectedItems!.Cast<ItemChoice>().Select(e => e.Item).OrderBy(i => Session.Scene.Items.ToList().IndexOf(i)).ToList();
+        follow.IsCheckedChanged += (_, _) =>
+        {
+            if (follow.IsChecked == true && item.Path == null)
+            {
+                var points = Chosen();
+                if (points.Count < 2)
+                {
+                    Session.SetStatus("Choose at least two items in the list for the path to run through (add nulls for its points).");
+                    follow.IsChecked = false;
+                    return;
+                }
+                Change($"Follow Path", () => { item.Path = new FollowPath { Points = points }; Session.Scene.Notify(); });
+            }
+            else if (follow.IsChecked != true && item.Path != null) Change("Stop Following Path", () => { item.Path = null; Session.Scene.Notify(); });
+            Dispatcher.UIThread.Post(ShowProperties);
+        };
+        list.SelectionChanged += (_, _) =>
+        {
+            if (filling || item.Path == null) return;
+            var points = Chosen();
+            if (points.Count >= item.Path.Fewest) Set("Path Points", p => p with { Points = points });
+            else Session.SetStatus($"A{(item.Path.Closed ? " closed" : "n open")} path needs at least {item.Path.Fewest} points.");
+        };
+        _properties.Children.Add(follow);
+        _properties.Children.Add(list);
+        if (item.Path is not { } path) return;
+        var closed = new CheckBox { Name = "PathClosed", Content = "Closed (a loop)", IsChecked = path.Closed, Foreground = Look.Text };
+        closed.IsCheckedChanged += (_, _) => Set("Close Path", p => p with { Closed = closed.IsChecked == true });
+        var align = new CheckBox { Name = "AlignToPath", Content = "Align to path", IsChecked = path.AlignToPath, Foreground = Look.Text };
+        align.IsCheckedChanged += (_, _) => Set("Align to Path", p => p with { AlignToPath = align.IsChecked == true });
+        _properties.Children.Add(closed);
+        _properties.Children.Add(align);
+        NumberRow("Look-ahead (m)", path.LookAhead, v => Set("Path Look-ahead", p => p with { LookAhead = v }));
+        NumberRow("Banking (° on a 1 m turn)", path.Banking, v => Set("Path Banking", p => p with { Banking = v }));
+        NumberRow("Position along path (0–1)", item.PathPosition.Evaluate(Session.Frame), v => Session.SetPathPosition(item, v));
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3 };
+        buttons.Children.Add(Look.MakeButton("Even speed", () =>
+        {
+            try { Session.TimePath(item, Session.Scene.FirstFrame, Session.Scene.LastFrame); ShowProperties(); }
+            catch (ArgumentException e) { Session.SetStatus(e.Message); }
+        }, "Key the position along the path from 0 at the first frame to 1 at the last, at an even speed"));
+        buttons.Children.Add(Look.MakeButton("Bake path", () =>
+        {
+            try { Session.BakePath(item, Session.Scene.FirstFrame, Session.Scene.LastFrame); ShowProperties(); }
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException) { Session.SetStatus(e.Message); }
+        }, "Key the item's motion along the path at every frame, and stop following it"));
+        _properties.Children.Add(buttons);
     }
 
     /// <summary>The IK goal's choices for a bone (the items it can reach for), shown after "(none)".</summary>
@@ -486,6 +564,12 @@ public sealed class LayoutWorkspace : DockPanel
             }, "Key the chain's IK pose at every frame of the scene, and turn full-time IK off"));
             _properties.Children.Add(buttons);
         }
+    }
+
+    /// <summary>An item in a list of choices, shown by its kind and name.</summary>
+    public sealed record ItemChoice(SceneItem Item)
+    {
+        public override string ToString() => $"{Item.Kind}: {Item.Name}";
     }
 
     /// <summary>The camera's depth of field (with Focus on an item) and motion blur.</summary>
@@ -634,6 +718,11 @@ public sealed class LayoutWorkspace : DockPanel
         Full-time IK, the chain turns at every frame so its tip reaches the goal. Limits and locks keep each bone's heading,
         pitch and bank in bounds; an Anchor stops chains below it. Key IK here keys the pose at this frame; Bake IK keys every
         frame and turns full-time IK off.
+
+        Any item can follow a path: in its settings, choose the items the path runs through (nulls you've placed, in the item
+        list's order) and tick Follow a path. Its position along the path (0 to 1) is a channel you key like any other, or
+        Even speed keys it once round from the first frame to the last; Align to path turns it to face along the path, and
+        Banking leans it into turns. Bake path turns the motion into ordinary keys.
 
         The dope sheet (D, or View › Dope Sheet) lists every item (and with Channels, each keyed channel) against the frames,
         each key a diamond. Click a key, Shift-click to add more, or drag a box round them; drag them sideways to move them in

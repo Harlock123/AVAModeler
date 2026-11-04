@@ -374,6 +374,11 @@ public sealed unsafe class GlRenderer : IRenderer
         // Grid and background layers: no depth test.
         _gl.Disable(EnableCap.DepthTest);
         _used.Clear();
+        if (BackdropDrawing.For(scene.Backdrops, camera.Kind, scene.ImageBase) is { } reference)
+        {
+            var (surface, data) = ReferenceTriangles(reference);
+            DrawTextured(surface, data, mvp);
+        }
         var lines = new List<float>();
         if (scene.ShowGrid) GridLines(camera, lines);
         DrawLines(lines, mvp, PrimitiveType.Lines, 1);
@@ -566,6 +571,14 @@ public sealed unsafe class GlRenderer : IRenderer
             AddTextured(v, p, c);
         }
         return (ts, v);
+    }
+
+    /// <summary>A flat view's reference image as two textured triangles, corner for corner as the software renderer draws it.</summary>
+    public static (TexturedSurface Surface, List<float> Vertices) ReferenceTriangles(BackdropQuad quad)
+    {
+        var v = new List<float>();
+        foreach (int i in BackdropQuad.Triangles) AddTextured(v, quad.Corners[i], quad.Corner(i));
+        return (quad.Surface, v);
     }
 
     /// <summary>A GL texture holding an image's pixels (top row first, as texel row 0), made on first use.</summary>

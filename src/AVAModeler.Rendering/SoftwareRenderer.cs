@@ -43,6 +43,7 @@ public sealed class SoftwareRenderer : IRenderer
         Size(camera.Width, camera.Height);
         Array.Fill(Pixels, camera.IsPerspective ? Palette.PerspectiveBackground : Palette.Background);
         Array.Fill(_depth, float.PositiveInfinity);
+        if (BackdropDrawing.For(scene.Backdrops, camera.Kind, scene.ImageBase) is { } reference) DrawReference(reference);
         if (scene.ShowGrid) DrawGrid();
 
         if (scene.Backdrop != null && !camera.IsPerspective) DrawBackdrop(scene.Backdrop);
@@ -263,6 +264,15 @@ public sealed class SoftwareRenderer : IRenderer
         var s = corners.Select(_cam.Project).ToArray();
         FillTextured(s[0], s[1], s[2], At(corners[0]), At(corners[1]), At(corners[2]), ts, writeDepth: false);
         FillTextured(s[0], s[2], s[3], At(corners[0]), At(corners[2]), At(corners[3]), ts, writeDepth: false);
+    }
+
+    /// <summary>A flat view's reference image on its plane, under the grid and everything else.</summary>
+    private void DrawReference(BackdropQuad quad)
+    {
+        var s = quad.Corners.Select(_cam.Project).ToArray();
+        var t = BackdropQuad.Triangles;
+        for (int i = 0; i < t.Length; i += 3)
+            FillTextured(s[t[i]], s[t[i + 1]], s[t[i + 2]], quad.Corner(t[i]), quad.Corner(t[i + 1]), quad.Corner(t[i + 2]), quad.Surface, writeDepth: false);
     }
 
     // ───────────────────────────── lines and points ─────────────────────────────

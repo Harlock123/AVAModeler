@@ -45,6 +45,8 @@ public sealed class Preferences
     public static string DefaultPath => Path.Combine(Folder, "preferences.json");
     public static string PluginsFolder => Path.Combine(Folder, "plugins");
     public static string AutosaveFolder => Path.Combine(Folder, "autosave");
+    /// <summary>The backdrops remembered for each object file (<see cref="BackdropMemory"/>).</summary>
+    public static string BackdropsPath => Path.Combine(Folder, "backdrops.json");
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
@@ -100,7 +102,7 @@ public sealed class Keymap
         ["Undo"] = "Ctrl+Z", ["Redo"] = "Ctrl+Shift+Z", ["Cut"] = "X", ["Copy"] = "C", ["Paste"] = "Ctrl+V",
         ["Cycle Selection Mode"] = "Space", ["Commit"] = "Enter", ["Cancel"] = "Escape", ["Deselect"] = "OemQuestion",
         ["Invert Selection"] = "OemQuotes", ["Select Connected"] = "OemCloseBrackets", ["Select Loop"] = "Alt+L", ["Select Ring"] = "Alt+R", ["Fit All"] = "A", ["Fit Selected"] = "Shift+A",
-        ["Maximize View"] = "D0", ["Numeric Panel"] = "N", ["Mesh Info"] = "W", ["UV View"] = "U", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
+        ["Maximize View"] = "D0", ["Backdrop"] = "D", ["Numeric Panel"] = "N", ["Mesh Info"] = "W", ["UV View"] = "U", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
         ["New"] = "Ctrl+N", ["Open"] = "Ctrl+O", ["Save"] = "Ctrl+S", ["Quit"] = "Ctrl+Q",
     };
 
@@ -191,6 +193,15 @@ public sealed class ModelerSession
     public event Action? Changed;
     public event Action? DocumentReplaced;
 
+    /// <summary>
+    /// Where each object's backdrops are remembered (the app's settings folder; tests give their own, or none). When
+    /// set, the backdrops are written for the object's file whenever they change or it's saved, and an object opened
+    /// gets the ones remembered for it.
+    /// </summary>
+    public BackdropMemory? BackdropMemory { get; set; }
+    private BackdropSet? _remembered;
+    private string? _rememberedFor;
+
     private readonly Dictionary<int, (int Version, Mesh Smooth)> _smoothCache = [];
 
     public ModelerSession(Preferences? prefs = null, ToolRegistry? registry = null)
@@ -211,7 +222,27 @@ public sealed class ModelerSession
         Context = new ToolContext(Document) { CenterMode = Preferences.ActionCenter };
         Commands = new Commands(Document, Registry);
         Commands.DocumentReplaced += doc => Replace(doc);
+        Document.Changed += RememberBackdrops;
         _smoothCache.Clear();
+    }
+
+    /// <summary>Writes the object's backdrops to <see cref="BackdropMemory"/> if they changed (or the object has a new file).</summary>
+    public void RememberBackdrops()
+    {
+        var doc = Document;
+        if (BackdropMemory == null || doc.FilePath == null) return;
+        if (ReferenceEquals(_remembered, doc.Backdrops) && _rememberedFor == doc.FilePath) return;
+        _remembered = doc.Backdrops;
+        _rememberedFor = doc.FilePath;
+        BackdropMemory.Remember(doc.FilePath, doc.Backdrops);
+    }
+
+    /// <summary>Puts a view's backdrop in place (null clears it), saying in the status bar if its image can't be had.</summary>
+    public void SetBackdrop(BackdropView view, Backdrop? backdrop)
+    {
+        Document.SetBackdrops(Document.Backdrops.With(view, backdrop));
+        if (backdrop != null && BackdropMapping.Problems(BackdropSet.Empty.With(view, backdrop), Document.ImageBase) is [var problem, ..])
+            SetStatus(problem);
     }
 
     /// <summary>Puts a new or loaded document in place.</summary>
@@ -219,6 +250,12 @@ public sealed class ModelerSession
     {
         CancelTool();
         ActiveTool = null;
+        // The backdrops remembered for the object's file; else the ones on screen stay (a new object over the same blueprints).
+        var kept = Document.Backdrops;
+        if (doc.FilePath != null && BackdropMemory?.Recall(doc.FilePath) is { } recalled) doc.SetBackdrops(recalled);
+        else if (doc.Backdrops.IsEmpty && !kept.IsEmpty) doc.SetBackdrops(kept);
+        _remembered = doc.Backdrops;
+        _rememberedFor = doc.FilePath;
         Document = doc;
         Attach();
         DocumentReplaced?.Invoke();
@@ -469,7 +506,8 @@ public sealed class ModelerSession
     }
 
     /// <summary>Notes for the status bar about texture images that can't be found or read (a checker stands in for each).</summary>
-    public List<string> ImageProblems() => TextureImages.Problems(Document.Surfaces, Document.ImageBase);
+    public List<string> ImageProblems() =>
+        [.. TextureImages.Problems(Document.Surfaces, Document.ImageBase), .. BackdropMapping.Problems(Document.Backdrops, Document.ImageBase)];
 
     /// <summary>A volume's unbounded sides drawn at the scene's extent, so it shows.</summary>
     private Box3 Clamp(Box3 v)

@@ -21,6 +21,8 @@ public sealed class ModelerWorkspace : DockPanel
     public NumericPanel Numeric { get; }
     /// <summary>Mesh Info (W): the mesh check of the foreground, beside the numeric panel; hidden until asked for.</summary>
     public MeshInfoPanel MeshInfo { get; }
+    /// <summary>Backdrop (D): the reference images behind the flat views, beside the numeric panel; hidden until asked for.</summary>
+    public BackdropPanel Backdrop { get; }
     public ToolTabs Tabs { get; }
     public Menu Menu { get; }
     private readonly Dictionary<string, Action> _commands;
@@ -44,6 +46,13 @@ public sealed class ModelerWorkspace : DockPanel
         Views = new QuadView(session, session.Preferences.Renderer == "OpenGL");
         Numeric = new NumericPanel(session);
         MeshInfo = new MeshInfoPanel(session);
+        Backdrop = new BackdropPanel(session)
+        {
+            AskImage = async () => TopLevel.GetTopLevel(this) is { } top ? await Dialogs.Open(top, "Choose a backdrop image", Dialogs.Images) : null,
+            AskSetup = async save => TopLevel.GetTopLevel(this) is not { } top ? null
+                : save ? await Dialogs.Save(top, "Save the backdrop setup", Path.GetFileNameWithoutExtension(session.Document.FilePath ?? "backdrops") + ".backdrops.json", Dialogs.BackdropSetup)
+                : await Dialogs.Open(top, "Load a backdrop setup", Dialogs.BackdropSetup),
+        };
         Tabs = new ToolTabs(session);
         _commands = BuildCommands();
         Menu = BuildMenu();
@@ -63,6 +72,8 @@ public sealed class ModelerWorkspace : DockPanel
         Children.Add(Numeric);
         SetDock(MeshInfo, Dock.Right);
         Children.Add(MeshInfo);
+        SetDock(Backdrop, Dock.Right);
+        Children.Add(Backdrop);
         Children.Add(Views);
 
         Tabs.Picked += (name, isTool) => { if (isTool) PickTool(name); else Execute(name); };
@@ -145,6 +156,7 @@ public sealed class ModelerWorkspace : DockPanel
             ["Maximize View"] = () => Views.ToggleMaximize(Views.Focused),
             ["Numeric Panel"] = () => Numeric.Collapsed = !Numeric.Collapsed,
             ["Mesh Info"] = MeshInfo.Toggle,
+            ["Backdrop"] = Backdrop.Toggle,
             ["UV View"] = () => Views.ToggleUV(),
             ["Next UV Map"] = NextUVMap,
             ["Zoom In"] = () => Zoom(1.5),
@@ -376,6 +388,7 @@ public sealed class ModelerWorkspace : DockPanel
             ObjectFiles.RebaseImages(doc, path);
             doc.FilePath = path;
             doc.Modified = false;
+            Session.RememberBackdrops();
             Session.Preferences.AddRecent(path);
             Session.Preferences.Save();
             RefreshRecent();
@@ -522,10 +535,10 @@ public sealed class ModelerWorkspace : DockPanel
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",
                     Item("Select _All", "Select All"), Item("_Deselect", "Deselect"), Item("_Invert", "Invert Selection"), Item("Select C_onnected", "Select Connected"),
                     Item("Select _Loop", "Select Loop"), Item("Select Ri_ng", "Select Ring"), Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),
-                Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), Item("Mesh _Info", "Mesh Info"), "-",
+                Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), Item("Mesh _Info", "Mesh Info"), Item("_Backdrop…", "Backdrop"), "-",
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
                     Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",
-                    Item("Meta_NURBS", "MetaNURBS"), Item("_Backface Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-", Item("_Layout", "Show Layout")),
+                    Item("Meta_NURBS", "MetaNURBS"), Item("Backface _Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-", Item("_Layout", "Show Layout")),
                 Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin"), "-", ChatItem(), _agents),
                 Group("_Help", Item("_Keyboard", "Keyboard"), Item("_About", "About")),
             },

@@ -74,6 +74,7 @@ public static class Dialogs
         _ => [Lwo],
     };
     public static readonly FilePickerFileType Lua = new("Lua macro") { Patterns = ["*.lua"] };
+    public static readonly FilePickerFileType BackdropSetup = new("Backdrop setup (JSON)") { Patterns = ["*.json"] };
     public static readonly FilePickerFileType Dll = new("Plugin") { Patterns = ["*.dll"] };
     public static readonly FilePickerFileType Images = new("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp"] };
 

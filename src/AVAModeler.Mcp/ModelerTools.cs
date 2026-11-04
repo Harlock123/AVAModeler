@@ -419,6 +419,84 @@ public sealed partial class ModelerTools(IModelerHost host)
             return result;
         }, cancel);
 
+    /// <summary>The image files set_backdrop reads.</summary>
+    internal static readonly string[] BackdropImageTypes = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"];
+
+    [McpServerTool(Name = "set_backdrop", Idempotent = true)]
+    [Description("Puts a reference image (a blueprint, sketch or photo) behind one of the flat views, as LightWave Modeler's Display Options › Backdrop did, to model over it; or changes or clears one. The image lies in world space on the view's plane, so it lines up with the model and across views: center is the image's centre in metres on the view's two axes (top: [x, z]; front: [x, y]; side: [z, y]), width its width in metres, and its height follows the image's shape unless height is given. fit sizes and centres it round the foreground layers; pixel_size (metres one pixel covers) sizes it from its pixels. It is drawn under the grid and the wireframe, laid over the grey at opacity (default 0.5), adjusted by invert, contrast (about mid grey) and brightness. render_view's top, front and side views show it (framed to include it), so you can see the person's reference and check your model against it. It's a display setting: not saved in the object, not an undo step (the app remembers it per object). Leave image out to change the view's current backdrop's settings. The image is only read, and must be inside the working folder (PNG, JPEG, BMP, GIF or WebP); get_document lists the backdrops.")]
+    public Task<string> SetBackdrop(
+        [Description("top, front or side.")] string view,
+        [Description("The image file, relative to the working folder, e.g. \"blueprints/side.png\". Leave out to change the current backdrop's settings.")] string? image = null,
+        [Description("The image's centre in metres on the view's two axes: top [x, z], front [x, y], side [z, y]. Default [0, 0] for a new backdrop.")] double[]? center = null,
+        [Description("Its width in metres (default 1 for a new backdrop).")] double? width = null,
+        [Description("Its height in metres, to stretch it; 0 goes back to the image's own shape. Default: from the image's shape.")] double? height = null,
+        [Description("Centre and size it round the foreground layers (everything shown if they're empty), keeping its shape.")] bool fit = false,
+        [Description("Size it from its pixels: the metres one pixel covers (e.g. 0.005 for 200 pixels a metre).")] double? pixel_size = null,
+        [Description("-1 to 1, added (default 0).")] double? brightness = null,
+        [Description("0 to 4, about mid grey (default 1).")] double? contrast = null,
+        [Description("0 to 1: how much it covers the view's grey (default 0.5, so the wireframe stays readable).")] double? opacity = null,
+        [Description("Show it as a negative (for white-on-blue blueprints).")] bool? invert = null,
+        [Description("Show or hide it, keeping its settings.")] bool? visible = null,
+        [Description("Take the view's backdrop away (the other settings are ignored).")] bool clear = false,
+        CancellationToken cancel = default) =>
+        Do($"set the {view} backdrop", c =>
+        {
+            var v = Json.Choice<BackdropView>(view, "view");
+            if (clear)
+            {
+                int gone = c.ClearBackdrop(v);
+                var cleared = new JsonObject { ["cleared"] = gone > 0, ["view"] = v.ToString().ToLowerInvariant() };
+                if (!c.Document.Backdrops.IsEmpty) cleared["backdrops"] = Census.Backdrops(c.Document);
+                return cleared;
+            }
+            if (center is not null && (center.Length != 2 || center.Any(x => !double.IsFinite(x))))
+                throw new ArgumentException($"center is two numbers in metres on the {v} view's axes: [{string.Join(", ", AxisPair(v))}].");
+            Json.Fraction(opacity, "opacity");
+            Backdrop Apply(Backdrop b)
+            {
+                if (center is { } cc) b = b with { Center = new Vec2(cc[0], cc[1]) };
+                if (width is { } w) b = b with { Width = w };
+                if (height is { } h) b = b with { Height = h == 0 ? null : h };
+                if (brightness is { } br) b = b with { Brightness = br };
+                if (contrast is { } co) b = b with { Contrast = co };
+                if (opacity is { } op) b = b with { Opacity = op };
+                if (invert is { } inv) b = b with { Invert = inv };
+                if (visible is { } vis) b = b with { Visible = vis };
+                if (pixel_size is { } px) b = b with { Width = c.BackdropWidthFromPixels(b, px), Height = null };
+                if (fit)
+                {
+                    var (centre, size) = c.BackdropFit(v, b);
+                    b = b with { Center = centre, Width = size };
+                }
+                return b.Checked();
+            }
+            string? problem = null;
+            if (image is null)
+            {
+                if (c.Document.Backdrops[v] is null) throw new ArgumentException($"The {v.ToString().ToLowerInvariant()} view has no backdrop yet: give an image.");
+                c.ChangeBackdrop(v, Apply);
+            }
+            else
+            {
+                string full = Files(c).Resolve(image);
+                if (!BackdropImageTypes.Contains(Path.GetExtension(full).ToLowerInvariant()))
+                    throw new NotSupportedException($"A backdrop is a picture: {string.Join(", ", BackdropImageTypes)}, not {Path.GetFileName(full)}.");
+                if (!File.Exists(full)) throw new FileNotFoundException($"There's no image {image} in the working folder ({host.Root}).", full);
+                // Check the settings on a spare backdrop first, so a bad one changes nothing.
+                Apply(new Backdrop { Image = full });
+                (_, problem) = c.SetBackdrop(v, full, Apply);
+            }
+            var result = new JsonObject { ["view"] = v.ToString().ToLowerInvariant(), ["backdrops"] = Census.Backdrops(c.Document) };
+            if (problem != null) result["warning"] = problem;
+            return result;
+        }, cancel);
+
+    private static string[] AxisPair(BackdropView v)
+    {
+        var (a, b) = BackdropMapping.AxisNames(v);
+        return [a.ToLowerInvariant(), b.ToLowerInvariant()];
+    }
+
     /// <summary>What set_procedural says about the kinds and their settings (a test checks it against <see cref="Procedurals.All"/>).</summary>
     internal const string ProceduralKinds =
         "checkerboard (alternating cubes one size across; no settings), " +
@@ -672,7 +750,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "render_view", ReadOnly = true, Idempotent = true)]
-    [Description("Draws one of the Modeler's views of the object as a PNG, framed to fit the visible layers, as the app draws it: grey grid, foreground in black wire, background layers dimmed, selection in yellow, faces seen from behind tinted blue. top looks down -Y (X right, Z up the picture); front looks along +Z (X right, Y up); side looks along -X (Z right, Y up); perspective orbits the object. Only perspective shades: mode wireframe, shaded (lit faces with wire) or textured (also colour textures, image and procedural). Use it to check your work.")]
+    [Description("Draws one of the Modeler's views of the object as a PNG, framed to fit the visible layers, as the app draws it: grey grid, foreground in black wire, background layers dimmed, selection in yellow, faces seen from behind tinted blue. top looks down -Y (X right, Z up the picture); front looks along +Z (X right, Y up); side looks along -X (Z right, Y up); perspective orbits the object. Only perspective shades: mode wireframe, shaded (lit faces with wire) or textured (also colour textures, image and procedural). A flat view with a backdrop (set_backdrop, or one the person loaded) shows it under the grid, and the framing takes it in. Use it to check your work.")]
     public async Task<CallToolResult> RenderView(
         [Description("perspective (default), top, front or side.")] string view = "perspective",
         [Description("Width in pixels, 16 to 2048 (default 640).")] int width = 640,
@@ -687,8 +765,9 @@ public sealed partial class ModelerTools(IModelerHost host)
         Json.Size(width, height, 2048);
         var copy = await Do("looked at the object", c => c.Document.Copy(), cancel).ConfigureAwait(false);
         var png = await Task.Run(() => Pictures.View(copy, kind, width, height, style, heading, pitch), cancel).ConfigureAwait(false);
-        var b = Pictures.VisibleBounds(copy);
-        string about = $"{kind} view, {width}×{height}, {(kind == ViewKind.Perspective ? $"{style.ToString().ToLowerInvariant()}, heading {heading:0.#}°, pitch {pitch:0.#}°, " : "wireframe, ")}framing {Census.Box(b)}.";
+        var b = Pictures.Framing(copy, kind);
+        string backdrop = BackdropDrawing.ViewOf(kind) is { } bv && copy.Backdrops[bv] is { Visible: true } bd ? $", over the backdrop {Path.GetFileName(bd.Image)}" : "";
+        string about = $"{kind} view, {width}×{height}, {(kind == ViewKind.Perspective ? $"{style.ToString().ToLowerInvariant()}, heading {heading:0.#}°, pitch {pitch:0.#}°, " : "wireframe, ")}framing {Census.Box(b)}{backdrop}.";
         return new CallToolResult { Content = [ImageContentBlock.FromBytes(png, "image/png"), new TextContentBlock { Text = about }] };
     }
 

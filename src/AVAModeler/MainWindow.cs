@@ -60,6 +60,8 @@ public sealed class MainWindow : Window
         var registry = ToolRegistry.Create();
         var problems = loadPlugins ? registry.LoadPlugins(Preferences.PluginsFolder) : [];
         Session = new ModelerSession(prefs, registry);
+        // Each object's backdrops are remembered in the settings folder (tests keep theirs elsewhere, or nowhere).
+        if (loadPlugins) Session.BackdropMemory = new BackdropMemory(Preferences.BackdropsPath);
         Modeler = new ModelerWorkspace(Session);
         Modeler.ShowLayout += ShowLayout;
         Agents = new LiveAgents(Session, _layoutSession);

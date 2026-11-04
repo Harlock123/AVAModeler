@@ -126,7 +126,38 @@ internal static class Census
         result["current_uv_map"] = doc.ActiveUVMap;
         result["selection"] = Selection(doc);
         result["undo"] = UndoState(doc);
+        if (!doc.Backdrops.IsEmpty) result["backdrops"] = Backdrops(doc);
         return result;
+    }
+
+    /// <summary>The flat views' reference images: each view's image, centre (metres on its two axes), size and look.</summary>
+    public static JsonObject Backdrops(Document doc)
+    {
+        var o = new JsonObject();
+        foreach (var (v, b) in doc.Backdrops.All())
+        {
+            var image = TextureImages.Load(b.Image, doc.ImageBase);
+            var (w, h) = BackdropMapping.Size(b, image.Width, image.Height);
+            var (ra, ua) = BackdropMapping.AxisNames(v);
+            var j = new JsonObject
+            {
+                ["image"] = b.Image,
+                ["axes"] = $"{ra.ToLowerInvariant()}, {ua.ToLowerInvariant()}",
+                ["center"] = new JsonArray(Round(b.Center.X), Round(b.Center.Y)),
+                ["width"] = Round(w),
+                ["height"] = Round(h),
+                ["height_from_image"] = b.Height == null,
+                ["brightness"] = b.Brightness,
+                ["contrast"] = b.Contrast,
+                ["opacity"] = b.Opacity,
+                ["invert"] = b.Invert,
+                ["visible"] = b.Visible,
+            };
+            if (image.IsPlaceholder) j["problem"] = image.Problem;
+            else j["pixels"] = new JsonArray(image.Width, image.Height);
+            o[v.ToString().ToLowerInvariant()] = j;
+        }
+        return o;
     }
 
     /// <summary>A surface's settings, its textures, and how many polygons use it.</summary>

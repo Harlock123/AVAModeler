@@ -330,10 +330,13 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
         if (ReplaceGuard?.Invoke() is { } reason) throw new InvalidOperationException(reason);
     }
 
+    /// <summary>A new, empty object; the backdrops stay, as classic Modeler's did (a new object over the same blueprints).</summary>
     public void New()
     {
         CheckReplace();
+        var backdrops = Document.Backdrops;
         Document = new Document();
+        if (!backdrops.IsEmpty) Document.SetBackdrops(backdrops);
         Context = new ToolContext(Document);
         DocumentReplaced?.Invoke(Document);
     }
@@ -341,7 +344,9 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
     public void Load(string path)
     {
         CheckReplace();
+        var backdrops = Document.Backdrops;
         Document = (Loader ?? throw new InvalidOperationException("No file loader is set up."))(path);
+        if (Document.Backdrops.IsEmpty && !backdrops.IsEmpty) Document.SetBackdrops(backdrops);
         Context = new ToolContext(Document);
         DocumentReplaced?.Invoke(Document);
     }
@@ -441,6 +446,66 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
         Document.Edit("Remove texture", () => gone = Document.Surfaces[i].Textures.RemoveAll(t => channel == null || t.Channel == channel), []);
         return gone;
     }
+
+    // ───────────────────────────── backdrops ─────────────────────────────
+
+    /// <summary>
+    /// Puts a reference image behind a flat view (replacing any there), placed by <paramref name="setup"/> (given the
+    /// backdrop with its image and defaults, or the view's current settings when it already has one). A relative image
+    /// path is looked for from <see cref="BaseDirectory"/> first, then from the object's folder; it's kept absolute
+    /// when found. Not an undo step: backdrops are a display setting. Returns the backdrop and, if its image can't be
+    /// had, why (a checker stands in for it).
+    /// </summary>
+    public (Backdrop Backdrop, string? Problem) SetBackdrop(BackdropView view, string image, Func<Backdrop, Backdrop>? setup = null)
+    {
+        if (string.IsNullOrWhiteSpace(image)) throw new ArgumentException("A backdrop needs an image file.");
+        string path = image;
+        if (!Path.IsPathRooted(path))
+        {
+            foreach (var dir in new[] { BaseDirectory, Document.ImageBase })
+                if (dir != null && Path.GetFullPath(Path.Combine(dir, path)) is var full && File.Exists(full)) { path = full; break; }
+        }
+        var current = Document.Backdrops[view];
+        var b = (current ?? new Backdrop()) with { Image = path, Visible = true };
+        b = (setup?.Invoke(b) ?? b).Checked();
+        Document.SetBackdrops(Document.Backdrops.With(view, b));
+        var loaded = TextureImages.Load(b.Image, Document.ImageBase);
+        return (b, loaded.IsPlaceholder ? loaded.Problem : null);
+    }
+
+    /// <summary>Changes a view's backdrop settings (not its image); throws if it has none.</summary>
+    public Backdrop ChangeBackdrop(BackdropView view, Func<Backdrop, Backdrop> change)
+    {
+        var current = Document.Backdrops[view] ?? throw new InvalidOperationException($"The {view} view has no backdrop: give it an image first.");
+        var b = change(current).Checked();
+        Document.SetBackdrops(Document.Backdrops.With(view, b));
+        return b;
+    }
+
+    /// <summary>Takes the backdrop from one view (or every view); returns how many went.</summary>
+    public int ClearBackdrop(BackdropView? view = null)
+    {
+        var set = Document.Backdrops;
+        int gone = view is { } v ? (set[v] != null ? 1 : 0) : set.All().Count();
+        Document.SetBackdrops(view is { } one ? set.With(one, null) : BackdropSet.Empty);
+        return gone;
+    }
+
+    /// <summary>
+    /// A centre and width that fit a view's backdrop round the foreground layers (or, if they're empty, everything
+    /// shown), keeping the image's shape, with a small margin.
+    /// </summary>
+    public (Vec2 Center, double Width) BackdropFit(BackdropView view, Backdrop b)
+    {
+        var box = Document.Bounds(foregroundOnly: true);
+        if (box.IsEmpty) box = Document.Bounds();
+        var image = TextureImages.Load(b.Image, Document.ImageBase);
+        return BackdropMapping.FitTo(view, box, b, image.Width, image.Height);
+    }
+
+    /// <summary>A backdrop's width from its image's pixels at a size per pixel (metres).</summary>
+    public double BackdropWidthFromPixels(Backdrop b, double metresPerPixel) =>
+        BackdropMapping.WidthFromPixels(TextureImages.Load(b.Image, Document.ImageBase).Width, metresPerPixel);
 
     public void Print(string line) => Output.Add(line);
 }

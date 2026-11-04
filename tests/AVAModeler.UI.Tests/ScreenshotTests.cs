@@ -192,6 +192,23 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Blueprints_behind_the_views_and_the_backdrop_panel()
+    {
+        // The rocket sample: its side, front and top drawings behind the flat views, lined up in metres, and the body
+        // lathed over them, the fins still to do; the Backdrop panel open on the side view.
+        var w = WithMacro("rocket-blueprints.lua");
+        Assert.Equal(3, w.Session.Document.Backdrops.All().Count());
+        w.Session.SetSelectionMode(SelectionMode.Polygons);
+        w.Modeler.Numeric.Collapsed = true;
+        w.Modeler.Execute("Backdrop");
+        w.Modeler.Backdrop.ShowView(BackdropView.Side);
+        Ui.Pump();
+        Ui.Fit(w);
+        Persp(w, 30, 14, 1.9);
+        Shot(w, "backdrops");
+    }
+
+    [AvaloniaFact]
     public void Mesh_info_finds_a_hole_and_a_flipped_face()
     {
         // A ball with its top cut off and one face turned the wrong way, as a careless edit might leave it: Mesh Info

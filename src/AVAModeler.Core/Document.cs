@@ -327,6 +327,11 @@ public sealed class Document
     public Mesh? Clipboard;
     /// <summary>The UV map being worked on (shown in the UV view, and made by Make UVs unless told otherwise); null for none chosen.</summary>
     public string? CurrentUVMap;
+    /// <summary>
+    /// The reference images behind the flat views (see <see cref="Backdrop"/>). A display setting, not part of the
+    /// object: it isn't saved in the object file or undone, and changing it doesn't mark the object modified.
+    /// </summary>
+    public BackdropSet Backdrops { get; private set; } = BackdropSet.Empty;
     /// <summary>Goes up on every change, so views know to redraw.</summary>
     public int Version { get; private set; }
 
@@ -360,6 +365,14 @@ public sealed class Document
         if (i >= 0) return i;
         Surfaces.Add(new Surface(name));
         return Surfaces.Count - 1;
+    }
+
+    /// <summary>Puts new backdrops in place (each checked first) and tells the views.</summary>
+    public void SetBackdrops(BackdropSet backdrops)
+    {
+        foreach (var (_, b) in backdrops.All()) b.Checked();
+        Backdrops = backdrops;
+        Notify();
     }
 
     public void Notify()
@@ -431,12 +444,12 @@ public sealed class Document
     public void Group(string label, Action work) => Group(label, () => { work(); return 0; });
 
     /// <summary>
-    /// A copy of the object to read from elsewhere (another thread, a renderer): its layers, surfaces, selection and
-    /// file path, but no history.
+    /// A copy of the object to read from elsewhere (another thread, a renderer): its layers, surfaces, selection,
+    /// backdrops and file path, but no history.
     /// </summary>
     public Document Copy()
     {
-        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, Selection = Selection.Clone() };
+        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, Selection = Selection.Clone(), Backdrops = Backdrops };
         d.Layers = Layers.Select(l => l.Clone()).ToList();
         d.Surfaces = Surfaces.Select(s => s.Clone()).ToList();
         return d;

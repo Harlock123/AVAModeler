@@ -21,6 +21,7 @@ dotnet test tests/AVAModeler.Chat.Tests           # the AI chat's agent loop, ag
 AVAMODELER_SHOTS=$PWD/Images dotnet test tests/AVAModeler.UI.Tests --filter Screenshot   # refresh the README's pictures
 python3 samples/images/make_textures.py           # redraws the sample texture images
 python3 samples/images/make_environment.py        # redraws the sample environment, studio.hdr
+python3 samples/images/make_blueprints.py         # redraws the rocket blueprints (rocket-side/front/top.png)
 ```
 
 `Directory.Build.props` sets `TreatWarningsAsErrors`, nullable reference types, implicit usings and
@@ -38,6 +39,13 @@ python3 samples/images/make_environment.py        # redraws the sample environme
     default and limits; `Find`, `Get`, `Set`, `SetType`, the Texture Type list) and `ProceduralTexture`, a layer ready
     to evaluate (`Amount` at a point, 0 to 1). `Noise.cs` is Perlin's improved noise with his fixed permutation table,
     and fractal and turbulence sums over it.
+  - `Backdrop.cs` is the reference images behind the flat views: `Backdrop` (one view's image, centre on its two axes,
+    width, optional height, brightness, contrast, opacity, invert, visible; immutable, with `Checked()`), `BackdropSet`
+    (Top, Front, Side; `Document.Backdrops`, changed only through `Document.SetBackdrops`), `BackdropMapping` (each
+    view's axes, the image's size and world corners, `ImagePoint`, `FitTo`, `WidthFromPixels`, `Problems`, and
+    `Adjusted`, the picture with its brightness, contrast and invert baked in, cached per picture and settings),
+    `BackdropFiles` (setup JSON, images relative to the file) and `BackdropMemory` (each object's setup by its path, in
+    `backdrops.json` in the settings folder).
 - `src/AVAModeler.Formats/`: LWOB/LWLO read and write, LWO2 read, VideoScape GEO and OBJ, on a shared `Iff` reader;
   glTF 2.0 and STL. It references `AVAModeler.Geometry` for triangulation.
   - `ObjectFiles.cs` is the one registry of object formats: `LoadExtensions`, `SaveExtensions`, `Describe`, `Load`,
@@ -77,7 +85,10 @@ python3 samples/images/make_environment.py        # redraws the sample environme
   picking. `Texturing.cs` is what both renderers' textured faces share (`Texturing.Fragment` is the C# twin of the GL
   fragment shader): image layers by their corners' UVs, procedural layers from each pixel's interpolated point
   (`TexturedCorner.Local` and `World`), evaluated with `ProceduralTexture`; the shader in `GlRenderer.cs` repeats
-  `Noise` and `ProceduralTexture.Pattern` in GLSL, with the permutation table as a 256 × 1 texture.
+  `Noise` and `ProceduralTexture.Pattern` in GLSL, with the permutation table as a 256 × 1 texture. `BackdropDrawing`
+  (in `Texturing.cs`) makes a flat view's backdrop a `BackdropQuad`: a textured surface whose colour is the view's grey
+  with the adjusted picture laid over it at its opacity, and its four world corners; both renderers draw its two
+  triangles first, before the grid (`ViewScene.Backdrops`, filled by `ViewScene.FromDocument`).
 - `src/AVAModeler.Scene/`: Layout's model: items, envelopes, bones, LWS and JSON scenes, and the ray tracer.
   - `RenderEffects.cs`: the render effects' settings as immutable records, `AmbientOcclusion` and
     `EnvironmentSettings` on the `Scene` (`Occlusion`, `Environment`), `DepthOfField` and `MotionBlur` on each
@@ -151,6 +162,10 @@ python3 samples/images/make_environment.py        # redraws the sample environme
     settings are in `LayoutWorkspace`'s item panel, with Focus on calling `LayoutSession.FocusOn`.
   - `MeshInfoPanel.cs` is Mesh Info (W), docked beside the numeric panel and hidden until asked for: a thin view of
     `MeshCheck`, checking again (on the dispatcher, after a burst of changes) whenever the document changes while it's open.
+  - `BackdropPanel.cs` is Backdrop (D), docked the same way: a view chooser, Browse, the numbers and check boxes,
+    Fit to Object, Size from Pixels, and Save and Load Setup, each change going straight to `ModelerSession.SetBackdrop`.
+    `ModelerSession` keeps backdrops across New, gives an opened object the ones `BackdropMemory` has for its file, and
+    writes them there when they change (`RememberBackdrops`); `MainWindow` gives it the real memory only outside tests.
 - `src/AVAModeler/`: the application, one window hosting both workspaces. `Program.cs` sends `--mcp` to the MCP
   server before Avalonia starts; `LiveAgents.cs` is the app's side of live mode (it hands the live host both the
   Modeler's session and the window's `LayoutSession`, which exists before Layout is first shown, and gives the chat
@@ -158,8 +173,9 @@ python3 samples/images/make_environment.py        # redraws the sample environme
   uses, Setup… with the provider, base URL, model and Refresh, Core tools only and Model sees pictures, all kept in
   `Preferences.Chat*`; Edit › Preferences has them too and `ModelerWorkspace.PreferencesApplied` hands them back);
   `MainWindow` docks it on the right of whichever workspace is on screen (F4).
-- `samples/`: `StarPlugin` (an example plugin), Lua macro scripts, texture images, and `mcp/carbon_atom.py` (a
-  scene built entirely through the MCP server, with its saved object, scene and render).
+- `samples/`: `StarPlugin` (an example plugin), Lua macro scripts (`rocket-blueprints.lua` sets up backdrops), texture
+  images and the rocket blueprints (each drawn by a standard-library Python script beside them), and
+  `mcp/carbon_atom.py` (a scene built entirely through the MCP server, with its saved object, scene and render).
 - `tests/`: one xUnit v3 project per source project. `AVAModeler.UI.Tests` uses `Avalonia.Headless.XUnit` with
   Skia drawing, so it can capture screenshots.
 
@@ -246,8 +262,16 @@ python3 samples/images/make_environment.py        # redraws the sample environme
   Authorization header. The OpenAI-compatible provider contacts only the base URL the person set (`…/chat/completions`,
   and `…/models` on Refresh): no other network call, no telemetry. The chat's tools are the MCP server's, unchanged: add a tool to `ModelerTools`/`LayoutTools` and
   the chat has it too (a test checks the lists match).
-- **Preferences live in the app-data folder.** `preferences.json`, `plugins/` and `autosave/` sit under
-  `AVAModeler` in `SpecialFolder.ApplicationData`. Tests use temporary folders and never touch them.
+- **Preferences live in the app-data folder.** `preferences.json`, `backdrops.json`, `plugins/` and `autosave/` sit
+  under `AVAModeler` in `SpecialFolder.ApplicationData`. Tests use temporary folders and never touch them (a test
+  that needs the backdrop memory gives the session a `BackdropMemory` in a temporary folder).
+- **Backdrops are a display setting, not the object.** They're never written into object or scene files (LWOB round
+  trips stay byte-identical) and never undo steps; `Document.Copy` carries them, so pictures drawn off the UI thread
+  show them. Both renderers draw them from the same `BackdropQuad` (the software one with `FillTextured`, OpenGL
+  through the texture shader), so change how they look in `BackdropDrawing` and `BackdropMapping.Adjusted`, not in a
+  renderer. A missing image draws the placeholder checker at full strength and `BackdropMapping.Problems` words the
+  status-bar note. Agents' backdrop images come through `Workspace.Resolve` (inside the working folder, image types
+  only, read and never written).
 
 ## Making a change
 

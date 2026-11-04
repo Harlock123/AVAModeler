@@ -189,3 +189,55 @@ public static class Texturing
     /// <summary>The backdrop's lighting: dimmed to 80%.</summary>
     public const double BackdropBrightness = 0.8;
 }
+
+/// <summary>A flat view's reference image ready to draw: its surface (the picture over the view's ground) and its four corners in the world with their image coordinates.</summary>
+public sealed record BackdropQuad(TexturedSurface Surface, Vec3[] Corners, TextureImage Image, BackdropView View)
+{
+    /// <summary>The image coordinates of <see cref="Corners"/>, in order: bottom left, bottom right, top right, top left.</summary>
+    public static readonly Vec2[] CornerUVs = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
+
+    /// <summary>Corner i as a textured corner: unlit (the picture as it is) with its image coordinates.</summary>
+    public TexturedCorner Corner(int i)
+    {
+        var c = new TexturedCorner { Mul = 1 };
+        c.Set(0, CornerUVs[i], 1);
+        return c;
+    }
+
+    /// <summary>The two triangles (by corner) the quad is drawn as, in both renderers.</summary>
+    public static readonly int[] Triangles = [0, 1, 2, 0, 2, 3];
+}
+
+/// <summary>
+/// The reference images behind the flat views (<see cref="Backdrop"/>), as both renderers draw them: on the view's plane,
+/// under the grid and everything else, the picture (adjusted by <see cref="BackdropMapping.Adjusted"/>) laid over the
+/// view's ground colour at the backdrop's opacity. A missing image shows as the magenta checker, fully.
+/// </summary>
+public static class BackdropDrawing
+{
+    /// <summary>The flat view a camera kind is, for backdrops (null for the perspective and UV views).</summary>
+    public static BackdropView? ViewOf(ViewKind kind) => kind switch
+    {
+        ViewKind.Top => BackdropView.Top,
+        ViewKind.Front => BackdropView.Front,
+        ViewKind.Side => BackdropView.Side,
+        _ => null,
+    };
+
+    /// <summary>The backdrop a view shows, ready to draw; null if it has none (or it's hidden or see-through).</summary>
+    public static BackdropQuad? For(BackdropSet? set, ViewKind kind, string? imageBase)
+    {
+        if (set == null || ViewOf(kind) is not { } view || set[view] is not { Visible: true } b) return null;
+        var source = TextureImages.Load(b.Image, imageBase);
+        double opacity = source.IsPlaceholder ? 1 : b.Opacity;
+        if (opacity <= 0) return null;
+        var image = BackdropMapping.Adjusted(source, b);
+        var ground = Palette.Background;
+        var surface = new TexturedSurface
+        {
+            Color = new Vec3(((ground >> 16) & 0xFF) / 255.0, ((ground >> 8) & 0xFF) / 255.0, (ground & 0xFF) / 255.0),
+            Layers = [(new TextureLayer { WidthTiling = TextureTiling.Edge, HeightTiling = TextureTiling.Edge, Opacity = opacity, PixelBlending = true }, image)],
+        };
+        return new BackdropQuad(surface, BackdropMapping.Corners(view, b, source.Width, source.Height), image, view);
+    }
+}

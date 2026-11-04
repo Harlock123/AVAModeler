@@ -16,7 +16,7 @@ public enum ViewMode { Wireframe, Shaded, Textured }
 public static class Pictures
 {
     /// <summary>
-    /// One of the Modeler's views, framed to fit the visible layers, drawn as the app draws it: the grid, the
+    /// One of the Modeler's views, framed to fit the visible layers (and a flat view's backdrop), drawn as the app draws it: its backdrop, the grid, the
     /// background layers dimmed, the foreground in black wire, the selection in yellow. Only the perspective view
     /// shades; the flat views are always wireframe. For the perspective view, <paramref name="heading"/> turns the
     /// camera round the Y axis (0 looks along +Z, as the Front view does; 90 looks along +X) and
@@ -26,7 +26,7 @@ public static class Pictures
     {
         var camera = new ViewCamera(kind) { Heading = heading, Pitch = Math.Clamp(pitch, -89.9, 89.9) };
         camera.Resize(width, height);
-        camera.Fit(VisibleBounds(doc));
+        camera.Fit(Framing(doc, kind));
         var scene = ViewScene.FromDocument(doc, mode == ViewMode.Wireframe ? DisplayStyle.Wireframe : DisplayStyle.ShadedWireframe);
         scene.ShowTextures = mode == ViewMode.Textured;
         using var renderer = new SoftwareRenderer();
@@ -76,6 +76,14 @@ public static class Pictures
         fill.Shadows = false;
         var image = RayTracer.Render(scene, 0, new RenderSettings { Width = width, Height = height, Camera = camera, SamplesPerPixel = Math.Max(1, samples) }, null, cancel);
         return image.ToPng(alpha: false);
+    }
+
+    /// <summary>What a view of the document frames: the visible layers and, in a flat view, its backdrop; a unit box round the origin if there's neither.</summary>
+    public static Box3 Framing(Document doc, ViewKind kind)
+    {
+        var b = doc.Bounds();
+        if (BackdropDrawing.For(doc.Backdrops, kind, doc.ImageBase) is { } quad) b = b.Include(Box3.Of(quad.Corners));
+        return b.IsEmpty ? new Box3(-Vec3.One, Vec3.One) : b;
     }
 
     /// <summary>The bounds of the foreground and background layers, or a unit box round the origin when they're empty.</summary>

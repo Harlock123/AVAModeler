@@ -45,6 +45,8 @@ public static class Macros
         ("proctex(surface, kind, {Option = value, ...})", "gives a surface a LightWave 5 procedural texture (no image needed): kind is " + ProceduralKinds + "; it sets the channel's first layer of that kind (NewLayer = true adds another). Options: Channel, Color ({r, g, b}, 0 to 255: the texture colour, for the colour channel), Value (0 to 1: the texture value, for the other channels), Size (one pattern unit, e.g. a check's width, in metres), Center, Axis, Fit, Falloff ({x, y, z}, fraction per metre), Opacity, Blend, Amplitude (bump), Negative, World (world coordinates), and the kind's settings by name: Frequencies, Contrast, SmallPower, Turbulence, VeinSpacing, VeinSharpness, RingSpacing, RingSharpness, LineThickness, DotDiameter, Fuzziness, WaveSources, Wavelength, WaveSpeed, BandSharpness, BumpRadius, BumpSpacing"),
         ("notexture(surface, channel)", "removes a surface's textures (for one channel, or all)"),
         ("checkmesh()", "checks the foreground layers as Mesh Info does, changing nothing; returns a table: verdict, printable, watertight, points, polygons, faces, area (m²), volume (m³, nil unless closed), center (centre of mass {x, y, z}), size, min, max, shells, holes, boundary_edges, nonmanifold_edges, inconsistent_edges, flipped_polygons, inward_shells, cavities, degenerate_polygons, nonplanar_polygons, duplicate_points, unused_points, points_and_lines, and report (the lines of text). tool(\"Select Problems\", {Problem = \"BoundaryEdges\"}) selects them"),
+        ("backdrop(view, image, {Option = value, ...})", "puts a reference image (a blueprint or photo) behind the \"top\", \"front\" or \"side\" view, in world space, so it pans and zooms with the view and lines up across views; not saved in the object or undone (the app remembers it per object). Options: Center ({a, b}: the image's centre in metres on the view's two axes, top X and Z, front X and Y, side Z and Y), Size (its width in metres; its height follows the image's shape), Height (metres, to stretch it), Fit (true: sized round the foreground), PixelSize (metres a pixel covers: the width from the image's pixels), Brightness (-1 to 1), Contrast (0 to 4, 1 leaves it), Opacity (0 to 1, default 0.5), Invert, Visible. With nil as the image it changes the view's backdrop settings. Returns a note if the image can't be found (a magenta checker shows)"),
+        ("nobackdrop(view)", "takes the backdrop from a view (\"top\", \"front\" or \"side\"), or from every view with none given; returns how many went"),
         ("print(...)", "writes to the macro's output"),
     ];
 
@@ -125,6 +127,20 @@ public static class Macros
         g["notexture"] = (Func<string, string?, int>)((surface, channel) =>
             commands.ClearTextures(surface, channel == null ? null : Enum.Parse<TextureChannel>(channel, ignoreCase: true)));
         g["checkmesh"] = (Func<Table>)(() => CheckMesh(lua, commands.Document));
+        g["backdrop"] = (Func<string, string?, Table?, string?>)((view, image, options) =>
+        {
+            var v = BackdropViewOf(view);
+            var o = options == null ? [] : ToArgs(options);
+            if (image == null)
+            {
+                commands.ChangeBackdrop(v, b => BackdropOptions(b, v, o, commands));
+                return null;
+            }
+            var (_, problem) = commands.SetBackdrop(v, image, b => BackdropOptions(b, v, o, commands));
+            if (problem != null) commands.Print(problem);
+            return problem;
+        });
+        g["nobackdrop"] = (Func<string?, int>)(view => commands.ClearBackdrop(view == null ? null : BackdropViewOf(view)));
         lua.Options.DebugPrint = commands.Print;
         try
         {
@@ -236,6 +252,41 @@ public static class Macros
             }
         if (fit && doc != null)
             (t.Center, t.Size) = TextureMapping.AutoSize(TextureMapping.SurfaceBounds(doc.Layers.Select(l => l.Mesh), doc.SurfaceIndex(surface)));
+    }
+
+    private static BackdropView BackdropViewOf(string view) => Enum.TryParse<BackdropView>(view, ignoreCase: true, out var v) && Enum.IsDefined(v)
+        ? v : throw new ArgumentException($"There's no \"{view}\" view for a backdrop: use \"top\", \"front\" or \"side\".");
+
+    /// <summary>A backdrop's settings from a macro's options table (names as in the Macro Reference, any case).</summary>
+    private static Backdrop BackdropOptions(Backdrop b, BackdropView view, Dictionary<string, object?> o, Commands commands)
+    {
+        double Num(object? v, string name) => v is double d ? d : throw new ArgumentException($"backdrop()'s {name} must be a number.");
+        bool fit = false;
+        double? pixel = null;
+        foreach (var (key, v) in o)
+            switch (key.ToLowerInvariant())
+            {
+                case "center" or "centre":
+                    b = b with { Center = v is double[] { Length: 2 } a ? new Vec2(a[0], a[1]) : throw new ArgumentException("backdrop()'s Center is {a, b}: metres on the view's two axes.") };
+                    break;
+                case "size" or "width": b = b with { Width = Num(v, key) }; break;
+                case "height": b = b with { Height = v == null ? null : Num(v, key) }; break;
+                case "brightness": b = b with { Brightness = Num(v, key) }; break;
+                case "contrast": b = b with { Contrast = Num(v, key) }; break;
+                case "opacity": b = b with { Opacity = Num(v, key) }; break;
+                case "invert": b = b with { Invert = v is true }; break;
+                case "visible": b = b with { Visible = v is not false }; break;
+                case "fit": fit = v is true; break;
+                case "pixelsize": pixel = Num(v, key); break;
+                default: throw new ArgumentException($"backdrop() has no option \"{key}\". It has Center, Size, Height, Fit, PixelSize, Brightness, Contrast, Opacity, Invert and Visible.");
+            }
+        if (pixel is { } m) b = b with { Width = commands.BackdropWidthFromPixels(b, m), Height = null };
+        if (fit)
+        {
+            var (center, width) = commands.BackdropFit(view, b);
+            b = b with { Center = center, Width = width };
+        }
+        return b.Checked();
     }
 
     /// <summary>The mesh check of the foreground layers as a Lua table (see the Macro Reference).</summary>

@@ -54,6 +54,8 @@ public sealed class ViewScene
     public string? ImageBase;
     /// <summary>An image drawn on the 0–1 square of the XY plane, behind everything (the UV view's texture).</summary>
     public TextureImage? Backdrop;
+    /// <summary>The reference images behind the flat views (blueprints), drawn under the grid; relative paths start from <see cref="ImageBase"/>.</summary>
+    public BackdropSet? Backdrops;
     public List<OverlayLine> Overlay = [];
 
     public int Version;
@@ -73,6 +75,7 @@ public sealed class ViewScene
             ShowPoints = sel.Mode == SelectionMode.Points,
             BackfaceTint = backfaceTint,
             ImageBase = document.ImageBase,
+            Backdrops = document.Backdrops,
             Version = document.Version,
         };
         for (int i = 0; i < document.Layers.Count; i++)

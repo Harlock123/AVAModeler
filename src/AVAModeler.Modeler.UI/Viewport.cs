@@ -232,9 +232,13 @@ public sealed class ViewportControl : Panel
     public void FitAll()
     {
         Camera.Resize((int)Bounds.Width, (int)Bounds.Height);
-        Camera.Fit(_uv ? UVBounds(selected: false) : Session.Document.Bounds());
+        Camera.Fit(_uv ? UVBounds(selected: false) : WithBackdrop(Session.Document.Bounds()));
         Redraw();
     }
+
+    /// <summary>A box widened to take in this view's backdrop, if it shows one (so Fit All frames the blueprint too).</summary>
+    private Box3 WithBackdrop(Box3 box) =>
+        BackdropDrawing.For(Session.Document.Backdrops, Kind, Session.Document.ImageBase) is { } quad ? box.Include(Box3.Of(quad.Corners)) : box;
 
     public void FitSelected()
     {

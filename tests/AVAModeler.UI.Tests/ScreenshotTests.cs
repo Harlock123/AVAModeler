@@ -195,8 +195,19 @@ public class ScreenshotTests
     public void Blueprints_behind_the_views_and_the_backdrop_panel()
     {
         // The rocket sample: its side, front and top drawings behind the flat views, lined up in metres, and the body
-        // lathed over them, the fins still to do; the Backdrop panel open on the side view.
-        var w = WithMacro("rocket-blueprints.lua");
+        // lathed over them, the fins still to do; the Backdrop panel open on the side view. The sample runs from a copy
+        // in a temp folder, so the panel's image box shows a short path rather than the build machine's.
+        var root = Path.Combine(Path.GetTempPath(), "avamodeler-samples");
+        Directory.CreateDirectory(Path.Combine(root, "scripts"));
+        Directory.CreateDirectory(Path.Combine(root, "images"));
+        var samples = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(Ui.Sample("rocket-blueprints.lua"))))!;
+        File.Copy(Path.Combine(samples, "scripts", "rocket-blueprints.lua"), Path.Combine(root, "scripts", "rocket-blueprints.lua"), true);
+        foreach (var view in new[] { "side", "front", "top" })
+            File.Copy(Path.Combine(samples, "images", $"rocket-{view}.png"), Path.Combine(root, "images", $"rocket-{view}.png"), true);
+        var w = Ui.Open(1400, 860);
+        var run = w.Modeler.RunMacroFile(Path.Combine(root, "scripts", "rocket-blueprints.lua"));
+        for (int i = 0; i < 2000 && !run.IsCompleted; i++) { Ui.Pump(); Thread.Sleep(1); }
+        Ui.Fit(w);
         Assert.Equal(3, w.Session.Document.Backdrops.All().Count());
         w.Session.SetSelectionMode(SelectionMode.Polygons);
         w.Modeler.Numeric.Collapsed = true;

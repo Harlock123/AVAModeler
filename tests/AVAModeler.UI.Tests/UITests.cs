@@ -317,6 +317,15 @@ public class SessionTests
             Assert.Equal("/tmp/3.lwo", q.RecentFiles[0]);
             File.WriteAllText(path, "{ not json");
             Assert.Equal("Software", Preferences.Load(path).Renderer);
+
+            // Loaded preferences save back where they came from; ones made with new (test windows) save nowhere.
+            var loaded = Preferences.Load(path);
+            Assert.Equal(path, loaded.Location);
+            loaded.UndoLevels = 7;
+            loaded.Save();
+            Assert.Equal(7, Preferences.Load(path).UndoLevels);
+            Assert.Null(new Preferences().Location);
+            Assert.DoesNotContain("Location", File.ReadAllText(path));
         }
         finally { File.Delete(path); }
     }

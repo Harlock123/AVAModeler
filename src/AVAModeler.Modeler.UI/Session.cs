@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AVAModeler.Core;
 using AVAModeler.Rendering;
 using AVAModeler.Tools;
@@ -50,22 +51,33 @@ public sealed class Preferences
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
+    /// <summary>
+    /// The file these preferences were loaded from, and where <see cref="Save"/> writes them. Preferences made with
+    /// <c>new</c> (a window made for tests) have none, so saving them without a path writes nothing.
+    /// </summary>
+    [JsonIgnore]
+    public string? Location { get; private set; }
+
     public static Preferences Load(string? path = null)
     {
+        path ??= DefaultPath;
+        var prefs = new Preferences();
         try
         {
-            path ??= DefaultPath;
-            if (File.Exists(path)) return JsonSerializer.Deserialize<Preferences>(File.ReadAllText(path), Json) ?? new Preferences();
+            if (File.Exists(path)) prefs = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(path), Json) ?? prefs;
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { }
-        return new Preferences();
+        prefs.Location = path;
+        return prefs;
     }
 
+    /// <summary>Writes the preferences to <paramref name="path"/>, or to <see cref="Location"/>; with neither, nowhere.</summary>
     public void Save(string? path = null)
     {
+        path ??= Location;
+        if (path == null) return;
         try
         {
-            path ??= DefaultPath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, JsonSerializer.Serialize(this, Json));
         }

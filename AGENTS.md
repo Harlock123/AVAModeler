@@ -108,8 +108,9 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     scene, loading and saving scenes (with an object loader passed in), the modified flag, and the scene's undo
     (`Edit`, `BeginEdit`/`EndEdit`, `Undo`, `Redo`).
   - `SceneUndo.cs`: Layout's undo history (`LayoutSession.History`), `SceneSnapshot`s shared by the person and agents.
-  - `SceneDrawing.cs` (what Layout's views draw, and looking through a scene camera) and `Keying.cs` (how values become keys:
-    one rule for Layout's controls and agents alike).
+  - `SceneDrawing.cs` (what Layout's views draw, and looking through a scene camera: `LookThrough` copies its heading,
+    pitch and bank into the `ViewCamera`, whose `Bank` rolls its basis, so the view tilts as the ray tracer's picture
+    does) and `Keying.cs` (how values become keys: one rule for Layout's controls and agents alike).
   - `SceneGltf.cs`: Scene › Export glTF and the `export_scene` tool: the scene's items as nodes in their hierarchy,
     cameras, KHR_lights_punctual lights and motion sampled per frame, through `GltfBuilder`.
   - `AnimationRender.cs` (Render Animation's work: a run of frames from a `Scene.Copy` into numbered PNGs on a worker

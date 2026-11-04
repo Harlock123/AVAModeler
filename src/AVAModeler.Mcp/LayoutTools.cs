@@ -757,7 +757,7 @@ public sealed partial class ModelerTools
     }
 
     [McpServerTool(Name = "render_scene_view", ReadOnly = true, Idempotent = true)]
-    [Description("Draws the scene quickly as Layout's view does (software, not ray-traced), as a PNG: objects shaded or in wireframe, and every light (a cross, with an arrow the way it shines), camera (a box with a lens), null (a cross) and bone (a diamond) as a little drawing. view camera looks through the current camera (its heading and pitch; bank isn't shown), framed as render_scene frames it; perspective orbits the scene from heading and pitch; top looks down -Y, front along +Z, side along -X, each framing everything. Also lists where each item landed in the picture. Use it to check placement and aim before rendering.")]
+    [Description("Draws the scene quickly as Layout's view does (software, not ray-traced), as a PNG: objects shaded or in wireframe, and every light (a cross, with an arrow the way it shines), camera (a box with a lens), null (a cross) and bone (a diamond) as a little drawing. view camera looks through the current camera (its heading, pitch and bank, so a banked camera's picture tilts as render_scene's does), framed as render_scene frames it; perspective orbits the scene from heading and pitch; top looks down -Y, front along +Z, side along -X, each framing everything. Also lists where each item landed in the picture. Use it to check placement and aim before rendering.")]
     public async Task<CallToolResult> RenderSceneView(
         [Description("camera (default), perspective, top, front or side.")] string view = "camera",
         [Description("The frame (default: the current frame).")] double? frame = null,

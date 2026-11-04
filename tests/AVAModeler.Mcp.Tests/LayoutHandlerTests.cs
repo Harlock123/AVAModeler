@@ -539,6 +539,28 @@ public class LayoutHandlerTests
     }
 
     [Fact]
+    public async Task Render_scene_views_camera_view_turns_with_the_cameras_bank()
+    {
+        using var b = new Bench();
+        // A null 1 m to the right of where the camera (at [0, 0, -5], looking along +Z) looks.
+        await b.Tools.AddNull("Marker", [1, 0, 0], cancel: Cancel);
+        (double X, double Y) Mark(string text)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(text, @"null Marker at \((-?\d+), (-?\d+)\)");
+            Assert.True(m.Success, text);
+            return (double.Parse(m.Groups[1].Value), double.Parse(m.Groups[2].Value));
+        }
+        var level = Mark(Text(await b.Tools.RenderSceneView(width: 320, cancel: Cancel)));
+        Assert.Equal(120, level.Y, 0);
+        // Banked 30°: the camera's right turns up, so what's to its right shows lower down, as in render_scene.
+        await b.Tools.SetTransform("Camera", 1, rotation: [0, 0, 30], key: false, cancel: Cancel);
+        var banked = Mark(Text(await b.Tools.RenderSceneView(width: 320, cancel: Cancel)));
+        double dx = level.X - 160, angle = Math.Atan2(banked.Y - 120, banked.X - 160) * 180 / Math.PI;
+        Assert.True(dx > 20);
+        Assert.InRange(angle, 27, 33);
+    }
+
+    [Fact]
     public async Task Render_animation_writes_numbered_frames_and_a_contact_sheet()
     {
         using var b = await WithBox();

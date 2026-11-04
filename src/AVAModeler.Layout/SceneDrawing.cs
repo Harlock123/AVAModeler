@@ -52,8 +52,8 @@ public static class SceneDrawing
     };
 
     /// <summary>
-    /// Points a perspective view camera through a scene camera at a frame: its position, heading and pitch (bank isn't
-    /// shown) and its vertical field of view.
+    /// Points a perspective view camera through a scene camera at a frame: its position, heading, pitch and bank (so a
+    /// banked camera's view tilts as its ray-traced picture does) and its vertical field of view.
     /// </summary>
     public static void LookThrough(ViewCamera view, CameraItem camera, double frame)
     {
@@ -62,6 +62,7 @@ public static class SceneDrawing
         var hpb = Rotations.FromMatrix(world);
         view.Heading = hpb.X;
         view.Pitch = hpb.Y;
+        view.Bank = hpb.Z;
         view.Distance = 1;
         view.FieldOfView = camera.VerticalFov(frame);
         view.Center = eye + view.Basis().Forward;

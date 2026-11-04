@@ -23,8 +23,8 @@ public static class ScenePictures
     public static SceneModel Copy(SceneModel scene) => scene.Copy(d => d.Copy());
 
     /// <summary>
-    /// The scene at a frame as Layout's view draws it: through its current camera (heading and pitch; bank isn't
-    /// shown), or a perspective view turned by <paramref name="heading"/> and <paramref name="pitch"/>, or the top,
+    /// The scene at a frame as Layout's view draws it: through its current camera (heading, pitch and bank, as
+    /// the ray tracer sees it), or a perspective view turned by <paramref name="heading"/> and <paramref name="pitch"/>, or the top,
     /// front or side view, each framing everything in the scene. Also says where each item landed in the picture.
     /// </summary>
     public static (byte[] Png, List<ItemMark> Marks) View(SceneModel scene, double frame, SceneViewKind kind, int width, int height, bool shaded, double heading = 35, double pitch = 25)

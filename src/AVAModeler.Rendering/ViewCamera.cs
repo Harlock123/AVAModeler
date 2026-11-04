@@ -29,6 +29,11 @@ public sealed class ViewCamera
     public double PixelsPerUnit = 100;
     /// <summary>The perspective view's heading and pitch (degrees) and distance from its target.</summary>
     public double Heading = 35, Pitch = 25, Distance = 6;
+    /// <summary>
+    /// The perspective view's bank (roll) in degrees, turning its right axis toward its up axis about the line of sight
+    /// as a LightWave camera's bank does: 0 (level) unless the view looks through a banked scene camera.
+    /// </summary>
+    public double Bank;
     /// <summary>The perspective view's vertical field of view (degrees).</summary>
     public double FieldOfView = 45;
 
@@ -55,6 +60,12 @@ public sealed class ViewCamera
         var forward = new Vec3(Math.Sin(h) * Math.Cos(p), -Math.Sin(p), Math.Cos(h) * Math.Cos(p));
         var right = new Vec3(Math.Cos(h), 0, -Math.Sin(h));
         var up = Vec3.Cross(forward, right);
+        if (Bank != 0)
+        {
+            // Bank turns +X toward +Y about the line of sight (LightWave's Rz, applied after heading and pitch).
+            double b = Mat4.Deg(Bank), c = Math.Cos(b), s = Math.Sin(b);
+            (right, up) = (right * c + up * s, up * c - right * s);
+        }
         return (right, up, forward);
     }
 

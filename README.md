@@ -286,7 +286,8 @@ Modeler and Layout shows the change at once.
   Bones, parenting and the scene settings. AI agents' scene changes are steps on the same history ("Agent: added a
   light"), so your Ctrl+Z takes them back too. New Scene and Load Scene clear it. The object's geometry has the
   Modeler's own undo.
-- **Cameras and lights**: the camera view with its picture shape and its action- and title-safe areas; zoom factor
+- **Cameras and lights**: the camera view with its picture shape and its action- and title-safe areas, turned by the
+  camera's heading, pitch and bank (a banked camera's view tilts just as its ray-traced picture does); zoom factor
   and field of view, and, off until switched on, depth of field (focal distance and LightWave's lens f-stop, with a
   Focus on button that brings a chosen item into focus) and motion blur (the shutter as a fraction of a frame).
   Distant, point, spot and area lights have colour, intensity, cone, soft edge, range and shadows; an area light is
@@ -572,7 +573,7 @@ The Layout tools:
 | `set_key`, `delete_key`, `set_end_behavior` | One key on one channel with tension, continuity, bias and the linear flag; removing keys; what a channel does before its first key and after its last. |
 | `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame; ambient occlusion (`ao`, samples, distance in metres, strength) and the environment (`environment`: a lat-long `.hdr`, `.png` or `.jpg` in the working folder, or `builtin:sky` or `builtin:studio`; intensity, heading, and `environment_lighting` with its samples). |
 | `undo_scene`, `redo_scene` | Layout's undo and redo, on the history the person's Ctrl+Z uses: each scene call is one step ("Agent: …"), and the person's steps can be undone too. |
-| `render_scene_view` | A quick picture as Layout's view draws it, through the camera or from above, the front, the side or an orbit, with the lights, cameras, nulls and bones drawn; it also says where each item landed in the picture. |
+| `render_scene_view` | A quick picture as Layout's view draws it, through the camera (bank included) or from above, the front, the side or an orbit, with the lights, cameras, nulls and bones drawn; it also says where each item landed in the picture. |
 | `render_scene`, `render_animation` | A ray-traced frame through a camera; or a run of frames written as numbered PNGs in the working folder, with a contact sheet back, and optionally joined into an MP4 or a looping GIF (with ffmpeg). Both honour the render effects, and are bounded in size and time (depth of field's and motion blur's samples count as rays a pixel against `render_animation`'s limit). |
 | `make_movie` | Joins frames already rendered, from any number of `render_animation` calls, into an MP4 and/or a looping GIF (with ffmpeg). It renders nothing, so it has no frame limit: a long animation is rendered in parts, then joined once. |
 
@@ -731,8 +732,7 @@ Layout reuses them.
   (Merge Polygons tidies them).
 - **Byte-identical LWOB round trips** are tested on hand-built files covering every chunk type. Files with more than
   one SRFS chunk, or a repeated PNTS/POLS in a layer, read correctly but are rewritten in the standard order.
-- **Bevel** works per face, as LightWave 5's did; Inset's Group mode (with a Depth) is the group bevel. The camera view
-  in Layout shows heading and pitch, not bank.
+- **Bevel** works per face, as LightWave 5's did; Inset's Group mode (with a Depth) is the group bevel.
 - **The edge and face tools**:
   - Loops and rings follow quads only: a loop stops at any point that isn't four quads round it (a pole, a triangle,
     an n-gon), a ring at anything that isn't a quad. Loop Cut's Position places a single cut; several are always
@@ -819,8 +819,7 @@ Layout reuses them.
 - **AI agents (MCP)**: Points and Drag work only with the mouse, so agents use `add_points` and Move instead.
   `undo_scene` can't go back across `new_scene` or `open_scene`, which clear the scene's history.
   `render_animation` does at most 120 frames and 20 million rays a call, so the agent renders a long animation in
-  parts and joins them with `make_movie` (Layout's Render Animation window has no such limit). `render_scene_view`'s camera view, like Layout's, doesn't show the
-  camera's bank. `render` uses a fixed camera rig and
+  parts and joins them with `make_movie` (Layout's Render Animation window has no such limit). `render` uses a fixed camera rig and
   lights round the object. Only one AVA Modeler per user takes agents at a time. Inside `run_lua`, `undo()` and
   `redo()` aren't allowed (the macro is one undo step) and a macro stops after 30 seconds unless given longer. Texture
   image paths may point outside the working folder (they're only read). The live pipe is tested on Linux; Windows and

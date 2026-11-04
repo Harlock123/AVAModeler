@@ -74,6 +74,12 @@ public sealed class MainWindow : Window
         Chat = new ChatPanel(_chatTools, keys, text => { Session.SetStatus(text); _layoutSession.SetStatus(text); }, Session.Preferences, serverKeys);
         Chat.CloseRequested += ToggleChat;
         Modeler.PreferencesApplied += Chat.LoadSettings;
+        // Saved chats live in the settings folder; a window made for tests keeps none (they give one in a temporary folder).
+        if (loadPlugins)
+        {
+            Chat.History = new ChatHistory(Preferences.ChatsFolder);
+            Chat.RestoreLast();
+        }
         Width = 1400;
         Height = 900;
         MinWidth = 800;
@@ -95,6 +101,7 @@ public sealed class MainWindow : Window
         Closed += (_, _) =>
         {
             Chat.Stop();
+            Chat.SaveHistory();
             _ = _chatTools.DisposeAsync().AsTask();
             _ = Agents.StopAsync();
         };

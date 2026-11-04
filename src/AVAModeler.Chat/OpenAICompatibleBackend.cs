@@ -39,6 +39,19 @@ internal sealed class OpenAICompatibleBackend : IChatBackend
 
     public void Clear() => _messages.Clear();
 
+    public void AddAssistant(string text, IReadOnlyList<ToolCall> calls)
+    {
+        if (text.Length == 0 && calls.Count == 0) return;
+        var message = new JsonObject { ["role"] = "assistant", ["content"] = text.Length > 0 ? text : null };
+        if (calls.Count > 0)
+            message["tool_calls"] = new JsonArray(calls.Select(c => (JsonNode)new JsonObject
+            {
+                ["id"] = c.Id, ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = c.Name, ["arguments"] = JsonSerializer.Serialize(c.Input) },
+            }).ToArray());
+        _messages.Add(message);
+    }
+
     /// <summary>The request body: the system prompt, the conversation, the tools, streamed.</summary>
     internal JsonObject Request(IReadOnlyList<McpTool> tools)
     {

@@ -31,6 +31,14 @@ internal sealed class AnthropicBackend : IChatBackend
 
     public void Clear() => _turns.Clear();
 
+    public void AddAssistant(string text, IReadOnlyList<ToolCall> calls)
+    {
+        var blocks = new List<ContentBlockParam>();
+        if (text.Length > 0) blocks.Add(new TextBlockParam { Text = text });
+        foreach (var c in calls) blocks.Add(new ToolUseBlockParam { ID = c.Id, Name = c.Name, Input = c.Input });
+        if (blocks.Count > 0) _turns.Add((false, blocks));
+    }
+
     /// <summary>Adds blocks to the conversation's last user turn, or starts one (turns must alternate).</summary>
     private void AddToUserTurn(params ContentBlockParam[] blocks)
     {

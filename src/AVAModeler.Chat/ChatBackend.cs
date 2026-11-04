@@ -42,6 +42,12 @@ internal interface IChatBackend
     void AddUserText(string text);
 
     /// <summary>
+    /// Puts back a reply the model made before (a saved chat carried on): its words and the tool calls it asked for, in
+    /// this provider's shape.
+    /// </summary>
+    void AddAssistant(string text, IReadOnlyList<ToolCall> calls);
+
+    /// <summary>
     /// Sends the conversation and streams the reply: its words go to <paramref name="text"/> as they come, and the whole
     /// reply is kept in the conversation (unless it's empty). A failure or cancel keeps nothing.
     /// </summary>

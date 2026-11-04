@@ -19,6 +19,9 @@ namespace AVAModeler.Chat;
 public sealed class ChatSession(IToolBridge tools)
 {
     private readonly List<ChatEntry> _entries = [];
+    /// <summary>The conversation in neither provider's shape, as it was sent and answered: what a saved chat keeps.</summary>
+    private readonly List<LogTurn> _log = [];
+    private (string Model, string? Server) _opened = ("", null);
     private readonly AnthropicBackend _anthropic = new();
     private readonly OpenAICompatibleBackend _server = new();
     private ChatProvider _provider;
@@ -38,9 +41,46 @@ public sealed class ChatSession(IToolBridge tools)
             if (value == _provider) return;
             bool any = _entries.Count > 0 || Working;
             _provider = value;
+            if (ReadOnlyProvider is { } was)
+            {
+                // A saved chat shown read-only comes alive when the provider it was with is chosen again.
+                if (was == value) LoadBackend();
+                ReadOnlyChanged?.Invoke();
+                return;
+            }
             if (any) NewChat();
         }
     }
+
+    /// <summary>This chat's id: the name of its file in the history.</summary>
+    public string ChatId { get; private set; } = "";
+
+    /// <summary>When this chat started.</summary>
+    public DateTimeOffset Created { get; private set; }
+
+    /// <summary>The clock new chats are dated by (tests set their own).</summary>
+    public Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.Now;
+
+    /// <summary>The OpenAI-compatible server as a saved chat names it: host and port only (the panel sets it).</summary>
+    public string? ServerName { get; set; }
+
+    /// <summary>
+    /// When a saved chat with the other provider is open, that provider: the chat is shown but can't be carried on (its
+    /// messages are in the other API's terms) until that provider is chosen again, or New Chat starts afresh.
+    /// </summary>
+    public ChatProvider? ReadOnlyProvider { get; private set; }
+
+    /// <summary>Whether the chat on show is read-only (see <see cref="ReadOnlyProvider"/>).</summary>
+    public bool ReadOnly => ReadOnlyProvider != null;
+
+    /// <summary>Raised when <see cref="ReadOnly"/> changes.</summary>
+    public event Action? ReadOnlyChanged;
+
+    /// <summary>Whether there's anything to save: the person has said something.</summary>
+    public bool HasConversation => _entries.OfType<UserEntry>().Any();
+
+    /// <summary>A turn of the conversation: the person's words, the model's reply and calls, or the calls' outcomes.</summary>
+    private sealed record LogTurn(string Role, string Text, IReadOnlyList<ToolCall> Calls, IReadOnlyList<(ToolCall Call, ToolOutcome Outcome)> Results);
 
     private IChatBackend Backend => _provider == ChatProvider.Anthropic ? _anthropic : _server;
 
@@ -111,7 +151,8 @@ public sealed class ChatSession(IToolBridge tools)
     public async Task SendAsync(string text, CancellationToken cancel = default)
     {
         text = text.Trim();
-        if (text.Length == 0 || Working) return;
+        if (text.Length == 0 || Working || ReadOnly) return;
+        if (ChatId.Length == 0) StartId();
         foreach (var n in _entries.OfType<NoticeEntry>()) n.RetryGone();
         Add(new UserEntry(text));
         if (!Backend.Ready)
@@ -120,13 +161,14 @@ public sealed class ChatSession(IToolBridge tools)
             return;
         }
         Backend.AddUserText(text);
+        _log.Add(new LogTurn("user", text, [], []));
         await RunAsync(cancel);
     }
 
     /// <summary>Sends the conversation again after an error (nothing new is added).</summary>
     public async Task RetryAsync(CancellationToken cancel = default)
     {
-        if (Working) return;
+        if (Working || ReadOnly) return;
         foreach (var n in _entries.OfType<NoticeEntry>()) n.RetryGone();
         if (!Backend.Ready)
         {
@@ -147,9 +189,20 @@ public sealed class ChatSession(IToolBridge tools)
         // A request still winding down after the stop belongs to the old chat: it adds nothing to the new one.
         _generation++;
         _entries.Clear();
+        _log.Clear();
         _anthropic.Clear();
         _server.Clear();
+        ChatId = "";
+        bool wasReadOnly = ReadOnly;
+        ReadOnlyProvider = null;
         Cleared?.Invoke();
+        if (wasReadOnly) ReadOnlyChanged?.Invoke();
+    }
+
+    private void StartId()
+    {
+        Created = Clock();
+        ChatId = ChatHistory.NewId(Created);
     }
 
     private void Add(ChatEntry entry)
@@ -227,6 +280,8 @@ public sealed class ChatSession(IToolBridge tools)
             }
             if (Gone()) return;
             reply.Finish();
+            // As the backend keeps it: a reply with no words and no calls isn't kept.
+            if (reply.Text.Length > 0 || message.Calls.Count > 0) _log.Add(new LogTurn("assistant", reply.Text, message.Calls, []));
 
             if (message.Calls.Count == 0)
             {
@@ -285,6 +340,7 @@ public sealed class ChatSession(IToolBridge tools)
             }
             // Every tool call has its result, so the conversation can go on after a stop or the cap.
             backend.AddResults(results);
+            _log.Add(new LogTurn("results", "", [], results));
             if (stopped)
             {
                 Add(new NoticeEntry("Stopped.", NoticeKind.Info));
@@ -303,5 +359,181 @@ public sealed class ChatSession(IToolBridge tools)
                 return;
             }
         }
+    }
+
+    // ───────────────────────────── saving and opening chats ─────────────────────────────
+
+    /// <summary>
+    /// The chat as it's saved: what the panel shows and the conversation in a shape either provider can be given again.
+    /// Each picture goes through <paramref name="keep"/> (which returns the name it's kept under, or null to leave it
+    /// out: too big); the same picture is asked about once. Never a key.
+    /// </summary>
+    public StoredChat ToStored(Func<ToolImage, string?> keep)
+    {
+        if (ChatId.Length == 0) StartId();
+        var kept = new Dictionary<ToolImage, string?>(ReferenceEqualityComparer.Instance);
+        string? Keep(ToolImage i) => kept.TryGetValue(i, out var name) ? name : kept[i] = keep(i);
+        (List<string>? Names, int Left) Pictures(IReadOnlyList<ToolImage> images)
+        {
+            if (images.Count == 0) return (null, 0);
+            var names = images.Select(Keep).ToList();
+            return (names.OfType<string>().ToList(), names.Count(n => n == null));
+        }
+        var chat = new StoredChat
+        {
+            Id = ChatId, Created = Created, Updated = Clock(),
+            // A chat open read-only keeps the provider, model and server it was with.
+            Provider = ReadOnlyProvider ?? _provider,
+            Model = ReadOnly ? _opened.Model : _provider == ChatProvider.Anthropic ? Model : ServerModel,
+            Server = ReadOnly ? _opened.Server : _provider == ChatProvider.OpenAICompatible ? ServerName : null,
+            Title = Title(),
+        };
+        foreach (var e in _entries)
+        {
+            switch (e)
+            {
+                case UserEntry u: chat.Entries.Add(new StoredEntry { Kind = "user", Text = u.Text }); break;
+                case AssistantEntry a when a.Text.Length > 0: chat.Entries.Add(new StoredEntry { Kind = "assistant", Text = a.Text }); break;
+                case ToolEntry t:
+                {
+                    var (names, left) = Pictures(t.Images);
+                    chat.Entries.Add(new StoredEntry { Kind = "tool", Name = t.Name, Input = t.Input, Text = t.Result, Error = t.IsError, Images = names, ImagesLeftOut = left });
+                    break;
+                }
+                case NoticeEntry n: chat.Entries.Add(new StoredEntry { Kind = "notice", Text = n.Text, Error = n.Kind == NoticeKind.Error }); break;
+            }
+        }
+        foreach (var t in _log)
+        {
+            chat.Turns.Add(t.Role switch
+            {
+                "user" => new StoredTurn { Role = "user", Text = t.Text },
+                "assistant" => new StoredTurn
+                {
+                    Role = "assistant", Text = t.Text,
+                    Calls = t.Calls.Count == 0 ? null : t.Calls.Select(c => new StoredCall { Id = c.Id, Name = c.Name, Input = c.Input.ToDictionary(), Problem = c.Problem }).ToList(),
+                },
+                _ => new StoredTurn
+                {
+                    Role = "results",
+                    Results = t.Results.Select(r =>
+                    {
+                        var (names, left) = Pictures(r.Outcome.Images);
+                        return new StoredResult { Id = r.Call.Id, Name = r.Call.Name, Text = r.Outcome.Text, Error = r.Outcome.IsError, Images = names, ImagesLeftOut = left };
+                    }).ToList(),
+                },
+            });
+        }
+        return chat;
+    }
+
+    /// <summary>The chat's title: the start of the person's first message.</summary>
+    private string Title()
+    {
+        var first = _entries.OfType<UserEntry>().FirstOrDefault()?.Text.Replace('\n', ' ').Trim() ?? "";
+        return first.Length > 60 ? first[..59].TrimEnd() + "…" : first;
+    }
+
+    /// <summary>
+    /// Opens a saved chat in place of this one: its lines as they were (pictures read through <paramref name="image"/>;
+    /// any that are gone are left out), and its conversation given to the provider's backend so it can carry on, if it
+    /// was with the provider in use; otherwise it's shown read-only (<see cref="ReadOnlyProvider"/>).
+    /// </summary>
+    public void Open(StoredChat chat, Func<string, ToolImage?> image)
+    {
+        NewChat();
+        ChatId = chat.Id;
+        Created = chat.Created;
+        _opened = (chat.Model, chat.Server);
+        IReadOnlyList<ToolImage> Pictures(List<string>? names) => (names ?? []).Select(image).OfType<ToolImage>().ToList();
+        foreach (var e in chat.Entries)
+        {
+            switch (e.Kind)
+            {
+                case "user": Add(new UserEntry(e.Text)); break;
+                case "assistant":
+                {
+                    var a = new AssistantEntry();
+                    a.Append(e.Text);
+                    a.Finish();
+                    Add(a);
+                    break;
+                }
+                case "tool":
+                {
+                    Dictionary<string, System.Text.Json.JsonElement> input;
+                    try { input = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(e.Input ?? "{}") ?? []; }
+                    catch (System.Text.Json.JsonException) { input = []; }
+                    var t = new ToolEntry(e.Name ?? "tool", input);
+                    var note = e.ImagesLeftOut > 0 ? $"\n({e.ImagesLeftOut} picture(s) too big to keep)" : "";
+                    t.Finish(new ToolOutcome(e.Error, e.Text + note, Pictures(e.Images)));
+                    Add(t);
+                    break;
+                }
+                case "notice": Add(new NoticeEntry(e.Text, e.Error ? NoticeKind.Error : NoticeKind.Info)); break;
+            }
+        }
+        LogTurn? open = null;
+        foreach (var t in chat.Turns)
+        {
+            switch (t.Role)
+            {
+                case "user":
+                    Close();
+                    _log.Add(new LogTurn("user", t.Text ?? "", [], []));
+                    break;
+                case "assistant":
+                    Close();
+                    var calls = (t.Calls ?? []).Select(c => new ToolCall(c.Id, c.Name, c.Input, c.Problem)).ToList();
+                    var turn = new LogTurn("assistant", t.Text ?? "", calls, []);
+                    _log.Add(turn);
+                    if (calls.Count > 0) open = turn;
+                    break;
+                case "results" when open != null:
+                    var results = new List<(ToolCall, ToolOutcome)>();
+                    foreach (var call in open.Calls)
+                    {
+                        var r = (t.Results ?? []).FirstOrDefault(x => x.Id == call.Id);
+                        results.Add((call, r == null
+                            ? ToolOutcome.Error("Not run: the chat was closed before it finished.")
+                            : new ToolOutcome(r.Error, r.Text + (r.ImagesLeftOut > 0 ? $"\n({r.ImagesLeftOut} picture(s) weren't kept with the saved chat.)" : ""), Pictures(r.Images))));
+                    }
+                    _log.Add(new LogTurn("results", "", [], results));
+                    open = null;
+                    break;
+            }
+        }
+        Close();
+        if (chat.Provider == _provider) LoadBackend();
+        else
+        {
+            ReadOnlyProvider = chat.Provider;
+            ReadOnlyChanged?.Invoke();
+        }
+
+        // Calls left without results (the app closed mid-request) get them, so the conversation can go on.
+        void Close()
+        {
+            if (open == null) return;
+            _log.Add(new LogTurn("results", "", [], open.Calls.Select(c => (c, ToolOutcome.Error("Not run: the chat was closed before it finished."))).ToList()));
+            open = null;
+        }
+    }
+
+    /// <summary>Gives the provider's backend the logged conversation, in its own shape, so the chat can carry on.</summary>
+    private void LoadBackend()
+    {
+        var backend = Backend;
+        backend.Clear();
+        foreach (var t in _log)
+        {
+            switch (t.Role)
+            {
+                case "user": backend.AddUserText(t.Text); break;
+                case "assistant": backend.AddAssistant(t.Text, t.Calls); break;
+                default: backend.AddResults(t.Results); break;
+            }
+        }
+        ReadOnlyProvider = null;
     }
 }

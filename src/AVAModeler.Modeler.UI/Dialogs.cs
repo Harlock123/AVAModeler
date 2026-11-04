@@ -256,6 +256,8 @@ public sealed class PreferencesWindow : Window
         var chatCore = new CheckBox { Content = "Core tools only (best for small local models)", IsChecked = p.ChatCoreTools, Foreground = Look.Text };
         var chatPictures = new CheckBox { Content = "Model sees pictures (a vision model)", IsChecked = p.ChatModelSeesPictures, Foreground = Look.Text };
         var chatServer = new StackPanel { Spacing = 4, Children = { Label("Server base URL (OpenAI-compatible)"), chatUrl, Label("Model on the server"), chatModel, chatCore, chatPictures } };
+        var chatHistory = new CheckBox { Content = "Keep AI Chat history on this computer (reopen the last chat on start)", IsChecked = p.ChatKeepHistory, Foreground = Look.Text };
+        ToolTip.SetTip(chatHistory, "Conversations are saved in the chats folder beside the preferences, readable only by you, never with an API key. Off by default: a chat may hold a client's details.");
         void ShowServer() => chatServer.IsVisible = chatProvider.SelectedIndex == 1;
         chatProvider.SelectionChanged += (_, _) => ShowServer();
         ShowServer();
@@ -284,6 +286,7 @@ public sealed class PreferencesWindow : Window
             p.ChatServerModel = chatModel.Text?.Trim() ?? "";
             p.ChatCoreTools = chatCore.IsChecked == true;
             p.ChatModelSeesPictures = chatPictures.IsChecked == true;
+            p.ChatKeepHistory = chatHistory.IsChecked == true;
             p.Keys = keyBoxes.Where(kv => kv.Value.Text != Keymap.Defaults.GetValueOrDefault(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value.Text ?? "");
             p.Save();
@@ -308,7 +311,7 @@ public sealed class PreferencesWindow : Window
                             Label("Viewports"), renderer, Label("Perspective view"), style, Label("Undo levels"), undo,
                             Label("Auto-save every (minutes, 0 for never)"), autosave, Label("MetaNURBS smoothing level"), level,
                             Label("AI agents"), agents,
-                            Label("AI Chat model"), chatProvider, chatServer,
+                            Label("AI Chat model"), chatProvider, chatServer, chatHistory,
                             Label("Keys (e.g. T, Shift+X, Ctrl+Z)"), keys,
                         },
                     },

@@ -34,6 +34,11 @@ public sealed class Preferences
     /// <summary>Send an OpenAI-compatible model the pictures it renders (for vision models only).</summary>
     public bool ChatModelSeesPictures { get; set; }
     /// <summary>
+    /// Keep the AI Chat's conversations on this computer (in <see cref="ChatsFolder"/>) and open the last one again on
+    /// start. Off until the person turns it on: a chat may hold a client's details.
+    /// </summary>
+    public bool ChatKeepHistory { get; set; }
+    /// <summary>
     /// Whether AI agents may drive the open document through MCP (<c>AVAModeler --mcp --attach</c>), over a local
     /// pipe only this user can open. Off unless turned on.
     /// </summary>
@@ -48,6 +53,8 @@ public sealed class Preferences
     public static string AutosaveFolder => Path.Combine(Folder, "autosave");
     /// <summary>The backdrops remembered for each object file (<see cref="BackdropMemory"/>).</summary>
     public static string BackdropsPath => Path.Combine(Folder, "backdrops.json");
+    /// <summary>The AI Chat's saved conversations, one file each (when <see cref="ChatKeepHistory"/> is on).</summary>
+    public static string ChatsFolder => Path.Combine(Folder, "chats");
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 

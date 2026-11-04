@@ -19,7 +19,9 @@ namespace AVAModeler;
 /// the input box (Enter sends, Shift+Enter starts a new line), Send (Stop while the model works) and the Claude model.
 /// A line under the title says which provider and model it's using; Setup… chooses between Claude (the Anthropic API)
 /// and an OpenAI-compatible server (a local model through Ollama, LM Studio, vLLM or llama.cpp, or a gateway), kept in
-/// Preferences. The conversation itself is <see cref="ChatSession"/>'s; this is only its controls.
+/// Preferences. History shows the saved chats (kept only with Keep chat history ticked): open, export as Markdown, delete,
+/// clear. The conversation itself is <see cref="ChatSession"/>'s, and saving it <see cref="ChatHistory"/>'s; this is only
+/// their controls.
 /// </summary>
 internal sealed class ChatPanel : DockPanel
 {
@@ -41,6 +43,25 @@ internal sealed class ChatPanel : DockPanel
     private readonly TextBlock _intro = new() { TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 12, Opacity = 0.85 };
     private readonly ComboBox _model;
     private readonly Button _send;
+    private readonly StackPanel _historyList = new() { Spacing = 4, Margin = new Thickness(6) };
+    private readonly Border _history;
+    private readonly Border _readOnlyBar;
+    private readonly TextBlock _readOnlyText = new() { TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 12 };
+
+    /// <summary>
+    /// The saved conversations (the app gives it the chats folder in its settings folder; null, as in tests unless they
+    /// give one in a temporary folder, saves nothing). Chats are saved only while <see cref="KeepHistory"/> is ticked.
+    /// </summary>
+    public ChatHistory? History { get; set; }
+
+    /// <summary>Keep chat history: save each chat after every request and on closing, and reopen the last on start (Preferences.ChatKeepHistory; off by default).</summary>
+    public CheckBox KeepHistory { get; } = new() { Content = "Keep chat history on this computer", FontSize = 12, Foreground = Look.Text };
+
+    /// <summary>Whether the history list is showing in place of the conversation.</summary>
+    public bool HistoryOpen => _history.IsVisible;
+
+    /// <summary>Asks where to export a chat as Markdown, given a suggested file name (tests give their own).</summary>
+    public Func<string, Task<string?>> PickExportPath { get; set; }
 
     /// <summary>How many times a request carries on by itself, with Auto-continue ticked: 600 tool calls in all.</summary>
     public const int AutoContinueTimes = 9;
@@ -115,7 +136,8 @@ internal sealed class ChatPanel : DockPanel
 
         var title = new TextBlock { Text = "AI Chat", FontWeight = FontWeight.Bold, Foreground = Look.Text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        buttons.Children.Add(Look.MakeButton("New Chat", NewChat, "Forget this conversation and start again"));
+        buttons.Children.Add(Look.MakeButton("New Chat", NewChat, "Start a new conversation (a kept one stays in History)"));
+        buttons.Children.Add(Look.MakeButton("History", ToggleHistory, "Saved chats: reopen, export as Markdown or delete them, and whether to keep them"));
         buttons.Children.Add(Look.MakeButton("Setup…", () => SetupOpen = !SetupOpen, "Choose the model: Claude, or a local or self-hosted server"));
         buttons.Children.Add(Look.MakeButton("Key…", () => _ = EditKey(), "Your Anthropic API key, or an OpenAI-compatible gateway's"));
         buttons.Children.Add(Look.MakeButton("×", () => CloseRequested?.Invoke(), "Hide the chat (F4)"));
@@ -170,9 +192,37 @@ internal sealed class ChatPanel : DockPanel
         SetDock(bottom, Dock.Bottom);
         Children.Add(bottom);
 
+        // A saved chat with the other provider is shown read-only, with a way out.
+        var readOnlyNew = Look.MakeButton("New Chat", NewChat, "Start a new conversation with the provider in use", 90);
+        readOnlyNew.HorizontalAlignment = HorizontalAlignment.Left;
+        _readOnlyBar = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(96, 80, 48)), Padding = new Thickness(8, 5), IsVisible = false,
+            Child = new StackPanel { Spacing = 4, Children = { _readOnlyText, readOnlyNew } },
+        };
+        SetDock(_readOnlyBar, Dock.Bottom);
+        Children.Add(_readOnlyBar);
+
         _scroll = new ScrollViewer { Content = _messages, Background = Look.PanelDark, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        Children.Add(new Border { BorderBrush = Look.PanelDark, BorderThickness = new Thickness(1, 0, 0, 0), Child = _scroll });
+        _history = new Border
+        {
+            Background = Look.PanelDark, IsVisible = false,
+            Child = new ScrollViewer { Content = _historyList, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
+        };
+        Children.Add(new Border { BorderBrush = Look.PanelDark, BorderThickness = new Thickness(1, 0, 0, 0), Child = new Panel { Children = { _scroll, _history } } });
         _messages.Children.Add(_intro);
+        PickExportPath = async name => TopLevel.GetTopLevel(this) is { } top
+            ? await Dialogs.Save(top, "Export the chat as Markdown", name, new Avalonia.Platform.Storage.FilePickerFileType("Markdown") { Patterns = ["*.md"] })
+            : null;
+        KeepHistory.IsChecked = _prefs.ChatKeepHistory;
+        KeepHistory.IsCheckedChanged += (_, _) =>
+        {
+            _prefs.ChatKeepHistory = KeepHistory.IsChecked == true;
+            if (_prefs.ChatKeepHistory) SaveHistory();
+            ShowHistory();
+        };
+        ToolTip.SetTip(KeepHistory, "Save each conversation (after every request and when the app closes) and open the last one again on start. Off unless you turn it on: a chat may hold a client's details.");
+        Session.ReadOnlyChanged += ShowReadOnly;
 
         // Enter sends; Shift+Enter is a new line (the box handles that itself).
         Input.AddHandler(KeyDownEvent, (_, e) =>
@@ -190,6 +240,8 @@ internal sealed class ChatPanel : DockPanel
         {
             _send.Content = Session.Working ? "Stop" : "Send";
             _status(Session.Working ? $"{Session.Who} is working…" : $"{Session.Who} has finished.");
+            // Each finished request is saved, so a crash loses at most the one under way.
+            if (!Session.Working) SaveHistory();
         };
         AutoContinue.IsCheckedChanged += (_, _) =>
         {
@@ -223,6 +275,7 @@ internal sealed class ChatPanel : DockPanel
             ServerModel.Text = _prefs.ChatServerModel;
             CoreTools.IsChecked = _prefs.ChatCoreTools;
             SeesPictures.IsChecked = _prefs.ChatModelSeesPictures;
+            KeepHistory.IsChecked = _prefs.ChatKeepHistory;
         }
         finally
         {
@@ -243,12 +296,15 @@ internal sealed class ChatPanel : DockPanel
         _prefs.ChatServerModel = ServerModel.Text?.Trim() ?? "";
         _prefs.ChatCoreTools = CoreTools.IsChecked == true;
         _prefs.ChatModelSeesPictures = SeesPictures.IsChecked == true;
-        bool hadChat = Session.Entries.Count > 0;
+        bool hadChat = Session.Entries.Count > 0 && !Session.ReadOnly;
         if (Session.Provider != provider)
         {
+            // The chat so far is kept (if history is on) before a new one starts.
+            if (hadChat) SaveHistory();
             Session.Provider = provider;
             if (hadChat) _status("New chat: a conversation can't move between providers.");
         }
+        Session.ServerName = OpenAICompatibleClient.Describe(_prefs.ChatServerUrl);
         Session.ServerModel = _prefs.ChatServerModel;
         Session.CoreToolsOnly = _prefs.ChatCoreTools;
         Session.ModelSeesPictures = _prefs.ChatModelSeesPictures;
@@ -380,10 +436,189 @@ internal sealed class ChatPanel : DockPanel
 
     private void NewChat()
     {
+        SaveHistory();
         Session.NewChat();
         RefreshIntro();
+        if (HistoryOpen) ToggleHistory();
         _status("New chat.");
     }
+
+    // ───────────────────────────── history ─────────────────────────────
+
+    /// <summary>
+    /// Saves the conversation on show in the history, if there is one, history is kept, and the person has said
+    /// something; a read-only chat (another provider's) is left as it was saved. Failures go to the status bar.
+    /// </summary>
+    public void SaveHistory()
+    {
+        if (History is not { } history || KeepHistory.IsChecked != true || !Session.HasConversation || Session.ReadOnly) return;
+        try
+        {
+            long used = 0;
+            history.Save(Session.ToStored(image => history.KeepImage(Session.ChatId, image, ref used)));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _status("The chat couldn't be saved: the settings folder can't be written.");
+        }
+    }
+
+    /// <summary>Opens the newest saved chat again (on start, when history is kept). Returns whether there was one.</summary>
+    public bool RestoreLast()
+    {
+        if (History is not { } history || KeepHistory.IsChecked != true || history.List().FirstOrDefault() is not { } last) return false;
+        return OpenChat(last.Id);
+    }
+
+    /// <summary>Opens a saved chat in place of this one (which is saved first). Returns whether it could be read.</summary>
+    public bool OpenChat(string id)
+    {
+        if (History is not { } history || history.Load(id) is not { } chat) return false;
+        if (Session.Working) Session.Stop();
+        SaveHistory();
+        Session.Open(chat, name => history.ReadImage(id, name));
+        if (HistoryOpen) ToggleHistory();
+        ShowReadOnly();
+        ScrollToEnd();
+        _status(Session.ReadOnly ? $"Opened \"{chat.Title}\" read-only: it was with {Who(chat.Provider)}." : $"Opened \"{chat.Title}\".");
+        return true;
+    }
+
+    /// <summary>Deletes a saved chat; if it's the one on show, a new chat starts so it isn't saved again.</summary>
+    public void DeleteChat(string id)
+    {
+        if (History is not { } history) return;
+        history.Delete(id);
+        if (Session.ChatId == id)
+        {
+            Session.NewChat();
+            RefreshIntro();
+        }
+        ShowHistory();
+        _status("The chat is deleted.");
+    }
+
+    /// <summary>Deletes every saved chat (Clear History) and starts a new one.</summary>
+    public void ClearHistory()
+    {
+        History?.Clear();
+        Session.NewChat();
+        RefreshIntro();
+        ShowHistory();
+        _status("Chat history cleared.");
+    }
+
+    /// <summary>
+    /// Writes a chat as Markdown where the person chooses (the one on show, or a saved one by id), its pictures in a
+    /// folder beside it. Returns the file, or null if nothing was written.
+    /// </summary>
+    public async Task<string?> ExportChat(string? id = null)
+    {
+        StoredChat chat;
+        Func<string, ToolImage?> pictures;
+        if (id != null && History?.Load(id) is { } saved)
+        {
+            chat = saved;
+            pictures = name => History.ReadImage(id, name);
+        }
+        else
+        {
+            if (!Session.HasConversation) { _status("There's nothing to export yet."); return null; }
+            var images = new Dictionary<string, ToolImage>();
+            chat = Session.ToStored(image => { var name = ChatHistory.ImageName(image); images[name] = image; return name; });
+            pictures = name => images.GetValueOrDefault(name);
+        }
+        var suggested = new string((chat.Title.Length > 0 ? chat.Title : "chat").Select(c => char.IsLetterOrDigit(c) || c is ' ' or '-' ? c : ' ').ToArray()).Trim();
+        if (suggested.Length > 40) suggested = suggested[..40].Trim();
+        var path = await PickExportPath((suggested.Length > 0 ? suggested : "chat") + ".md");
+        if (path == null) return null;
+        try
+        {
+            ChatMarkdown.Save(chat, pictures, path);
+            _status($"Exported the chat as {Path.GetFileName(path)}.");
+            return path;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _status($"The chat couldn't be exported: {e.Message}");
+            return null;
+        }
+    }
+
+    private static string Who(ChatProvider p) => p == ChatProvider.Anthropic ? "Claude (the Anthropic API)" : "an OpenAI-compatible server";
+
+    /// <summary>Shows or hides the history list in place of the conversation.</summary>
+    public void ToggleHistory()
+    {
+        _history.IsVisible = !_history.IsVisible;
+        _scroll.IsVisible = !_history.IsVisible;
+        if (_history.IsVisible) ShowHistory();
+    }
+
+    /// <summary>The history list: Keep chat history, Export This Chat and Clear History, then each saved chat with Open, Export and Delete.</summary>
+    private void ShowHistory()
+    {
+        _historyList.Children.Clear();
+        _historyList.Children.Add(new TextBlock { Text = "Chat history", FontWeight = FontWeight.Bold, Foreground = Look.Text, FontSize = 13 });
+        _historyList.Children.Add(KeepHistory);
+        _historyList.Children.Add(new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 11, Opacity = 0.85,
+            Text = "Kept chats are saved in the chats folder beside your preferences, readable only by you, after each request and when the app closes; the last one opens again on start. " +
+                   "No API key is ever saved with them; pictures are kept up to 2 MB each. A chat with the other provider opens read-only. Off unless you tick it, as a chat may hold a client's details.",
+        });
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        actions.Children.Add(Look.MakeButton("Export This Chat…", () => _ = ExportChat(), "Write the conversation on show as a Markdown file, its pictures beside it"));
+        actions.Children.Add(Look.MakeButton("Clear History", ClearHistory, "Delete every saved chat"));
+        _historyList.Children.Add(actions);
+        var chats = History?.List() ?? [];
+        if (chats.Count == 0)
+            _historyList.Children.Add(new TextBlock { Text = History == null ? "History isn't available here." : "No saved chats.", Foreground = Look.Text, FontSize = 12, FontStyle = FontStyle.Italic, Margin = new Thickness(0, 6) });
+        foreach (var c in chats)
+        {
+            bool current = c.Id == Session.ChatId;
+            var open = new Button
+            {
+                Content = new TextBlock { Text = (current ? "● " : "") + (c.Title.Length > 0 ? c.Title : "(untitled)"), TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 12, Foreground = Look.TextDark },
+                HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, Background = Look.Button, Padding = new Thickness(6, 3),
+            };
+            var id = c.Id;
+            open.Click += (_, _) => OpenChat(id);
+            ToolTip.SetTip(open, current ? "The chat on show" : "Open this chat (the one on show is saved first)");
+            var who = c.Provider == ChatProvider.Anthropic ? ChatModels.Label(c.Model) : $"{(c.Model.Length > 0 ? c.Model : "a model")} (OpenAI-compatible)";
+            var details = new TextBlock
+            {
+                Text = $"{who} · {c.Updated.ToLocalTime():d MMM yyyy HH:mm} · {c.Messages} message{(c.Messages == 1 ? "" : "s")}",
+                FontSize = 10, Foreground = Look.Text, Opacity = 0.8, Margin = new Thickness(2, 1, 0, 0),
+            };
+            var export = Look.MakeButton("Export…", () => _ = ExportChat(id), "Write this chat as a Markdown file");
+            var delete = Look.MakeButton("Delete", () => DeleteChat(id), "Delete this saved chat");
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Right, Children = { export, delete } };
+            var head = new DockPanel();
+            SetDock(buttons, Dock.Right);
+            head.Children.Add(buttons);
+            head.Children.Add(open);
+            _historyList.Children.Add(new Border
+            {
+                Background = Look.Panel, CornerRadius = new CornerRadius(3), Padding = new Thickness(5, 4), Margin = new Thickness(0, 2),
+                Child = new StackPanel { Children = { head, details } },
+            });
+        }
+    }
+
+    /// <summary>The read-only bar and the input follow whether the chat on show can be carried on.</summary>
+    private void ShowReadOnly()
+    {
+        bool ro = Session.ReadOnly;
+        _readOnlyBar.IsVisible = ro;
+        Input.IsEnabled = !ro;
+        _send.IsEnabled = !ro;
+        if (ro && Session.ReadOnlyProvider is { } was)
+            _readOnlyText.Text = $"This chat was with {Who(was)}, and the chat now uses {Who(Session.Provider)}: it's shown read-only. Start a New Chat, or choose {(was == ChatProvider.Anthropic ? "Claude" : "the OpenAI-compatible server")} in Setup… to carry it on.";
+    }
+
+    /// <summary>The read-only bar's words (for tests).</summary>
+    public string ReadOnlyText => _readOnlyBar.IsVisible ? _readOnlyText.Text ?? "" : "";
 
     public void Stop() => Session.Stop();
 

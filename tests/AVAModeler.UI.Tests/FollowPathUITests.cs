@@ -15,7 +15,7 @@ public class FollowPathUITests
         layout.GetLogicalDescendants().OfType<T>().Single(c => c.Name == name);
 
     private static void Press(LayoutWorkspace layout, string text) =>
-        layout.GetLogicalDescendants().OfType<Button>().Single(b => (b.Content as TextBlock)?.Text == text || (string?)b.Content == text)
+        layout.GetLogicalDescendants().OfType<Button>().Single(b => (b.Content as TextBlock)?.Text == text || b.Content as string == text)
             .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
     [AvaloniaFact]

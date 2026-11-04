@@ -168,6 +168,13 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     `ChatTools.Core` (in `ChatModels.cs`) when `CoreToolsOnly` is on. `OpenAICompatibleClient.cs` is its HTTP:
     `POST {base}/chat/completions` as server-sent events (or one whole JSON answer), `GET {base}/models`, and every
     failure as an `OpenAICompatibleException` already worded for the person (server named by host and port only).
+  - `ChatHistory.cs`: saved chats. `StoredChat` (the panel's lines as `StoredEntry`s and the conversation as
+    provider-neutral `StoredTurn`s: user words, a reply with its `StoredCall`s, the calls' `StoredResult`s), `ChatHistory`
+    (one `<id>.json` a chat in a folder, pictures by content hash in `<id>/`, size caps, owner-only files, `List`,
+    `Load`, `Save`, `KeepImage`, `ReadImage`, `Delete`, `Clear`) and `ChatMarkdown` (export). `ChatSession` keeps the
+    neutral log as it talks (`ToStored`, `Open`): opening a chat with the provider in use gives its backend the turns
+    again (`IChatBackend.AddAssistant` puts back a reply in that API's shape); with the other provider it's
+    `ReadOnly` until that provider is chosen again. Calls left without results are answered "not run" on opening.
   - `ToolBridge.cs`: `McpToolBridge` is an in-process MCP client talking to `ModelerServer` over in-memory pipes, built
     over the app's `LiveHost`, so the chat and outside agents share one code path. `ChatModels.cs` has the model ids
     and `ChatPrompt` (the server's instructions plus a few in-app lines, and notes for the core tool set and for a model
@@ -194,7 +201,10 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   its own `LiveHost`). `ChatPanel.cs` is the AI Chat panel's controls (the line saying which provider and model it
   uses, Setup… with the provider, base URL, model and Refresh, Core tools only and Model sees pictures, all kept in
   `Preferences.Chat*`; Edit › Preferences has them too and `ModelerWorkspace.PreferencesApplied` hands them back);
-  `MainWindow` docks it on the right of whichever workspace is on screen (F4).
+  `MainWindow` docks it on the right of whichever workspace is on screen (F4). Its History (Keep chat history,
+  `Preferences.ChatKeepHistory`, off by default; the list, Open, Export…, Delete, Clear History, and the read-only bar)
+  works on `ChatPanel.History`, which `MainWindow` sets to `Preferences.ChatsFolder` only outside tests, saving after
+  each request, on New Chat and on closing, and opening the last chat on start.
 - `samples/`: `StarPlugin` (an example plugin), Lua macro scripts (`rocket-blueprints.lua` sets up backdrops), texture
   images and the rocket blueprints (each drawn by a standard-library Python script beside them), and
   `mcp/carbon_atom.py` (a scene built entirely through the MCP server, with its saved object, scene and render).
@@ -285,14 +295,15 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   (`loadPlugins: false`) reads no environment variable and no key file. The Anthropic key comes from
   `ANTHROPIC_API_KEY`, else the `anthropic-api-key` file beside `preferences.json`; a gateway's key only from the
   `openai-compatible-api-key` file beside it (both written owner-only, chmod 600, on Linux and macOS; never in
-  `preferences.json`). Never log either, put it in an exception, a status line or a chat line, or show more than
+  `preferences.json`). Never log either, put it in an exception, a status line, a chat line or a saved chat, or show more than
   `ApiKeyStore.Mask`: `OpenAICompatibleClient` masks any copy a server echoes back, and sends the key only in the
   Authorization header. The OpenAI-compatible provider contacts only the base URL the person set (`…/chat/completions`,
   and `…/models` on Refresh): no other network call, no telemetry. The chat's tools are the MCP server's, unchanged: add a tool to `ModelerTools`/`LayoutTools` and
   the chat has it too (a test checks the lists match).
-- **Preferences live in the app-data folder.** `preferences.json`, `backdrops.json`, `plugins/` and `autosave/` sit
-  under `AVAModeler` in `SpecialFolder.ApplicationData`. Tests use temporary folders and never touch them (a test
-  that needs the backdrop memory gives the session a `BackdropMemory` in a temporary folder). `Preferences.Save()`
+- **Preferences live in the app-data folder.** `preferences.json`, `backdrops.json`, `chats/`, `plugins/` and
+  `autosave/` sit under `AVAModeler` in `SpecialFolder.ApplicationData`. Tests use temporary folders and never touch
+  them (a test that needs the backdrop memory gives the session a `BackdropMemory` in a temporary folder, and one that
+  needs chat history gives the panel a `ChatHistory` in one; a test window's panel has none). `Preferences.Save()`
   writes only to the file the preferences were loaded from (`Location`): ones made with `new`, as test windows' are,
   save nowhere, so a test that opens or saves a file can't add it to the person's recent files.
 - **Backdrops are a display setting, not the object.** They're never written into object or scene files (LWOB round

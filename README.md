@@ -440,8 +440,27 @@ nothing listens anywhere and Macros › Allow AI Agents needn't be on).
   (`▸ run_tool Lathe → Lathe: 314 points, 336 polygons`); click a line to see its full input and result. Pictures
   Claude renders to check its work show as thumbnails.
 - **Typing**: Enter sends, Shift+Enter starts a new line. Send becomes **Stop** while Claude works, and stops it at
-  once, even while a call is waiting for you. **New Chat** forgets the conversation; otherwise it lasts until the app
-  closes. The status bar says "Claude is working…" and what it just did.
+  once, even while a call is waiting for you. **New Chat** starts a new conversation. The status bar says "Claude is
+  working…" and what it just did.
+- **History**: with **Keep chat history** ticked (in the panel's History, or Edit › Preferences), each conversation is
+  saved on this computer after every request and when the app closes, and the last one opens again when the app
+  starts, so you can carry on where you left off. **History** lists the saved chats, newest first, with their model,
+  date and length: click one to open it (the one on show is saved first), **Export…** writes it as a Markdown file
+  (the person's and the model's words, each tool call with its input, and the pictures in a folder beside it),
+  **Delete** removes it, and **Clear History** removes them all. **Export This Chat…** exports the one on show
+  whether or not history is kept.
+  - Where: one JSON file a chat in the `chats` folder beside `preferences.json`, its pictures in a folder of its own,
+    files readable only by you on Linux and macOS. No API key is ever written there (a chat keeps its provider, its
+    model and a server's host and port only).
+  - Pictures: each is kept once, by its contents, up to 2 MB a picture and 16 MB a chat; beyond that it's left out and
+    the chat says so.
+  - Off by default: a chat may hold a client's names, files or designs, so nothing is saved until you tick it. Turning
+    it off stops saving; what's saved stays until you delete it or press Clear History.
+  - A saved chat carries on with the same provider: its messages are sent again in that provider's own format. A chat
+    saved with Claude, opened while the chat uses a local server (or the other way round), is shown read-only, with a
+    New Chat button; choose its provider again in Setup… and it carries on.
+
+![The AI Chat's history: Keep chat history ticked, and five saved chats with Claude and a local model, each with Export and Delete](Images/AVAModeler-chat-history.png)
 - **Undo**: each tool call is one undo step, so Ctrl+Z takes Claude's modeling back step by step. If you have a tool
   armed or a dialog box open, Claude's calls wait (up to 20 seconds) for you to finish.
 - **Models**: Claude Opus 5.5 (`claude-opus-5-5`, the default and the most capable), Claude Sonnet 5.5
@@ -885,8 +904,12 @@ Layout reuses them.
 
 - **AI Chat**: with Claude it needs your own Anthropic API key and internet access, and your API account pays for it. One
   request pauses every 60 tool calls; with Auto-continue ticked (beside the model, on unless you untick it) it
-  carries on by itself, up to 600 calls in all, and without it you say "continue". Stop ends a request at any time. The conversation isn't saved when the app closes, and
-  it isn't trimmed: a very long chat grows slower and dearer, so start a New Chat for a new job. Claude's files go in
+  carries on by itself, up to 600 calls in all, and without it you say "continue". Stop ends a request at any time. A
+  conversation is kept only with Keep chat history ticked (off by default); one interrupted by the app closing
+  mid-request opens with its unfinished calls marked as not run. Pictures over the size limits aren't kept, so a
+  reopened chat's later requests don't send them. A conversation isn't trimmed: a very long chat grows slower and
+  dearer, so start a New Chat for a new job; a chat can't move between providers (the other's opens read-only). The
+  Markdown export is for reading, not for opening again. Claude's files go in
   your Documents folder (the chat's working folder). It's tested against a fake API only; the real API's behaviour
   (and its model names) can change.
 - **AI Chat on a local or self-hosted model**: how well it works depends on the model. Small local models use tools

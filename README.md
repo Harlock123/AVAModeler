@@ -701,7 +701,8 @@ Layout reuses them.
   reach the model only if it's a vision model and the box is ticked; servers differ in what they accept (some take no
   images, or no tool calls while streaming). It's tested against a fake server only, built to the OpenAI Chat
   Completions format; real servers' quirks (Ollama, LM Studio, vLLM, llama.cpp) haven't all been tried. Changing
-  provider starts a new chat.
+  provider starts a new chat. A model that writes its thinking into the reply as `<think>` text (qwen3 on older
+  Ollama versions) shows that text in the chat; a separate reasoning field is ignored.
 
 ## About and licence
 

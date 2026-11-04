@@ -22,7 +22,7 @@ public class EndToEndTests
     {
         var tools = await client.ListToolsAsync(cancellationToken: Cancel);
         Assert.Equal(68, tools.Count);
-        Assert.Equal(12, (await client.ListPromptsAsync(cancellationToken: Cancel)).Count);
+        Assert.Equal(13, (await client.ListPromptsAsync(cancellationToken: Cancel)).Count);
         Assert.All(tools, t => Assert.False(string.IsNullOrWhiteSpace(t.Description), $"{t.Name} has no description"));
         var listed = await client.Json("list_tools");
         Assert.Contains(listed["tools"]!.AsArray(), t => (string?)t!["name"] == "Lathe");

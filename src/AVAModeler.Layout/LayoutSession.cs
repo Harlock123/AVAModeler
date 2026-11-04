@@ -370,8 +370,31 @@ public sealed class LayoutSession
     public ViewScene BuildScene(SceneFrame frame, bool shaded) => SceneDrawing.Build(frame, Scene.Items, shaded, Selected);
 
     /// <summary>A note for each texture image the scene's objects use that can't be had (a checker stands in for it).</summary>
-    public List<string> ImageProblems() => Scene.Objects.Where(o => !o.IsPlaceholder)
-        .SelectMany(o => TextureImages.Problems(o.Surfaces, ImageBase(o)).Select(p => $"{o.Name}, {p}")).ToList();
+    public List<string> ImageProblems()
+    {
+        var problems = Scene.Objects.Where(o => !o.IsPlaceholder)
+            .SelectMany(o => TextureImages.Problems(o.Surfaces, ImageBase(o)).Select(p => $"{o.Name}, {p}")).ToList();
+        if (EnvironmentMap.Problem(Scene.Environment) is { } env) problems.Add(env + " The backdrop shows instead.");
+        return problems;
+    }
+
+    /// <summary>
+    /// Sets a camera's focal distance so an item is in focus at the current frame (an object's middle, or another item's
+    /// pivot), turning its depth of field on, as one undo step. Returns the distance. Throws if the item is behind the
+    /// camera, or is the camera.
+    /// </summary>
+    public double FocusOn(CameraItem camera, SceneItem target)
+    {
+        if (target == camera) throw new ArgumentException($"{camera.Name} can't focus on itself: choose the item to be sharp.");
+        double depth = camera.DepthOf(SceneDrawing.WorldPoint(Scene.Evaluate(Frame), target), Frame);
+        if (!(depth > 1e-6)) throw new ArgumentException($"{target.Name} is behind {camera.Name} at frame {Frame:0.##}, so it can't be brought into focus.");
+        Edit($"Focus {camera.Name} on {target.Name}", () =>
+        {
+            camera.DepthOfField = camera.DepthOfField with { On = true, FocalDistance = depth };
+            Scene.Notify();
+        });
+        return depth;
+    }
 
     /// <summary>The folder an object's relative image paths start from: its file's, or its document's.</summary>
     public static string? ImageBase(ObjectItem o) => SceneDrawing.ImageBase(o);

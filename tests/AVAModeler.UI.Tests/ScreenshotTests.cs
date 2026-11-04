@@ -611,4 +611,117 @@ public class ScreenshotTests
             img.SavePng(Path.Combine(dir, "AVAModeler-render.png"), alpha: false);
         }
     }
+
+    /// <summary>The sample studio environment, samples/images/studio.hdr (drawn by make_environment.py).</summary>
+    private static string Studio => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "images", "studio.hdr"));
+
+    /// <summary>procedurals.lua's marble ball, wooden block and rock on a checkerboard floor, with a chrome ball, in Layout.</summary>
+    private static (LayoutSession Session, ObjectItem Chrome) EffectsStage()
+    {
+        var w = WithMacro("procedurals.lua");
+        var doc = w.Session.Document;
+        void Look(string name, Action<Surface> set) => set(doc.Surfaces[doc.SurfaceIndex(name)]);
+        Look("Marble", s => { s.Specular = 0.6; s.Glossiness = 256; s.Reflection = 0.06; });
+        Look("Wood", s => s.Specular = 0.15);
+        Look("Rock", s => { s.Specular = 0.1; s.Diffuse = 0.9; });
+        Look("Floor", s => { s.Reflection = 0.08; s.Specular = 0.2; });
+        // A wider floor, so it reaches back into the blur.
+        var floor = doc.Layers[0].Mesh;
+        floor.Points = floor.Points.Select(p => new Vec3(p.X * 2, p.Y, p.Z * 2)).ToList();
+        floor.Touch();
+        var s = new LayoutSession();
+        s.ShowModelerObject(doc);
+        var chromeDoc = new Document();
+        new AVAModeler.Tools.BallTool { Radius = new Vec3(0.32, 0.32, 0.32), Center = new Vec3(-0.15, 0.32, -0.7), Sides = 48, Segments = 24, Surface = "Chrome" }.Run(new AVAModeler.Tools.ToolContext(chromeDoc));
+        var chromeSurface = chromeDoc.Surfaces[chromeDoc.SurfaceIndex("Chrome")];
+        (chromeSurface.Color, chromeSurface.Diffuse, chromeSurface.Specular, chromeSurface.Glossiness, chromeSurface.Reflection, chromeSurface.Smoothing) =
+            (new Rgb(230, 232, 240), 0.1, 0.8, 512, 0.85, true);
+        var chrome = s.Scene.AddObject("Chrome", chromeDoc);
+        s.Scene.Remove(s.Scene.Lights.First());
+        return (s, chrome);
+    }
+
+    [AvaloniaFact]
+    public void A_ray_traced_frame_with_the_render_effects()
+    {
+        var (s, chrome) = EffectsStage();
+        var scene = s.Scene;
+        scene.AmbientIntensity = 0.12;
+        scene.Occlusion = new AmbientOcclusion { On = true, Samples = 32, Distance = 0.6 };
+        scene.Environment = new EnvironmentSettings { Image = Studio, Lighting = true, Samples = 32, Heading = -20, Intensity = 0.5 };
+        var key = scene.AddLight("Key", LightType.Area);
+        key.SetPosition(1, new Vec3(-2.6, 3.2, -2.4));
+        key.SetRotation(1, key.RotationToward(new Vec3(0, 0.3, 0), 1));
+        (key.AreaWidth, key.AreaHeight, key.ShadowSamples) = (1.6, 1.6, 32);
+        key.Intensity.SetConstant(0.7);
+        var cam = scene.CurrentCamera!;
+        cam.SetPosition(1, new Vec3(-0.4, 1.45, -3.7));
+        cam.SetRotation(1, new Vec3(6, 19, 0));
+        s.SetFrame(1);
+        s.Select(cam);
+        // Focus on the chrome ball with Layout's helper, then on the marble ball's near side (part of the Modeler's object).
+        double focus = s.FocusOn(cam, chrome);
+        Assert.InRange(focus, 2, 4);
+        cam.DepthOfField = cam.DepthOfField with { FocalDistance = cam.DepthOf(new Vec3(-0.95, 0.5, 0.2), 1) - 0.35, FStop = 0.12, Samples = 81 };
+        bool full = Folder != null;
+        var settings = new RenderSettings { Width = full ? 640 : 96, Height = full ? 400 : 60, SamplesPerPixel = 4 };
+        if (!full) cam.DepthOfField = cam.DepthOfField with { Samples = 4 };
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var img = RayTracer.Render(scene, 1, settings, null, TestContext.Current.CancellationToken);
+        TestContext.Current.SendDiagnosticMessage($"Effects showcase {img.Width}×{img.Height}: {clock.Elapsed.TotalSeconds:0.0} s");
+        Assert.Contains(img.Rgba.Where((_, i) => i % 4 == 0), r => r > 40);
+        if (Folder is { } dir)
+        {
+            Directory.CreateDirectory(dir);
+            img.SavePng(Path.Combine(dir, "AVAModeler-effects-render.png"), alpha: false);
+        }
+    }
+
+    [AvaloniaFact]
+    public void A_motion_blurred_frame()
+    {
+        var (s, chrome) = EffectsStage();
+        var scene = s.Scene;
+        scene.GradientBackground = true;
+        scene.GradientTop = new Vec3(0.12, 0.16, 0.3);
+        scene.GradientBottom = new Vec3(0.4, 0.36, 0.42);
+        scene.AmbientIntensity = 0.3;
+        var sun = scene.AddLight("Sun");
+        sun.SetRotation(1, new Vec3(35, 40, 0));
+        scene.Remove(chrome);
+        // The scene's object holds all four shapes, so it moves as one: it sweeps to the right and turns, fast.
+        var objects = scene.Objects.Single();
+        var cam = scene.CurrentCamera!;
+        cam.SetPosition(1, new Vec3(-0.3, 1.7, -3.6));
+        cam.SetRotation(1, new Vec3(4, 20, 0));
+        // A ball rolls across in front, quickly, while the rest stands still.
+        var ballDoc = new Document();
+        new AVAModeler.Tools.BallTool { Radius = new Vec3(0.25, 0.25, 0.25), Center = Vec3.Zero, Sides = 32, Segments = 16, Surface = "Ball" }.Run(new AVAModeler.Tools.ToolContext(ballDoc));
+        var ballSurface = ballDoc.Surfaces[ballDoc.SurfaceIndex("Ball")];
+        (ballSurface.Color, ballSurface.Specular, ballSurface.Glossiness, ballSurface.Smoothing) = (new Rgb(220, 50, 35), 0.6, 128, true);
+        var ball = scene.AddObject("Ball", ballDoc);
+        ball.SetPosition(1, new Vec3(-2.2, 0.25, -1.2));
+        ball.SetPosition(11, new Vec3(2.2, 0.25, -1.2));
+        // The wooden block spins on the spot.
+        var spinDoc = new Document();
+        new AVAModeler.Tools.BoxTool { Size = new Vec3(0.5, 0.12, 0.12), Center = Vec3.Zero, Surface = "Spinner" }.Run(new AVAModeler.Tools.ToolContext(spinDoc));
+        spinDoc.Surfaces[spinDoc.SurfaceIndex("Spinner")].Color = new Rgb(60, 140, 230);
+        var spinner = scene.AddObject("Spinner", spinDoc);
+        spinner.SetPosition(1, new Vec3(0.2, 0.75, 0.75));
+        spinner.Channels[3].AddKey(1, 0);
+        spinner.Channels[3].AddKey(11, 900);
+        Assert.Same(objects, scene.Objects.First());
+        cam.MotionBlur = new MotionBlur { On = true, Shutter = 0.5, Samples = 32 };
+        bool full = Folder != null;
+        var settings = new RenderSettings { Width = full ? 640 : 96, Height = full ? 400 : 60, SamplesPerPixel = 4 };
+        if (!full) cam.MotionBlur = cam.MotionBlur with { Samples = 4 };
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var img = RayTracer.Render(scene, 6, settings, null, TestContext.Current.CancellationToken);
+        TestContext.Current.SendDiagnosticMessage($"Motion blur {img.Width}×{img.Height}: {clock.Elapsed.TotalSeconds:0.0} s");
+        if (Folder is { } dir)
+        {
+            Directory.CreateDirectory(dir);
+            img.SavePng(Path.Combine(dir, "AVAModeler-motion-blur.png"), alpha: false);
+        }
+    }
 }

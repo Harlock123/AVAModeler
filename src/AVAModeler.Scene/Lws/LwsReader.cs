@@ -230,8 +230,8 @@ public static class LwsReader
                 case "LightType" when _current is LightItem l:
                 {
                     int t = Int(rest, key);
-                    if (t is < 0 or > 2) Warn($"Line {_pos}: light type {t} isn't distant, point or spot; it is read as a point light.");
-                    l.Type = t is >= 0 and <= 2 ? (LightType)t : LightType.Point;
+                    if (t is < 0 or > 2 and not 4) Warn($"Line {_pos}: light type {t} isn't distant, point, spot or area; it is read as a point light.");
+                    l.Type = t is >= 0 and <= 2 or 4 ? (LightType)t : LightType.Point;
                     break;
                 }
                 case "LightColor" when _current is LightItem l: l.Color = ColorOf(rest, key); break;
@@ -272,6 +272,26 @@ public static class LwsReader
                     break;
                 }
                 case "CurrentCamera": _currentCamera = Int(rest, key); break;
+                case "MotionBlur" when _current is CameraItem c: c.MotionBlur = c.MotionBlur with { On = Int(rest, key) != 0 }; break;
+                case "BlurLength" when _current is CameraItem c:
+                {
+                    double b = First(ValueOrEnvelope(rest, key));
+                    if (b > 0 && b <= 1) c.MotionBlur = c.MotionBlur with { Shutter = b };
+                    break;
+                }
+                case "DepthOfField" or "DepthofField" when _current is CameraItem c: c.DepthOfField = c.DepthOfField with { On = Int(rest, key) != 0 }; break;
+                case "FocalDistance" when _current is CameraItem c:
+                {
+                    double f = First(ValueOrEnvelope(rest, key));
+                    if (f > 0) c.DepthOfField = c.DepthOfField with { FocalDistance = f };
+                    break;
+                }
+                case "LensFStop" when _current is CameraItem c:
+                {
+                    double f = First(ValueOrEnvelope(rest, key));
+                    if (f > 0) c.DepthOfField = c.DepthOfField with { FStop = f };
+                    break;
+                }
 
                 case "AmbientColor": Scene.AmbientColor = ColorOf(rest, key); break;
                 case "AmbIntensity" or "AmbientIntensity": Scene.AmbientIntensity = First(ValueOrEnvelope(rest, key)); break;

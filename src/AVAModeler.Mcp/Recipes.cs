@@ -251,6 +251,40 @@ public static class Recipes
         return recipe.Text("Save the scene with save_scene (e.g. \"turntable.avascene\") to keep it.");
     }
 
+    [McpServerPrompt(Name = "product_shot", Title = "Product shot: environment, soft light, depth of field")]
+    [Description("Stages a glossy ball on a floor as a product shot with the render effects: an environment picture (an HDR file or a built-in one) seen in its reflections and lighting the scene, ambient occlusion where it meets the floor, a big area light for soft shadows, and the camera's depth of field focused on it.")]
+    public static string ProductShot(
+        [Description("The product's colour as r, g, b from 0 to 255, or a name (default red [200, 30, 40]).")] string? color = null,
+        [Description("The environment: an image file in the working folder (a lat-long .hdr, .png or .jpg), or builtin:studio (the default) or builtin:sky.")] string? environment = null,
+        [Description("Width of the render in pixels (default 320).")] string? width = null)
+    {
+        var c = Colour(color, [200, 30, 40]);
+        string env = Text(environment, "builtin:studio");
+        int w = Whole(width, 320, "width", 16, 1920);
+        const double r = 0.3;
+        var recipe = new Recipe($"Stage a glossy ball {F(2 * r)} m across on a floor as a product shot, lit by the environment {env} and a soft area light, with ambient occlusion and depth of field.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("The product's surface: glossy, a little reflective, smooth.", "set_surface", new { name = "Product", color = c, specular = 0.8, glossiness = 512, reflection = 0.2, smoothing = true, assign = false });
+        recipe.Step("The floor's: a pale grey.", "set_surface", new { name = "Floor", color = new[] { 200, 200, 205 }, specular = 0.1, assign = false });
+        recipe.Step("The product in layer 1, resting on y = 0.", "run_tool", new { name = "Ball", @params = new Dictionary<string, object> { ["Center"] = V(0, r, 0), ["Radius"] = V(r, r, r), ["Sides"] = 48, ["Segments"] = 24, ["Surface"] = "Product" } });
+        recipe.Step("The floor in layer 2, so the camera can focus on the product alone.", "set_layers", new { foreground = new[] { 2 } });
+        recipe.Step("A wide, thin floor whose top is y = 0.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0, -0.01, 0), ["Size"] = V(8, 0.02, 8), ["Surface"] = "Floor" } });
+        recipe.Step("Back to layer 1.", "set_layers", new { foreground = new[] { 1 } });
+        recipe.Step("Start a new scene (save or discard the old one if it refuses).", "new_scene", new { });
+        recipe.Step("The product, by its layer.", "add_object", new { layer = 1, name = "Product" });
+        recipe.Step("The floor.", "add_object", new { layer = 2, name = "Floor" });
+        recipe.Step("Remove the default light: the environment and an area light do the lighting.", "remove_item", new { item = "Light" });
+        recipe.Step($"The environment: {env} as the backdrop and in reflections, lighting the scene too; ambient occlusion darkens where the ball meets the floor (it works on the ambient light, kept low).", "set_scene",
+            new { environment = env, environment_lighting = true, environment_intensity = 0.6, environment_samples = 32, ao = true, ao_distance = 0.5, ao_samples = 16, ambient_intensity = 0.15 });
+        recipe.Step("A big area light up to the left, aimed at the ball: the bigger it is, the softer the shadow.", "add_light", new { type = "area", name = "Key", position = V(-1.8, 2.4, -1.5), look_at = V(0, r, 0), area_size = new[] { 1.2, 1.2 }, intensity = 0.7, shadow_samples = 32 });
+        recipe.Step("The camera low and close, looking at the ball.", "set_transform", new { item = "Camera", position = V(0.4, 0.55, -2.2), key = false });
+        recipe.Step("Aim it.", "look_at", new { item = "Camera", point = V(0, r, 0), key = false });
+        recipe.Step("Depth of field focused on the product: a small f-stop blurs the floor in front and behind.", "set_item", new { item = "Camera", focus_on = "Product", f_stop = 0.2, dof_samples = 16 });
+        recipe.Step("Check the framing.", "render_scene_view", new { view = "camera", width = 320 });
+        recipe.Step("Ray-trace it (depth of field raises the rays a pixel to its samples).", "render_scene", new { width = w, samples = 1 });
+        return recipe.Text("For smoother results raise dof_samples, shadow_samples, environment_samples and ao_samples (slower); turn environment_heading to move the reflections.");
+    }
+
     [McpServerPrompt(Name = "bouncing_ball", Title = "Bouncing ball")]
     [Description("Animates a ball bouncing on a floor, with squash and stretch through its scale keys, and renders it.")]
     public static string BouncingBall(

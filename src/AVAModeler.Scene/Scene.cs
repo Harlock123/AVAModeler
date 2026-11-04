@@ -12,7 +12,8 @@ public enum FogType
 
 /// <summary>
 /// A Layout scene: objects, nulls, lights, cameras and bones, plus the scene-wide settings (frame range and rate,
-/// ambient light, background, fog, and the camera to render through). Colours are RGB from 0 to 1.
+/// ambient light, background, fog, ambient occlusion, the environment, and the camera to render through). Colours are
+/// RGB from 0 to 1.
 /// <para>Envelope edits and adding, removing or reparenting items bump <see cref="Version"/> and raise
 /// <see cref="Changed"/> on their own; after changing a field directly, call <see cref="Notify"/>.</para>
 /// </summary>
@@ -35,6 +36,10 @@ public sealed class Scene
     public FogType Fog;
     public double FogMinDistance, FogMaxDistance = 100;
     public Vec3 FogColor = Vec3.Zero;
+    /// <summary>Ambient occlusion (off by default).</summary>
+    public AmbientOcclusion Occlusion = new();
+    /// <summary>The environment picture round the scene (none by default).</summary>
+    public EnvironmentSettings Environment = new();
 
     public IReadOnlyList<SceneItem> Items => _items;
     public IEnumerable<ObjectItem> Objects => _items.OfType<ObjectItem>();
@@ -176,6 +181,7 @@ public sealed class Scene
             AmbientColor = AmbientColor, AmbientIntensity = AmbientIntensity, BackgroundColor = BackgroundColor,
             GradientBackground = GradientBackground, GradientTop = GradientTop, GradientBottom = GradientBottom,
             Fog = Fog, FogMinDistance = FogMinDistance, FogMaxDistance = FogMaxDistance, FogColor = FogColor,
+            Occlusion = Occlusion, Environment = Environment,
         };
         var docs = new Dictionary<Document, Document>(ReferenceEqualityComparer.Instance);
         var map = new Dictionary<SceneItem, SceneItem>();
@@ -205,12 +211,20 @@ public sealed class Scene
                     c = obj;
                     break;
                 case LightItem l:
-                    var light = new LightItem(l.Name, l.Type) { Color = l.Color, Range = l.Range, ConeAngle = l.ConeAngle, EdgeAngle = l.EdgeAngle, Shadows = l.Shadows };
+                    var light = new LightItem(l.Name, l.Type)
+                    {
+                        Color = l.Color, Range = l.Range, ConeAngle = l.ConeAngle, EdgeAngle = l.EdgeAngle, Shadows = l.Shadows,
+                        AreaWidth = l.AreaWidth, AreaHeight = l.AreaHeight, Radius = l.Radius, ShadowSamples = l.ShadowSamples,
+                    };
                     light.Intensity.CopyFrom(l.Intensity);
                     c = light;
                     break;
                 case CameraItem cam:
-                    var camera = new CameraItem(cam.Name) { Width = cam.Width, Height = cam.Height, PixelAspect = cam.PixelAspect, ActionSafe = cam.ActionSafe, TitleSafe = cam.TitleSafe };
+                    var camera = new CameraItem(cam.Name)
+                    {
+                        Width = cam.Width, Height = cam.Height, PixelAspect = cam.PixelAspect, ActionSafe = cam.ActionSafe, TitleSafe = cam.TitleSafe,
+                        DepthOfField = cam.DepthOfField, MotionBlur = cam.MotionBlur,
+                    };
                     camera.Zoom.CopyFrom(cam.Zoom);
                     c = camera;
                     break;
@@ -260,6 +274,7 @@ public sealed class Scene
             if (o.IsPlaceholder) warnings.Add($"{o.Name} has no geometry (its file wasn't loaded).");
             else warnings.AddRange(TextureImages.Problems(o.Surfaces, TextureImages.BaseOf(o.SourcePath ?? o.Document?.FilePath)).Select(p => $"{o.Name}, {p}"));
         }
+        if (EnvironmentMap.Problem(Environment) is { } env) warnings.Add(env + " The backdrop shows instead.");
         return new SceneFrame(frame, world, objects, warnings);
     }
 }

@@ -194,6 +194,16 @@ internal static class SceneCensus
                 : new JsonObject { ["gradient"] = false, ["color"] = Json.ColourJson(s.BackgroundColor) },
             ["fog"] = s.Fog == FogType.Off ? new JsonObject { ["type"] = "off" }
                 : new JsonObject { ["type"] = "linear", ["min_distance"] = Round(s.FogMinDistance), ["max_distance"] = Round(s.FogMaxDistance), ["color"] = Json.ColourJson(s.FogColor) },
+            ["ambient_occlusion"] = s.Occlusion.On
+                ? new JsonObject { ["on"] = true, ["samples"] = s.Occlusion.Samples, ["distance"] = Round(s.Occlusion.Distance), ["strength"] = Round(s.Occlusion.Strength) }
+                : new JsonObject { ["on"] = false },
+            ["environment"] = s.Environment.On
+                ? new JsonObject
+                {
+                    ["image"] = s.Environment.Image, ["intensity"] = Round(s.Environment.Intensity), ["heading"] = Round(s.Environment.Heading),
+                    ["lighting"] = s.Environment.Lighting, ["samples"] = s.Environment.Samples,
+                }
+                : null,
             ["file"] = l.ScenePath,
             ["modified"] = l.Modified,
             ["items"] = new JsonArray(s.Items.Select(i => (JsonNode)Item(l, i, sf, modelerDocument)).ToArray()),
@@ -240,6 +250,9 @@ internal static class SceneCensus
                 if (light.Type == LightType.Spot) { o["cone_angle"] = Round(light.ConeAngle); o["edge_angle"] = Round(light.EdgeAngle); }
                 if (light.Type != LightType.Distant) o["range"] = Round(light.Range);
                 o["shadows"] = light.Shadows;
+                if (light.Type == LightType.Area) o["area_size"] = new JsonArray(Round(light.AreaWidth), Round(light.AreaHeight));
+                if (light.Type is LightType.Point or LightType.Spot) o["radius"] = Round(light.Radius);
+                if (light.IsSoft) o["shadow_samples"] = light.ShadowSamples;
                 break;
             case CameraItem cam:
                 o["current"] = s.CurrentCamera == cam;
@@ -248,6 +261,17 @@ internal static class SceneCensus
                 o["width"] = cam.Width;
                 o["height"] = cam.Height;
                 o["looks_toward"] = Vec(cam.CameraToWorld(frame).TransformVector(Vec3.UnitZ));
+                var dof = cam.DepthOfField;
+                o["depth_of_field"] = dof.On
+                    ? new JsonObject
+                    {
+                        ["on"] = true, ["focal_distance"] = Round(dof.FocalDistance), ["f_stop"] = Round(dof.FStop),
+                        ["aperture"] = Round(dof.ApertureRadius(cam.Zoom.Evaluate(frame)), 6), ["samples"] = dof.Samples,
+                    }
+                    : new JsonObject { ["on"] = false };
+                o["motion_blur"] = cam.MotionBlur.On
+                    ? new JsonObject { ["on"] = true, ["shutter"] = Round(cam.MotionBlur.Shutter), ["samples"] = cam.MotionBlur.Samples }
+                    : new JsonObject { ["on"] = false };
                 break;
             case ObjectItem obj:
                 o["source"] = obj.IsPlaceholder ? "placeholder (its file couldn't be loaded)"
@@ -320,11 +344,7 @@ internal static class SceneCensus
     }
 
     /// <summary>Where an item is in the world at a frame: an object's middle (its placed bounds' centre), else its pivot.</summary>
-    public static Vec3 WorldPoint(SceneFrame sf, SceneItem item)
-    {
-        if (item is ObjectItem obj && sf.Objects.FirstOrDefault(x => x.Item == obj) is { Mesh.IsEmpty: false } of) return of.WorldMesh.Bounds().Center;
-        return sf.WorldOf(item).TransformPoint(item.Pivot);
-    }
+    public static Vec3 WorldPoint(SceneFrame sf, SceneItem item) => SceneDrawing.WorldPoint(sf, item);
 
     /// <summary>A channel's keys and behaviours.</summary>
     public static JsonObject Keys(string name, Envelope e, SceneModel scene)

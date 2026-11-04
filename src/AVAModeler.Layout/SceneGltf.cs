@@ -69,6 +69,7 @@ public static class SceneGltf
                     break;
                 case LightItem l:
                     if (!l.Intensity.IsConstant) warnings.Add($"{l.Name}'s intensity is animated; glTF keeps the first frame's.");
+                    if (l.Type == LightType.Area) warnings.Add($"{l.Name} is an area light, which glTF hasn't got: it's exported as a spot light shining across its front.");
                     node["extensions"] = new JsonObject { [GltfBuilder.LightsExtension] = new JsonObject { ["light"] = builder.AddLight(Light(l, first)) } };
                     break;
             }
@@ -172,7 +173,8 @@ public static class SceneGltf
         var light = new JsonObject
         {
             ["name"] = l.Name,
-            ["type"] = l.Type switch { LightType.Point => "point", LightType.Spot => "spot", _ => "directional" },
+            // glTF's lights are points: an area light goes as a spot shining across its front half.
+            ["type"] = l.Type switch { LightType.Point => "point", LightType.Spot or LightType.Area => "spot", _ => "directional" },
             ["color"] = Numbers([GltfBuilder.ToLinear(Math.Clamp(l.Color.X, 0, 1)), GltfBuilder.ToLinear(Math.Clamp(l.Color.Y, 0, 1)), GltfBuilder.ToLinear(Math.Clamp(l.Color.Z, 0, 1))]),
             ["intensity"] = Math.Round(Math.Max(0, l.Intensity.Evaluate(frame)), 9),
         };
@@ -183,6 +185,8 @@ public static class SceneGltf
             double inner = Math.Clamp(outer - Math.Max(l.EdgeAngle, 0), 0, outer - 0.05);
             light["spot"] = new JsonObject { ["innerConeAngle"] = Math.Round(Mat4.Deg(inner), 9), ["outerConeAngle"] = Math.Round(Mat4.Deg(outer), 9) };
         }
+        if (l.Type == LightType.Area)
+            light["spot"] = new JsonObject { ["innerConeAngle"] = 0.0, ["outerConeAngle"] = Math.Round(Math.PI / 2, 9) };
         return light;
     }
 

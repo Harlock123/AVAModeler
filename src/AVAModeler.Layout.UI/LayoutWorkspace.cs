@@ -289,7 +289,13 @@ public sealed class LayoutWorkspace : DockPanel
             case LightItem light:
                 _properties.Children.Add(Label("Light type"));
                 var type = new ComboBox { ItemsSource = Enum.GetNames<LightType>(), SelectedItem = light.Type.ToString() };
-                type.SelectionChanged += (_, _) => { if (Enum.TryParse<LightType>(type.SelectedItem as string, out var t)) Change("Light Type", () => { light.Type = t; Session.Scene.Notify(); }); };
+                type.SelectionChanged += (_, _) =>
+                {
+                    if (!Enum.TryParse<LightType>(type.SelectedItem as string, out var t) || t == light.Type) return;
+                    Change("Light Type", () => { light.Type = t; Session.Scene.Notify(); });
+                    // An area light has a size, the others a radius: show the settings this type has.
+                    Dispatcher.UIThread.Post(ShowProperties);
+                };
                 _properties.Children.Add(type);
                 // 0 to 255 like surface colours (and LightWave's light panel); kept as 0 to 1.
                 Vector3Row("Colour (0–255)", light.Color * 255, v => Change("Light Colour", () => { light.Color = Vec3.Min(Vec3.Max(v / 255, Vec3.Zero), Vec3.One); Session.Scene.Notify(); }));
@@ -300,6 +306,16 @@ public sealed class LayoutWorkspace : DockPanel
                 var shadows = new CheckBox { Content = "Shadows", IsChecked = light.Shadows, Foreground = Look.Text };
                 shadows.IsCheckedChanged += (_, _) => Change("Shadows", () => { light.Shadows = shadows.IsChecked == true; Session.Scene.Notify(); });
                 _properties.Children.Add(shadows);
+                // Soft shadows: an area light's size, or a point or spot light's radius, and the rays a pixel they take.
+                if (light.Type == LightType.Area)
+                {
+                    NumberRow("Area width (m)", light.AreaWidth, v => Change("Area Width", () => { light.AreaWidth = Math.Max(1e-3, v); Session.Scene.Notify(); }));
+                    NumberRow("Area height (m)", light.AreaHeight, v => Change("Area Height", () => { light.AreaHeight = Math.Max(1e-3, v); Session.Scene.Notify(); }));
+                }
+                else if (light.Type != LightType.Distant)
+                    NumberRow("Radius (m, 0: hard shadows)", light.Radius, v => Change("Light Radius", () => { light.Radius = Math.Max(0, v); Session.Scene.Notify(); }));
+                if (light.Type != LightType.Distant)
+                    NumberRow("Shadow samples", light.ShadowSamples, v => Change("Shadow Samples", () => { light.ShadowSamples = Math.Clamp((int)v, 1, RenderEffects.MaxSamples); Session.Scene.Notify(); }));
                 break;
             case CameraItem cam:
                 NumberRow("Zoom factor", cam.Zoom.Evaluate(Session.Frame), v => Change("Zoom", () => { cam.Zoom.AddKey(Session.Frame, Math.Max(0.01, v)); Session.Scene.Notify(); }));
@@ -307,6 +323,7 @@ public sealed class LayoutWorkspace : DockPanel
                 NumberRow("Width (pixels)", cam.Width, v => Change("Camera Width", () => { cam.Width = Math.Max(1, (int)v); Session.Scene.Notify(); }));
                 NumberRow("Height (pixels)", cam.Height, v => Change("Camera Height", () => { cam.Height = Math.Max(1, (int)v); Session.Scene.Notify(); }));
                 _properties.Children.Add(Look.MakeButton("Use this camera", () => Change("Use Camera", () => Session.Scene.CurrentCamera = cam)));
+                CameraEffects(cam);
                 break;
             case Bone bone:
                 NumberRow("Rest length", bone.RestLength, v => Change("Rest Length", () => { bone.RestLength = Math.Max(1e-3, v); Session.Scene.Notify(); }));
@@ -327,6 +344,47 @@ public sealed class LayoutWorkspace : DockPanel
                 break;
         }
         _properties.Children.Add(Look.MakeButton("Remove item", () => Session.Remove(item)));
+    }
+
+    /// <summary>The camera's depth of field (with Focus on an item) and motion blur.</summary>
+    private void CameraEffects(CameraItem cam)
+    {
+        void Dof(string label, Func<DepthOfField, DepthOfField> change) => Change(label, () => { cam.DepthOfField = change(cam.DepthOfField); Session.Scene.Notify(); });
+        void Blur(string label, Func<MotionBlur, MotionBlur> change) => Change(label, () => { cam.MotionBlur = change(cam.MotionBlur); Session.Scene.Notify(); });
+        var dof = new CheckBox { Content = "Depth of field", IsChecked = cam.DepthOfField.On, Foreground = Look.Text, Margin = new Thickness(0, 6, 0, 0) };
+        dof.IsCheckedChanged += (_, _) => Dof("Depth of Field", d => d with { On = dof.IsChecked == true });
+        _properties.Children.Add(dof);
+        NumberRow("Focal distance (m)", cam.DepthOfField.FocalDistance, v => { if (v > 0) Dof("Focal Distance", d => d with { FocalDistance = v }); });
+        NumberRow("Lens f-stop", cam.DepthOfField.FStop, v => { if (v > 0) Dof("Lens F-Stop", d => d with { FStop = v }); });
+        NumberRow("Depth of field samples", cam.DepthOfField.Samples, v => Dof("Depth of Field Samples", d => d with { Samples = Math.Clamp((int)v, 1, RenderEffects.MaxSamples) }));
+        var others = Session.Scene.Items.Where(i => i != cam).ToList();
+        if (others.Count > 0)
+        {
+            var target = new ComboBox { ItemsSource = others.Select(i => $"{i.Kind}: {i.Name}").ToList(), SelectedIndex = Math.Max(0, others.FindIndex(i => i is ObjectItem)), HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 11 };
+            var focus = Look.MakeButton("Focus on", () =>
+            {
+                if (target.SelectedIndex < 0) return;
+                try
+                {
+                    double d = Session.FocusOn(cam, others[target.SelectedIndex]);
+                    Session.SetStatus($"{cam.Name} focused {d:0.###} m away, on {others[target.SelectedIndex].Name}.");
+                    ShowProperties();
+                }
+                catch (ArgumentException e) { Session.SetStatus(e.Message); }
+            }, "Set the focal distance so the chosen item is sharp at this frame");
+            _properties.Children.Add(new DockPanel { Children = { Docked(focus, Dock.Right), target } });
+        }
+        var blur = new CheckBox { Content = "Motion blur", IsChecked = cam.MotionBlur.On, Foreground = Look.Text, Margin = new Thickness(0, 6, 0, 0) };
+        blur.IsCheckedChanged += (_, _) => Blur("Motion Blur", b => b with { On = blur.IsChecked == true });
+        _properties.Children.Add(blur);
+        NumberRow("Shutter (frames, 0–1)", cam.MotionBlur.Shutter, v => { if (v > 0 && v <= 1) Blur("Shutter", b => b with { Shutter = v }); });
+        NumberRow("Motion blur samples", cam.MotionBlur.Samples, v => Blur("Motion Blur Samples", b => b with { Samples = Math.Clamp((int)v, 1, RenderEffects.MaxSamples) }));
+    }
+
+    private static Control Docked(Control c, Dock d)
+    {
+        DockPanel.SetDock(c, d);
+        return c;
     }
 
     private static TextBlock Label(string t) => new() { Text = t, Foreground = Look.Text, FontSize = 11, Margin = new Thickness(0, 4, 0, 0) };
@@ -410,6 +468,7 @@ public sealed class LayoutWorkspace : DockPanel
                     Item("_Distant Light", () => Session.Add(new LightItem("Distant Light"))),
                     Item("_Point Light", () => Session.Add(new LightItem("Point Light", LightType.Point))),
                     Item("_Spot Light", () => Session.Add(new LightItem("Spot Light", LightType.Spot))),
+                    Item("_Area Light", () => Session.Add(new LightItem("Area Light", LightType.Area))),
                     Item("_Camera", () => Session.Add(new CameraItem("Camera")))),
                 Group("_Render", Item("_Render Frame", Render), Item("Render _Animation…", () => RenderAnimation())),
                 Group("_AI", Item("_Chat with Claude…  (F4)", () => ToggleChat?.Invoke())),
@@ -431,7 +490,10 @@ public sealed class LayoutWorkspace : DockPanel
         The graph editor shows the chosen item's channels as curves; click a key to set its value, tension, continuity and
         bias (TCB, as classic LightWave), and what happens before the first key and after the last.
 
-        Render › Render Frame (F9) ray-traces the frame through the current camera. Render › Render Animation (F10) renders
+        Render › Render Frame (F9) ray-traces the frame through the current camera. Scene › Scene Settings has ambient occlusion
+        and an environment picture (seen behind everything and in reflections, and optionally lighting the scene); a camera's
+        settings have depth of field (Focus on brings an item into focus) and motion blur; area lights, and point and spot
+        lights with a radius, cast soft shadows. All are off until switched on, and each takes render time. Render › Render Animation (F10) renders
         a run of frames into numbered PNGs, and joins them into an MP4 or a looping GIF if ffmpeg is installed. Scenes save as .avascene (everything) or as
         LightWave .lws (for other programs); .lws scenes from LightWave 4 and 5 (and later) load.
         """;
@@ -504,34 +566,16 @@ public sealed class LayoutWorkspace : DockPanel
         }
     }
 
+    /// <summary>Scene › Scene Settings…: the frames, ambient light, backdrop and the scene's render effects, in a dialog.</summary>
     private async Task SceneSettings()
     {
-        var s = Session.Scene;
-        var first = new TextBox { Text = s.FirstFrame.ToString(CultureInfo.InvariantCulture) };
-        var last = new TextBox { Text = s.LastFrame.ToString(CultureInfo.InvariantCulture) };
-        var fps = new TextBox { Text = F(s.FramesPerSecond) };
-        var ambient = new TextBox { Text = F(s.AmbientIntensity) };
-        var gradient = new CheckBox { Content = "Gradient backdrop", IsChecked = s.GradientBackground, Foreground = Look.Text };
-        var ok = new Button { Content = "OK", Width = 80, HorizontalAlignment = HorizontalAlignment.Right };
+        var panel = new SceneSettingsPanel(Session);
         var w = new Window
         {
-            Title = "Scene settings", Width = 320, SizeToContent = SizeToContent.Height, Background = Look.Panel, WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(12), Spacing = 4,
-                Children = { Label("First frame"), first, Label("Last frame"), last, Label("Frames per second"), fps, Label("Ambient intensity"), ambient, gradient, ok },
-            },
+            Title = "Scene settings", Width = 380, SizeToContent = SizeToContent.Height, Background = Look.Panel, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = panel,
         };
-        ok.Click += (_, _) => Change("Scene Settings", () =>
-        {
-            if (int.TryParse(first.Text, out int f)) s.FirstFrame = f;
-            if (int.TryParse(last.Text, out int l)) s.LastFrame = Math.Max(l, s.FirstFrame);
-            if (double.TryParse(fps.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double r) && r > 0) s.FramesPerSecond = r;
-            if (double.TryParse(ambient.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double a)) s.AmbientIntensity = Math.Max(0, a);
-            s.GradientBackground = gradient.IsChecked == true;
-            s.Notify();
-            w.Close();
-        });
+        panel.Applied += w.Close;
         if (Owner != null) await Dialogs.ShowModal(w, Owner);
     }
 

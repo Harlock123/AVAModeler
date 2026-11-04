@@ -67,6 +67,13 @@ public static class SceneDrawing
         view.Center = eye + view.Basis().Forward;
     }
 
+    /// <summary>Where an item is in the world at a frame: an object's middle (its placed mesh's bounds' centre), else its pivot.</summary>
+    public static Vec3 WorldPoint(SceneFrame sf, SceneItem item)
+    {
+        if (item is ObjectItem obj && sf.Objects.FirstOrDefault(x => x.Item == obj) is { Mesh.IsEmpty: false } of) return of.WorldMesh.Bounds().Center;
+        return sf.WorldOf(item).TransformPoint(item.Pivot);
+    }
+
     /// <summary>What there is to see at a frame: the objects' placed meshes and every other item's position.</summary>
     public static Box3 Bounds(SceneFrame frame)
     {
@@ -79,7 +86,11 @@ public static class SceneDrawing
     /// <summary>The folder an object's relative image paths start from: its file's, or its document's.</summary>
     public static string? ImageBase(ObjectItem o) => TextureImages.BaseOf(o.SourcePath ?? o.Document?.FilePath);
 
-    /// <summary>A little drawing of an item in its own space: a cross for a null, a cone for a light, a box and lens for a camera, a diamond for a bone.</summary>
+    /// <summary>
+    /// A little drawing of an item in its own space: a cross for a null, a cross for a light (with an arrow the way it
+    /// shines, an area light's rectangle at its size, and a ring of a soft light's radius), a box and lens for a camera,
+    /// a diamond for a bone.
+    /// </summary>
     public static IEnumerable<(Vec3, Vec3)> Glyph(SceneItem item)
     {
         double s = 0.25;
@@ -121,6 +132,28 @@ public static class SceneDrawing
                     yield return (Vec3.Zero, new Vec3(0, 0, s * 4));
                     yield return (new Vec3(0, 0, s * 4), new Vec3(s * 0.4, 0, s * 3.3));
                     yield return (new Vec3(0, 0, s * 4), new Vec3(-s * 0.4, 0, s * 3.3));
+                }
+                if (l.Type == LightType.Area)
+                {
+                    // Its shape, with a cross from corner to corner.
+                    double w = l.AreaWidth / 2, h = l.AreaHeight / 2;
+                    var c = new[] { new Vec3(-w, -h, 0), new Vec3(w, -h, 0), new Vec3(w, h, 0), new Vec3(-w, h, 0) };
+                    for (int i = 0; i < 4; i++) yield return (c[i], c[(i + 1) % 4]);
+                    yield return (c[0], c[2]);
+                    yield return (c[1], c[3]);
+                }
+                else if (l.IsSoft)
+                {
+                    // Its size: rings round it in its three planes.
+                    const int n = 24;
+                    for (int i = 0; i < n; i++)
+                    {
+                        double a0 = 2 * Math.PI * i / n, a1 = 2 * Math.PI * (i + 1) / n, r = l.Radius;
+                        var (c0, s0, c1, s1) = (Math.Cos(a0) * r, Math.Sin(a0) * r, Math.Cos(a1) * r, Math.Sin(a1) * r);
+                        yield return (new Vec3(c0, s0, 0), new Vec3(c1, s1, 0));
+                        yield return (new Vec3(c0, 0, s0), new Vec3(c1, 0, s1));
+                        yield return (new Vec3(0, c0, s0), new Vec3(0, c1, s1));
+                    }
                 }
                 break;
             }

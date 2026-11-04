@@ -8,7 +8,9 @@ namespace AVAModeler.Scene;
 /// Writes a scene as a LightWave version 3 scene file (.lws). Objects are written by their
 /// <see cref="ObjectItem.SourcePath"/>, or else their document's file (an object with neither is written by its name,
 /// with a warning), so the meshes must be saved separately. Morphs, displacements, visibility and the safe areas have no place in the format and are
-/// left out.
+/// left out. An area light is written as LightWave 6's (light type 4), and a camera's depth of field and motion blur
+/// as LightWave's own settings; an area light's size, a light's radius, the effects' sample counts, ambient occlusion
+/// and the environment have no place in the format either (the .avascene keeps them).
 /// </summary>
 public static class LwsWriter
 {
@@ -87,6 +89,18 @@ public static class LwsWriter
                 Value("ZoomFactor", c.Zoom);
                 L($"FrameSize {c.Width} {c.Height}");
                 L($"PixelAspect {N(c.PixelAspect)}");
+                // LightWave's own camera settings for these, written only when on so other scenes stay as they were.
+                if (c.MotionBlur.On)
+                {
+                    L("MotionBlur 1");
+                    L($"BlurLength {N(c.MotionBlur.Shutter)}");
+                }
+                if (c.DepthOfField.On)
+                {
+                    L("DepthOfField 1");
+                    L($"FocalDistance {N(c.DepthOfField.FocalDistance)}");
+                    L($"LensFStop {N(c.DepthOfField.FStop)}");
+                }
                 L();
             }
             if (scene.CurrentCamera is { } current) L($"CurrentCamera {_cameras.IndexOf(current)}");

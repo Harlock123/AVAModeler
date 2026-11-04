@@ -81,6 +81,8 @@ public static class SceneJson
                 FogMinDistance = scene.FogMinDistance,
                 FogMaxDistance = scene.FogMaxDistance,
                 FogColor = Arr(scene.FogColor),
+                Occlusion = scene.Occlusion == new AmbientOcclusion() ? null : scene.Occlusion,
+                Environment = scene.Environment == new EnvironmentSettings() ? null : scene.Environment with { Image = EnvironmentPath(scene.Environment.Image, baseDir, Relative) },
             },
             CurrentCamera = scene.CurrentCamera is { } cam ? items.IndexOf(cam) : null,
             Documents = docDtos,
@@ -140,6 +142,9 @@ public static class SceneJson
                     d.ConeAngle = l.ConeAngle;
                     d.EdgeAngle = l.EdgeAngle;
                     d.Shadows = l.Shadows;
+                    d.AreaSize = l.AreaWidth == 1 && l.AreaHeight == 1 ? null : [l.AreaWidth, l.AreaHeight];
+                    d.Radius = l.Radius == 0 ? null : l.Radius;
+                    d.ShadowSamples = l.ShadowSamples == 16 ? null : l.ShadowSamples;
                     break;
                 case CameraItem c:
                     d.Zoom = Env(c.Zoom);
@@ -148,6 +153,8 @@ public static class SceneJson
                     d.PixelAspect = c.PixelAspect;
                     d.ActionSafe = c.ActionSafe;
                     d.TitleSafe = c.TitleSafe;
+                    d.DepthOfField = c.DepthOfField == new DepthOfField() ? null : c.DepthOfField;
+                    d.MotionBlur = c.MotionBlur == new MotionBlur() ? null : c.MotionBlur;
                     break;
             }
             dto.Items.Add(d);
@@ -174,6 +181,8 @@ public static class SceneJson
             FogMinDistance = s.FogMinDistance,
             FogMaxDistance = s.FogMaxDistance,
             FogColor = Vec(s.FogColor),
+            Occlusion = s.Occlusion ?? new AmbientOcclusion(),
+            Environment = s.Environment is { } env ? env with { Image = EnvironmentPath(env.Image ?? "", baseDir, Absolute) } : new EnvironmentSettings(),
         };
         var docs = dto.Documents.Select(d => LoadDocument(d, load, baseDir, warnings)).ToList();
         var items = new List<SceneItem?>();
@@ -259,6 +268,10 @@ public static class SceneJson
             ConeAngle = d.ConeAngle ?? 30,
             EdgeAngle = d.EdgeAngle ?? 5,
             Shadows = d.Shadows ?? true,
+            AreaWidth = d.AreaSize is { Length: >= 2 } a ? a[0] : 1,
+            AreaHeight = d.AreaSize is { Length: >= 2 } b ? b[1] : 1,
+            Radius = d.Radius ?? 0,
+            ShadowSamples = d.ShadowSamples ?? 16,
         };
         SetEnv(l.Intensity, d.Intensity);
         return l;
@@ -273,6 +286,8 @@ public static class SceneJson
             PixelAspect = d.PixelAspect ?? 1,
             ActionSafe = d.ActionSafe ?? 0.9,
             TitleSafe = d.TitleSafe ?? 0.8,
+            DepthOfField = d.DepthOfField ?? new DepthOfField(),
+            MotionBlur = d.MotionBlur ?? new MotionBlur(),
         };
         SetEnv(c.Zoom, d.Zoom);
         return c;
@@ -323,6 +338,10 @@ public static class SceneJson
         string rel = Path.GetRelativePath(baseDir, path);
         return rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel) ? path : rel.Replace('\\', '/');
     }
+
+    /// <summary>An environment image's path as written or read: a file's made relative or absolute, a built-in name as it is.</summary>
+    private static string EnvironmentPath(string image, string? baseDir, Func<string?, string?, string?> convert) =>
+        image.Length == 0 || image.StartsWith(EnvironmentMap.BuiltinPrefix, StringComparison.OrdinalIgnoreCase) ? image : convert(image, baseDir) ?? image;
 
     /// <summary>A path read from a scene, taken from the scene's folder if it's relative.</summary>
     private static string? Absolute(string? path, string? baseDir) =>
@@ -385,6 +404,8 @@ public static class SceneJson
         public double FogMinDistance { get; set; }
         public double FogMaxDistance { get; set; }
         public double[]? FogColor { get; set; }
+        public AmbientOcclusion? Occlusion { get; set; }
+        public EnvironmentSettings? Environment { get; set; }
     }
 
     private sealed class DocumentDto
@@ -621,6 +642,9 @@ public static class SceneJson
         public double? ConeAngle { get; set; }
         public double? EdgeAngle { get; set; }
         public bool? Shadows { get; set; }
+        public double[]? AreaSize { get; set; }
+        public double? Radius { get; set; }
+        public int? ShadowSamples { get; set; }
 
         public EnvelopeDto? Zoom { get; set; }
         public int? Width { get; set; }
@@ -628,5 +652,7 @@ public static class SceneJson
         public double? PixelAspect { get; set; }
         public double? ActionSafe { get; set; }
         public double? TitleSafe { get; set; }
+        public DepthOfField? DepthOfField { get; set; }
+        public MotionBlur? MotionBlur { get; set; }
     }
 }

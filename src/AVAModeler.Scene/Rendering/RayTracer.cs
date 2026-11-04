@@ -73,7 +73,16 @@ public sealed class RenderImage(int width, int height, byte[] rgba)
 /// there. A procedural bump tilts the normal by the amount's slope, found by finite differences along the triangle's
 /// sides: amplitude 1 tilts it 45° where the amount rises by 1 over one texture size.
 /// </para>
-/// Rendering is deterministic: the antialiasing jitter comes from a hash of the pixel and sample number.
+/// <para>
+/// The render effects (<see cref="RenderEffects"/>), each off until switched on, and leaving the picture exactly as it
+/// was when off: ambient occlusion dims the ambient term; an environment picture replaces the backdrop and can light
+/// the scene (the irradiance a surface facing that way gets, less the light rays over its hemisphere find hidden);
+/// area lights and point or spot lights with a radius are sampled across their area, each sample with its own shadow
+/// ray; depth of field moves each camera ray's origin across a thin lens and aims it at the plane in focus; motion blur
+/// gives each camera ray a moment across the shutter, with the scene worked out at up to <see cref="MaxMoments"/>.
+/// </para>
+/// Rendering is deterministic: the antialiasing jitter and every effect's samples come from hashes of the pixel, the
+/// sample number and what they're for.
 /// </summary>
 public static class RayTracer
 {
@@ -103,7 +112,11 @@ public static class RayTracer
     /// <summary>What a surface is like where a ray hit it, after its textures: the settings shading uses, and the normal.</summary>
     private readonly record struct Look(Vec3 Color, double Diffuse, double Specular, double Luminosity, double Reflection, double Transparency, Vec3 Normal);
 
-    private sealed record LightInfo(LightType Type, Vec3 Position, Vec3 Direction, Vec3 Color, LightItem Item);
+    /// <summary>
+    /// A light at the frame: where it is and the way it shines in the world, its colour times intensity, and for an area
+    /// light its sides (<paramref name="U"/> across its width, <paramref name="V"/> up its height, scaled with the item).
+    /// </summary>
+    private sealed record LightInfo(LightType Type, Vec3 Position, Vec3 Direction, Vec3 Color, LightItem Item, Vec3 U = default, Vec3 V = default);
 
     /// <summary>
     /// Renders a frame. <paramref name="progress"/> gets the fraction of rows done, from worker threads. Cancelling
@@ -118,16 +131,32 @@ public static class RayTracer
         int height = Math.Max(1, settings.Height ?? camera.Height);
         cancel.ThrowIfCancellationRequested();
 
-        double tanV = 1 / camera.Zoom.Evaluate(frame);
+        double zoom = camera.Zoom.Evaluate(frame);
+        double tanV = 1 / zoom;
         double tanH = tanV * width * camera.PixelAspect / height;
-        int samples = Math.Max(1, settings.SamplesPerPixel);
+        var dof = camera.DepthOfField;
+        var blur = camera.MotionBlur;
+        bool lens = dof.On && dof.FStop > 0 && dof.FocalDistance > 0;
+        bool moving = blur.On && blur.Shutter > 0;
+        int samples = RaysPerPixel(settings, camera);
         int cols = (int)Math.Ceiling(Math.Sqrt(samples));
         int rows = (samples + cols - 1) / cols;
         // How wide a sample's footprint is per unit of distance along its ray, for texture filtering.
         double spread = 2 * tanV / height / cols;
-        var tracer = new Tracer(scene, scene.Evaluate(frame), frame, settings, spread);
-        var toWorld = camera.CameraToWorld(frame);
-        var eye = toWorld.TransformPoint(Vec3.Zero);
+        var environment = EnvironmentOf(scene);
+        // With motion blur, the scene is worked out at moments spread evenly across the shutter, centred on the frame.
+        int moments = moving ? Math.Min(Math.Min(samples, MaxMoments), Math.Max(1, blur.Samples)) : 1;
+        var tracers = new Tracer[moments];
+        var toWorld = new Mat4[moments];
+        var eyes = new Vec3[moments];
+        for (int k = 0; k < moments; k++)
+        {
+            double t = moving ? frame + blur.Shutter * ((k + 0.5) / moments - 0.5) : frame;
+            tracers[k] = new Tracer(scene, scene.Evaluate(t), t, settings, spread, environment);
+            toWorld[k] = camera.CameraToWorld(t);
+            eyes[k] = toWorld[k].TransformPoint(Vec3.Zero);
+        }
+        double aperture = lens ? dof.ApertureRadius(zoom) : 0;
 
         var rgba = new byte[width * height * 4];
         int done = 0;
@@ -148,8 +177,30 @@ public static class RayTracer
                         sy = (s / cols + Jitter(x, y, s, 1)) / rows;
                     }
                     var local = new Vec3((2 * (x + sx) / width - 1) * tanH, (1 - 2 * (y + sy) / height) * tanV, 1);
-                    var dir = toWorld.TransformVector(local).Normalized();
-                    sum += tracer.Trace(eye, dir, 0, out bool hit);
+                    int k = 0;
+                    if (moments > 1)
+                    {
+                        // The moment: stratified over the pixel's rays, in an order shuffled per pixel.
+                        double when = (Permute(s, samples, Seed(x, y, DimensionTime)) + Random01(x, y, s, DimensionTime)) / samples;
+                        k = Math.Min(moments - 1, (int)(when * moments));
+                    }
+                    var pixel = new PixelSamples(x, y, s, samples);
+                    Vec3 origin, dir;
+                    if (lens)
+                    {
+                        // A thin lens: rays from across the aperture meet at the plane in focus.
+                        var (lu, lv) = Hammersley(x, y, DimensionLens * 64, Permute(s, samples, Seed(x, y, DimensionLens)), samples);
+                        var (dx, dy) = Disc(lu, lv);
+                        var onLens = new Vec3(dx * aperture, dy * aperture, 0);
+                        origin = toWorld[k].TransformPoint(onLens);
+                        dir = toWorld[k].TransformVector(local * dof.FocalDistance - onLens).Normalized();
+                    }
+                    else
+                    {
+                        origin = eyes[k];
+                        dir = toWorld[k].TransformVector(local).Normalized();
+                    }
+                    sum += tracers[k].Trace(origin, dir, 0, out bool hit, pixel);
                     if (hit) alpha++;
                 }
                 var c = sum / samples;
@@ -166,6 +217,30 @@ public static class RayTracer
         return new RenderImage(width, height, rgba);
     }
 
+    /// <summary>The most moments motion blur works the scene out at.</summary>
+    public const int MaxMoments = 32;
+
+    /// <summary>
+    /// Rays shot through each pixel: the antialiasing's, raised to the camera's depth of field or motion blur samples
+    /// when those are on.
+    /// </summary>
+    public static int RaysPerPixel(RenderSettings settings, CameraItem camera)
+    {
+        int samples = Math.Max(1, settings.SamplesPerPixel);
+        if (camera.DepthOfField.On) samples = Math.Max(samples, camera.DepthOfField.Samples);
+        if (camera.MotionBlur.On) samples = Math.Max(samples, camera.MotionBlur.Samples);
+        return samples;
+    }
+
+    /// <summary>The scene's environment ready to look up, or null when it has none (or it can't be read).</summary>
+    private static EnvironmentMap? EnvironmentOf(Scene scene)
+    {
+        var e = scene.Environment;
+        if (!e.On) return null;
+        var image = EnvironmentMap.Load(e.Image, null, out _);
+        return image == null ? null : new EnvironmentMap(image, e.Heading);
+    }
+
     private static byte ToByte(double v) => (byte)Math.Clamp(Math.Round(v * 255), 0, 255);
 
     /// <summary>A repeatable pseudo-random number in [0, 1) for a pixel, sample and axis.</summary>
@@ -180,6 +255,106 @@ public static class RayTracer
         return (h >> 11) * (1.0 / (1UL << 53));
     }
 
+    // ───────────────────────────── repeatable sampling for the effects ─────────────────────────────
+    // Every effect's random numbers are hashes of the pixel, the ray and a "dimension" naming what they're for, so the
+    // same scene renders the same picture on any number of threads. Within a pixel the samples are a Hammersley set
+    // (stratified), shifted by a per-pixel amount (a Cranley–Patterson rotation) so neighbouring pixels differ.
+
+    private const int DimensionTime = 1, DimensionLens = 2, DimensionOcclusion = 3, DimensionEnvironment = 4, DimensionLight = 16;
+
+    private static ulong Mix(ulong h)
+    {
+        h ^= h >> 33;
+        h *= 0xFF51AFD7ED558CCDUL;
+        h ^= h >> 33;
+        h *= 0xC4CEB9FE1A85EC53UL;
+        h ^= h >> 33;
+        return h;
+    }
+
+    private static uint Seed(int x, int y, int dimension) =>
+        (uint)Mix((ulong)(uint)x * 0xD6E8FEB86659FD93UL ^ (ulong)(uint)y * 0xA0761D6478BD642FUL ^ (ulong)(uint)dimension * 0xE7037ED1A0B428DBUL);
+
+    /// <summary>A repeatable number in [0, 1) for a pixel, ray, dimension and index.</summary>
+    private static double Random01(int x, int y, int s, int dimension, int index = 0) =>
+        (Mix((ulong)Seed(x, y, dimension) << 32 ^ (ulong)(uint)s * 0x9FB21C651E98DF25UL ^ (ulong)(uint)index * 0x2545F4914F6CDD1DUL) >> 11) * (1.0 / (1UL << 53));
+
+    /// <summary>Kensler's hashed permutation: i (0 to n − 1) to another index in 0 to n − 1, a different order per seed.</summary>
+    private static int Permute(int i, int n, uint seed)
+    {
+        if (n <= 1) return 0;
+        uint l = (uint)n - 1, w = l;
+        w |= w >> 1; w |= w >> 2; w |= w >> 4; w |= w >> 8; w |= w >> 16;
+        uint v = (uint)i;
+        do
+        {
+            v ^= seed; v *= 0xe170893d;
+            v ^= seed >> 16;
+            v ^= (v & w) >> 4;
+            v ^= seed >> 8; v *= 0x0929eb3f;
+            v ^= seed >> 23;
+            v ^= (v & w) >> 1; v *= 1 | seed >> 27;
+            v *= 0x6935fa69;
+            v ^= (v & w) >> 11; v *= 0x74dcb303;
+            v ^= (v & w) >> 2; v *= 0x9e501cc3;
+            v ^= (v & w) >> 2; v *= 0xc860a3df;
+            v &= w;
+            v ^= v >> 5;
+        } while (v > l);
+        return (int)((v + seed) % (uint)n);
+    }
+
+    private static double RadicalInverse(uint i)
+    {
+        i = (i << 16) | (i >> 16);
+        i = ((i & 0x55555555u) << 1) | ((i & 0xAAAAAAAAu) >> 1);
+        i = ((i & 0x33333333u) << 2) | ((i & 0xCCCCCCCCu) >> 2);
+        i = ((i & 0x0F0F0F0Fu) << 4) | ((i & 0xF0F0F0F0u) >> 4);
+        i = ((i & 0x00FF00FFu) << 8) | ((i & 0xFF00FF00u) >> 8);
+        return i * (1.0 / 4294967296.0);
+    }
+
+    /// <summary>A point in the unit square mapped onto the unit disc, keeping strata apart (Shirley and Chiu's concentric map).</summary>
+    private static (double X, double Y) Disc(double u, double v)
+    {
+        double a = 2 * u - 1, b = 2 * v - 1;
+        if (a == 0 && b == 0) return (0, 0);
+        double r, phi;
+        if (Math.Abs(a) > Math.Abs(b)) { r = a; phi = Math.PI / 4 * (b / a); }
+        else { r = b; phi = Math.PI / 2 - Math.PI / 4 * (a / b); }
+        return (r * Math.Cos(phi), r * Math.Sin(phi));
+    }
+
+    /// <summary>A direction over the hemisphere about a unit normal, weighted toward it (cosine-weighted), from a point in the unit square.</summary>
+    private static Vec3 Hemisphere(Vec3 n, double u, double v)
+    {
+        double r = Math.Sqrt(u), phi = 2 * Math.PI * v;
+        var t = n.AnyPerpendicular();
+        var b = Vec3.Cross(n, t);
+        return (t * (r * Math.Cos(phi)) + b * (r * Math.Sin(phi)) + n * Math.Sqrt(Math.Max(0, 1 - u))).Normalized();
+    }
+
+    /// <summary>One ray of a pixel: where an effect's samples come from.</summary>
+    private readonly record struct PixelSamples(int X, int Y, int Ray, int Rays)
+    {
+        /// <summary>How many samples a hit takes of an effect that wants <paramref name="perPixel"/> a pixel.</summary>
+        public int PerHit(int perPixel) => Math.Max(1, (perPixel + Rays - 1) / Rays);
+
+        /// <summary>
+        /// The i-th of k samples (of a dimension, at a bounce depth) this ray takes: the pixel's rays together take
+        /// k × rays points of a shifted Hammersley set, each ray its own share.
+        /// </summary>
+        public (double U, double V) Point(int dimension, int depth, int i, int k) => Hammersley(X, Y, dimension * 64 + depth, Ray * k + i, Rays * k);
+    }
+
+    /// <summary>The j-th of n points of a Hammersley set in the unit square, shifted per pixel and dimension.</summary>
+    private static (double U, double V) Hammersley(int x, int y, int dimension, int j, int n)
+    {
+        double u = (j + 0.5) / n + Random01(x, y, 0, dimension, 1);
+        double v = RadicalInverse((uint)j) + Random01(x, y, 0, dimension, 2);
+        return (u - Math.Floor(u), v - Math.Floor(v));
+    }
+
     /// <summary>The scene at a frame turned into triangles, materials and lights, ready to trace rays through.</summary>
     private sealed class Tracer
     {
@@ -191,12 +366,18 @@ public static class RayTracer
         private readonly Vec3 _ambient;
         private readonly double _bias, _spread;
         private readonly List<TriangleTexture> _textures = [];
+        private readonly EnvironmentMap? _environment;
+        private readonly double _environmentIntensity;
+        private readonly AmbientOcclusion? _occlusion;
 
-        public Tracer(Scene scene, SceneFrame sf, double frame, RenderSettings settings, double spread)
+        public Tracer(Scene scene, SceneFrame sf, double frame, RenderSettings settings, double spread, EnvironmentMap? environment = null)
         {
             _scene = scene;
             _settings = settings;
             _spread = spread;
+            _environment = environment;
+            _environmentIntensity = scene.Environment.Intensity;
+            _occlusion = scene.Occlusion.On && scene.Occlusion.Strength > 0 ? scene.Occlusion : null;
             _ambient = scene.AmbientColor * scene.AmbientIntensity;
             var tris = new List<Triangle>();
             var bounds = Box3.Empty;
@@ -219,7 +400,8 @@ public static class RayTracer
                 var w = l.WorldMatrix(frame);
                 var color = l.Color * l.Intensity.Evaluate(frame);
                 if (color == Vec3.Zero) continue;
-                _lights.Add(new LightInfo(l.Type, w.TransformPoint(Vec3.Zero), w.TransformVector(Vec3.UnitZ).Normalized(), color, l));
+                _lights.Add(new LightInfo(l.Type, w.TransformPoint(Vec3.Zero), w.TransformVector(Vec3.UnitZ).Normalized(), color, l,
+                    w.TransformVector(Vec3.UnitX) * l.AreaWidth, w.TransformVector(Vec3.UnitY) * l.AreaHeight));
             }
         }
 
@@ -447,12 +629,13 @@ public static class RayTracer
 
         private Vec3 Background(Vec3 dir)
         {
+            if (_environment != null) return _environment.Sample(dir) * _environmentIntensity;
             if (!_scene.GradientBackground) return _scene.BackgroundColor;
             double t = Math.Clamp((dir.Y + 1) / 2, 0, 1);
             return Vec3.Lerp(_scene.GradientBottom, _scene.GradientTop, t);
         }
 
-        public Vec3 Trace(Vec3 origin, Vec3 dir, int depth, out bool hitSomething, double travelled = 0)
+        public Vec3 Trace(Vec3 origin, Vec3 dir, int depth, out bool hitSomething, in PixelSamples pixel, double travelled = 0)
         {
             hitSomething = _bvh.Intersect(origin, dir, _bias, double.PositiveInfinity, out var hit);
             if (!hitSomething) return Background(dir);
@@ -475,10 +658,19 @@ public static class RayTracer
             var lift = nf * _bias * 10;
 
             var diffuse = look.Color * look.Diffuse;
-            var lit = Vec3.Scale(diffuse, _ambient) + look.Color * look.Luminosity;
+            var ambient = Vec3.Scale(diffuse, _ambient);
+            if (_occlusion != null) ambient *= Occlusion(p + lift, ns, nf, pixel, depth);
+            var lit = ambient + look.Color * look.Luminosity;
+            if (_environment != null && _scene.Environment.Lighting) lit += Vec3.Scale(diffuse, EnvironmentLight(p + lift, ns, nf, pixel, depth));
             var highlight = Vec3.Zero;
-            foreach (var light in _lights)
+            for (int li = 0; li < _lights.Count; li++)
             {
+                var light = _lights[li];
+                if (light.Item.IsSoft)
+                {
+                    SoftLight(light, li, p, lift, ns, view, look, m, diffuse, pixel, depth, ref lit, ref highlight);
+                    continue;
+                }
                 Vec3 toLight;
                 double distance;
                 if (light.Type == LightType.Distant)
@@ -523,15 +715,15 @@ public static class RayTracer
             {
                 var r = dir - ns * (2 * Vec3.Dot(dir, ns));
                 if (Vec3.Dot(r, nf) <= 0) r = dir - nf * (2 * Vec3.Dot(dir, nf));
-                color += (depth < _settings.MaxDepth ? Trace(p + lift, r.Normalized(), depth + 1, out _, far) : Background(r)) * reflection;
+                color += (depth < _settings.MaxDepth ? Trace(p + lift, r.Normalized(), depth + 1, out _, pixel, far) : Background(r)) * reflection;
             }
             if (transparency > 0 && depth < _settings.MaxDepth)
-                color += Transmitted(p, dir, nf, ns, lift, m.Ior, inside, depth, far) * transparency;
+                color += Transmitted(p, dir, nf, ns, lift, m.Ior, inside, depth, far, pixel) * transparency;
             return Fog(color, hit.T);
         }
 
         /// <summary>What's seen through a transparent surface: straight through, or bent by its refraction index.</summary>
-        private Vec3 Transmitted(Vec3 p, Vec3 dir, Vec3 nf, Vec3 ns, Vec3 lift, double ior, bool inside, int depth, double travelled)
+        private Vec3 Transmitted(Vec3 p, Vec3 dir, Vec3 nf, Vec3 ns, Vec3 lift, double ior, bool inside, int depth, double travelled, in PixelSamples pixel)
         {
             var through = dir;
             if (Math.Abs(ior - 1) > 1e-12)
@@ -544,7 +736,110 @@ public static class RayTracer
                     : (dir * eta + ns * (eta * cosI - Math.Sqrt(k))).Normalized();
             }
             var start = Vec3.Dot(through, nf) < 0 ? p - lift : p + lift;
-            return Trace(start, through, depth + 1, out _, travelled);
+            return Trace(start, through, depth + 1, out _, pixel, travelled);
+        }
+
+        /// <summary>
+        /// A soft light (an area light, or a point or spot light with a radius): its light and highlight averaged over
+        /// points across it, each with its own shadow ray, so shadows fade out over a penumbra.
+        /// </summary>
+        private void SoftLight(LightInfo light, int index, Vec3 p, Vec3 lift, Vec3 ns, Vec3 view, in Look look, Material m, Vec3 diffuse,
+            in PixelSamples pixel, int depth, ref Vec3 lit, ref Vec3 highlight)
+        {
+            var item = light.Item;
+            int k = pixel.PerHit(Math.Max(1, item.ShadowSamples));
+            bool area = light.Type == LightType.Area;
+            // A ball of light looks like a disc facing the point lit.
+            Vec3 du = Vec3.Zero, dv = Vec3.Zero;
+            if (!area)
+            {
+                var axis = (p - light.Position).Normalized();
+                if (axis.LengthSquared == 0) return;
+                du = axis.AnyPerpendicular() * item.Radius;
+                dv = Vec3.Cross(axis, du.Normalized()) * item.Radius;
+            }
+            var diffuseSum = Vec3.Zero;
+            var highlightSum = Vec3.Zero;
+            bool shadows = _settings.Shadows && item.Shadows && m.ReceiveShadows;
+            for (int i = 0; i < k; i++)
+            {
+                var (u, v) = pixel.Point(DimensionLight + index, depth, i, k);
+                Vec3 at;
+                if (area) at = light.Position + light.U * (u - 0.5) + light.V * (v - 0.5);
+                else
+                {
+                    var (x, y) = Disc(u, v);
+                    at = light.Position + du * x + dv * y;
+                }
+                var d = at - p;
+                double distance = d.Length;
+                if (distance == 0) continue;
+                var toLight = d / distance;
+                double ndl = Vec3.Dot(ns, toLight);
+                if (ndl <= 0) continue;
+                double strength = item.Falloff(distance);
+                if (area) strength *= Math.Max(0, Vec3.Dot(light.Direction, -toLight));
+                else if (light.Type == LightType.Spot)
+                    strength *= item.SpotFactor(Math.Acos(Math.Clamp(Vec3.Dot(light.Direction, -toLight), -1, 1)) * 180 / Math.PI);
+                if (strength <= 0) continue;
+                if (shadows) strength *= Transmission(p + lift, toLight, distance);
+                if (strength <= 0) continue;
+                var c = light.Color * strength;
+                diffuseSum += c * ndl;
+                if (look.Specular > 0)
+                {
+                    var r = ns * (2 * ndl) - toLight;
+                    double rv = Vec3.Dot(r, view);
+                    if (rv > 0) highlightSum += c * (look.Specular * Math.Pow(rv, m.Glossiness));
+                }
+            }
+            lit += Vec3.Scale(diffuse, diffuseSum) / k;
+            highlight += highlightSum / k;
+        }
+
+        /// <summary>
+        /// How much ambient light reaches a point, 0 to 1: rays over the hemisphere above it that meet a surface within the
+        /// occlusion distance hide some of it, the nearer the surface the more.
+        /// </summary>
+        private double Occlusion(Vec3 from, Vec3 ns, Vec3 nf, in PixelSamples pixel, int depth)
+        {
+            var o = _occlusion!;
+            int k = pixel.PerHit(o.Samples);
+            double hidden = 0;
+            for (int i = 0; i < k; i++)
+            {
+                var (u, v) = pixel.Point(DimensionOcclusion, depth, i, k);
+                var d = Hemisphere(ns, u, v);
+                if (Vec3.Dot(d, nf) <= 0) continue;
+                if (_bvh.Intersect(from, d, _bias, o.Distance, out var hit))
+                {
+                    double f = hit.T / o.Distance;
+                    hidden += 1 - f * f;
+                }
+            }
+            return Math.Clamp(1 - o.Strength * hidden / k, 0, 1);
+        }
+
+        /// <summary>
+        /// The environment's light falling on a point: the light a surface facing that way gets from the whole
+        /// hemisphere (<see cref="EnvironmentMap.Irradiance"/>), less what rays spread over it (cosine-weighted) find
+        /// hidden by whatever is in their way. Counting only what's hidden keeps open surfaces free of noise, and on
+        /// average it's the same as gathering every ray's light.
+        /// </summary>
+        private Vec3 EnvironmentLight(Vec3 from, Vec3 ns, Vec3 nf, in PixelSamples pixel, int depth)
+        {
+            var env = _environment!;
+            int k = pixel.PerHit(_scene.Environment.Samples);
+            var hidden = Vec3.Zero;
+            for (int i = 0; i < k; i++)
+            {
+                var (u, v) = pixel.Point(DimensionEnvironment, depth, i, k);
+                var d = Hemisphere(ns, u, v);
+                double share = Vec3.Dot(d, nf) <= 0 ? 0 : _settings.Shadows ? Transmission(from, d, double.PositiveInfinity) : 1;
+                if (share < 1) hidden += env.Blurred(d) * (1 - share);
+            }
+            var light = env.Irradiance(ns) - hidden / k;
+            return Vec3.Max(light, Vec3.Zero) * _environmentIntensity;
         }
 
         /// <summary>How much light gets from a point to a light: 1 unblocked, less through transparent surfaces, 0 blocked.</summary>

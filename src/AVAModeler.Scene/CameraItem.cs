@@ -20,6 +20,10 @@ public sealed class CameraItem : SceneItem
     public double PixelAspect = 1;
     /// <summary>The action-safe and title-safe areas as fractions of the frame's width and height, centred.</summary>
     public double ActionSafe = 0.9, TitleSafe = 0.8;
+    /// <summary>Depth of field (off by default).</summary>
+    public DepthOfField DepthOfField = new();
+    /// <summary>Motion blur (off by default).</summary>
+    public MotionBlur MotionBlur = new();
 
     public CameraItem(string name) : base(name) => Zoom = Watch(new Envelope(DefaultZoom));
 
@@ -38,6 +42,12 @@ public sealed class CameraItem : SceneItem
 
     public double VerticalFov(double frame) => ZoomToVerticalFov(Zoom.Evaluate(frame));
     public double HorizontalFov(double frame) => ZoomToHorizontalFov(Zoom.Evaluate(frame), FrameAspect);
+
+    /// <summary>
+    /// How far a world point is in front of the camera at a frame, along its view axis: the focal distance that puts
+    /// it in focus (negative when it's behind).
+    /// </summary>
+    public double DepthOf(Vec3 world, double frame) => CameraToWorld(frame).Inverted().TransformPoint(world).Z;
 
     /// <summary>A centred safe-area rectangle in pixels, for a fraction such as <see cref="ActionSafe"/>.</summary>
     public (double X, double Y, double Width, double Height) SafeArea(double fraction) =>

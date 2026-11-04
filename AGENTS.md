@@ -20,6 +20,7 @@ dotnet test tests/AVAModeler.Mcp.Tests            # the MCP server: handlers, wh
 dotnet test tests/AVAModeler.Chat.Tests           # the AI chat's agent loop, against a fake Anthropic API and a fake OpenAI-compatible server
 AVAMODELER_SHOTS=$PWD/Images dotnet test tests/AVAModeler.UI.Tests --filter Screenshot   # refresh the README's pictures
 python3 samples/images/make_textures.py           # redraws the sample texture images
+python3 samples/images/make_environment.py        # redraws the sample environment, studio.hdr
 ```
 
 `Directory.Build.props` sets `TreatWarningsAsErrors`, nullable reference types, implicit usings and
@@ -29,6 +30,8 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 
 - `src/AVAModeler.Core/`: maths (`Vec`, `Mat4`), the n-gon `Mesh` with its UV maps, surfaces and textures.
   - `Document.cs` holds the layers, the selection and the `UndoStack`. `Png.cs` writes PNGs (renders, glTF images).
+    `Hdr.cs` is `HdrImage` (float RGB pictures) and the Radiance RGBE reader (flat, old and new run-length scanlines,
+    `+Y`/`-Y`, `EXPOSURE`) and writer (flat), for environment maps.
   - `Texture.cs` is `TextureLayer` (an image map, or a procedural: `Procedural` names the kind, `Parameters` holds
     TFP0 to TFP3 and TIP0, with `TextureColor`, `Value` and `Falloff`) and the projections' maths. `Procedurals.cs`
     is LightWave 5's procedural textures: the catalog (`Procedurals.All`, each kind's settings with their LWOB slot,
@@ -76,6 +79,16 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   (`TexturedCorner.Local` and `World`), evaluated with `ProceduralTexture`; the shader in `GlRenderer.cs` repeats
   `Noise` and `ProceduralTexture.Pattern` in GLSL, with the permutation table as a 256 × 1 texture.
 - `src/AVAModeler.Scene/`: Layout's model: items, envelopes, bones, LWS and JSON scenes, and the ray tracer.
+  - `RenderEffects.cs`: the render effects' settings as immutable records, `AmbientOcclusion` and
+    `EnvironmentSettings` on the `Scene` (`Occlusion`, `Environment`), `DepthOfField` and `MotionBlur` on each
+    `CameraItem`, each with `Checked()` (throws an `ArgumentException` saying what's wrong, used by the UI and the MCP
+    tools alike). Change one by setting a new record (`with`). Soft lights are `LightItem`'s `Area` type
+    (`AreaWidth`, `AreaHeight`) and `Radius`, with `ShadowSamples`.
+  - `Rendering/EnvironmentMap.cs`: an environment picture by direction (lat-long, turned by its heading), its 64 × 32
+    blurred copy and irradiance table for lighting, loading and caching (`.hdr` through `Hdr`, else `TextureImages`),
+    and the built-in `builtin:sky` and `builtin:studio`. `Rendering/RayTracer.cs` does every effect: depth of field and
+    motion blur in the pixel loop (one `Tracer` per moment across the shutter), ambient occlusion, environment
+    lighting (only the hidden light is sampled, against the irradiance table) and soft lights where rays hit.
   - `SceneSnapshot.cs` (`Scene.Snapshot()`) puts a scene back as it was, items by reference (with every setting an
     edit can change, morphs' and displacements' included: extend it when you add one); `Scene.Copy` makes one
     that shares nothing that changes, to render on another thread; `Scene.Batch` raises `Changed` once for many edits.
@@ -133,6 +146,9 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
 - `src/AVAModeler.Modeler.UI/` and `src/AVAModeler.Layout.UI/`: the two workspaces. `Session.cs` holds
   `Preferences`. The Layout workspace shows a `LayoutSession` (from `AVAModeler.Layout`) and keeps no state of its own.
   - `AnimationWindow.cs` is Render › Render Animation (F10), a thin window over `AnimationRender` and `MovieEncoder`.
+  - `SceneSettingsPanel.cs` is Scene › Scene Settings' contents (frames, ambient, backdrop, ambient occlusion and
+    the environment), one undo step on OK; the camera's depth of field and motion blur and the lights' soft-shadow
+    settings are in `LayoutWorkspace`'s item panel, with Focus on calling `LayoutSession.FocusOn`.
   - `MeshInfoPanel.cs` is Mesh Info (W), docked beside the numeric panel and hidden until asked for: a thin view of
     `MeshCheck`, checking again (on the dispatcher, after a burst of changes) whenever the document changes while it's open.
 - `src/AVAModeler/`: the application, one window hosting both workspaces. `Program.cs` sends `--mcp` to the MCP
@@ -172,7 +188,9 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   `ArgumentException`) saying what to select; `Commands.Run` cancels it, agents get the message, and the UI shows it in
   the status bar, also when the error comes from a drag or a numeric-panel edit of an armed tool.
 - **Repeatable randomness.** Tools such as Jitter hash a `Seed` parameter rather than using `Random`, so the same
-  seed gives the same result. Procedural textures use `Noise` (Perlin's improved noise with his fixed table, whose
+  seed gives the same result. The ray tracer's samples (antialiasing jitter, lens, shutter, occlusion, environment and
+  soft-light rays) are hashes of the pixel, the ray and a "dimension" per effect, so a render is the same on any
+  number of threads. Procedural textures use `Noise` (Perlin's improved noise with his fixed table, whose
   reference values a test pins), never `Random`, so renders are the same every time; wave sources and phases come
   from the same table.
 - **Procedurals have three twins.** `ProceduralTexture.Pattern` (C#), the GLSL `pattern()` in `GlRenderer`'s texture
@@ -180,6 +198,11 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   compare the OpenGL picture with the software one, through the shader's C# twin and on a real context); a new kind
   gets a `ProceduralKind` number for the shader, its settings in LWOB slots (TFP0 to TFP3, TIP0) and an entry in
   `ModelerTools.ProceduralKinds` (a test checks the description lists every kind and setting with its default).
+- **Render effects are off by default and change nothing when off.** `EffectsBaselineTests` pins the hashes of a busy
+  scene rendered before the effects existed: keep every off path's arithmetic as it was (a new effect gets its own
+  branch). A new effect setting goes in its record (or the light or camera), `Scene.Copy`, `SceneSnapshot`,
+  `SceneJson` (written only when not the default), `.lws` where LightWave has a place for it, `SceneCensus` and the
+  MCP tools' descriptions with its units and default, and the README's known limits say where it isn't kept.
 - **OpenGL tests may skip.** `OffscreenGl` makes a windowless EGL context where Mesa offers one. Without it, the
   OpenGL comparison tests skip rather than fail.
 - **Agents use the command layer, never the mouse.** MCP handlers reach the document only through

@@ -40,7 +40,7 @@ public sealed partial class ModelerTools
     // ───────────────────────────── reading the scene ─────────────────────────────
 
     [McpServerTool(Name = "get_scene", ReadOnly = true, Idempotent = true)]
-    [Description("Describes Layout's scene: the frame range, frames per second, current frame, current camera, auto-key, ambient light, background and fog; then every item (object, null, light, camera, bone) with its #index, kind, name, parent, visibility, position (metres), rotation [heading, pitch, bank] (degrees), scale, which channels are animated, and its own settings (a light's type, colour, intensity, direction; a camera's zoom, field of view and frame size; an object's source, point and polygon counts, world bounds, bones, morphs (name, weight channel and weight) and displacements (numbered from 1, with their settings and amplitude)), all at one frame. Also any warnings (files that couldn't be loaded, missing images) and the scene's undo history (undo_scene: its depth, and what undo_scene and redo_scene would do next).")]
+    [Description("Describes Layout's scene: the frame range, frames per second, current frame, current camera, auto-key, ambient light, background, fog, ambient occlusion and environment; then every item (object, null, light, camera, bone) with its #index, kind, name, parent, visibility, position (metres), rotation [heading, pitch, bank] (degrees), scale, which channels are animated, and its own settings (a light's type, colour, intensity, direction, area size or radius and shadow samples; a camera's zoom, field of view, frame size, depth of field and motion blur; an object's source, point and polygon counts, world bounds, bones, morphs (name, weight channel and weight) and displacements (numbered from 1, with their settings and amplitude)), all at one frame. Also any warnings (files that couldn't be loaded, missing images) and the scene's undo history (undo_scene: its depth, and what undo_scene and redo_scene would do next).")]
     public Task<string> GetScene(
         [Description("The frame to describe positions and values at (default: the current frame).")] double? frame = null,
         CancellationToken cancel = default) =>
@@ -187,7 +187,7 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "add_light", Destructive = true)]
-    [Description("Adds a light. distant: parallel rays along its +Z axis from infinitely far (like the sun; its position doesn't matter). point: shines every way from its position. spot: shines along its +Z axis inside a cone. Unrotated, +Z points forward (away from the viewer in the Front view); turn it with rotation [heading, pitch, bank] in degrees (heading 90 shines along +X, pitch 90 straight down), or give look_at to aim it at a point. Colour is [r, g, b], whole numbers from 0 to 255 like surfaces'; intensity 1 is LightWave's 100% (more is brighter). Shadows are ray-traced. Values are constants, not keys.")]
+    [Description("Adds a light. distant: parallel rays along its +Z axis from infinitely far (like the sun; its position doesn't matter). point: shines every way from its position. spot: shines along its +Z axis inside a cone. area: a rectangle area_size [width, height] metres in its own XY plane, shining from its front along +Z, brightest straight ahead, casting soft shadows (a big area light makes soft ones, a small one sharper); a point or spot light with a radius (metres) is a ball of light with soft shadows too. Soft lights take shadow_samples rays a pixel (16 by default; more is smoother and slower). Unrotated, +Z points forward (away from the viewer in the Front view); turn it with rotation [heading, pitch, bank] in degrees (heading 90 shines along +X, pitch 90 straight down), or give look_at to aim it at a point. Colour is [r, g, b], whole numbers from 0 to 255 like surfaces'; intensity 1 is LightWave's 100% (more is brighter). Shadows are ray-traced. Values are constants, not keys.")]
     public Task<string> AddLight(
         [Description("distant (default), point or spot.")] string type = "distant",
         [Description("The light's name (default: \"Distant Light\", \"Point Light\" or \"Spot Light\"). Made unique if taken.")] string? name = null,
@@ -201,6 +201,9 @@ public sealed partial class ModelerTools
         [Description("Point and spot: the distance in metres at which it has faded (linearly) to nothing; 0 (default) for no falloff.")] double? range = null,
         [Description("Cast ray-traced shadows (default true).")] bool shadows = true,
         [Description("An item to move with (its parent), by name.")] string? parent = null,
+        [Description("Area only: [width, height] in metres along its X and Y axes (default [1, 1]).")] double[]? area_size = null,
+        [Description("Point and spot: the light's radius in metres, for soft shadows (default 0: a point, with hard shadows).")] double? radius = null,
+        [Description("Area, or point and spot with a radius: rays a pixel for its light and soft shadows, 1 to 256 (default 16).")] int? shadow_samples = null,
         CancellationToken cancel = default) =>
         DoScene("added a light", (c, l) =>
         {
@@ -209,6 +212,7 @@ public sealed partial class ModelerTools
             var parentItem = parent == null ? null : Item(s, parent, "parent");
             var light = s.AddLight(FreeName(s, name, $"{kind} Light"), kind);
             SetLight(light, color, intensity, cone_angle, edge_angle, range, shadows);
+            SetSoftLight(light, area_size, radius, shadow_samples);
             Place(l, light, position, rotation, null, parentItem, look_at);
             return ItemNow(c, l, light, l.Frame);
         }, cancel);
@@ -308,7 +312,7 @@ public sealed partial class ModelerTools
     // ───────────────────────────── arranging items ─────────────────────────────
 
     [McpServerTool(Name = "set_item", Destructive = true)]
-    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position) and visibility. A light's type, colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none) and shadows. A camera's zoom or fov (vertical, degrees), width and height (pixels), and make_current. An object's cast_shadows and receive_shadows. A bone's rest pose (rest_position, rest_rotation, rest_length: where it binds to the object; changing it leaves the bone's pose, its channels, where it was, so the object bends by the difference, unless reset_pose is true), rest_at_frame (Layout's Rest Here: makes its pose at that frame its rest pose), reset_pose (puts its channels back at its rest pose, unanimated), strength and active. Intensity and zoom set the value throughout; when they're animated, use set_key.")]
+    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position) and visibility. A light's type (distant, point, spot or area), colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none), shadows, area_size (area, metres), radius (point and spot, metres: soft shadows) and shadow_samples. A camera's zoom or fov (vertical, degrees), width and height (pixels), make_current, depth of field (depth_of_field on/off, focal_distance in metres along its view or focus_on an item to put it in focus, and f_stop as LightWave's lens: the focal length is zoom × 7.5 mm and the opening that over the f-stop, so 4 is barely any blur at scene scale and 0.1 to 0.5 a strong, miniature-like one; or aperture, the opening's radius in metres, instead of f_stop; dof_samples rays a pixel) and motion blur (motion_blur on/off, shutter as a fraction of a frame centred on it, 0.5 by default; blur_samples rays a pixel). Depth of field and motion blur raise the rays a pixel to their samples. An object's cast_shadows and receive_shadows. A bone's rest pose (rest_position, rest_rotation, rest_length: where it binds to the object; changing it leaves the bone's pose, its channels, where it was, so the object bends by the difference, unless reset_pose is true), rest_at_frame (Layout's Rest Here: makes its pose at that frame its rest pose), reset_pose (puts its channels back at its rest pose, unanimated), strength and active. Intensity and zoom set the value throughout; when they're animated, use set_key.")]
     public Task<string> SetItem(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("A new name.")] string? name = null,
@@ -322,11 +326,23 @@ public sealed partial class ModelerTools
         [Description("Spot light: the soft edge in degrees.")] double? edge_angle = null,
         [Description("Point or spot light: metres to fade to nothing; 0 for no falloff.")] double? range = null,
         [Description("Light: cast shadows.")] bool? shadows = null,
+        [Description("Area light: [width, height] in metres.")] double[]? area_size = null,
+        [Description("Point or spot light: radius in metres for soft shadows; 0 for a point.")] double? radius = null,
+        [Description("Soft light: rays a pixel for its light and shadows, 1 to 256.")] int? shadow_samples = null,
         [Description("Camera: zoom factor (1 / tan(vertical fov / 2)).")] double? zoom = null,
         [Description("Camera: vertical field of view in degrees (instead of zoom).")] double? fov = null,
         [Description("Camera: picture width in pixels.")] int? width = null,
         [Description("Camera: picture height in pixels.")] int? height = null,
         [Description("Camera: make it the current camera.")] bool? make_current = null,
+        [Description("Camera: depth of field on or off.")] bool? depth_of_field = null,
+        [Description("Camera: the distance in focus, metres in front of it along its view (default 5).")] double? focal_distance = null,
+        [Description("Camera: an item to bring into focus at the current frame (sets focal_distance to its depth, and turns depth of field on).")] string? focus_on = null,
+        [Description("Camera: LightWave's lens f-stop, more than 0 (default 4); smaller blurs more.")] double? f_stop = null,
+        [Description("Camera: the lens opening's radius in metres (instead of f_stop, worked out at the current zoom).")] double? aperture = null,
+        [Description("Camera: depth of field rays a pixel, 1 to 256 (default 16).")] int? dof_samples = null,
+        [Description("Camera: motion blur on or off.")] bool? motion_blur = null,
+        [Description("Camera: how long the shutter is open, as a fraction of a frame, more than 0 and at most 1 (default 0.5).")] double? shutter = null,
+        [Description("Camera: motion blur rays a pixel, 1 to 256 (default 16).")] int? blur_samples = null,
         [Description("Object: cast shadows on other things.")] bool? cast_shadows = null,
         [Description("Object: show shadows cast on it.")] bool? receive_shadows = null,
         [Description("Bone: where it starts at rest [x, y, z], metres, in the object's coordinates (or its parent bone's: measured from the parent's start along its axes).")] double[]? rest_position = null,
@@ -348,6 +364,10 @@ public sealed partial class ModelerTools
             }
             Only<LightItem>(type, "type"); Only<LightItem>(color, "color"); Only<LightItem>(intensity, "intensity"); Only<LightItem>(cone_angle, "cone_angle");
             Only<LightItem>(edge_angle, "edge_angle"); Only<LightItem>(range, "range"); Only<LightItem>(shadows, "shadows");
+            Only<LightItem>(area_size, "area_size"); Only<LightItem>(radius, "radius"); Only<LightItem>(shadow_samples, "shadow_samples");
+            Only<CameraItem>(depth_of_field, "depth_of_field"); Only<CameraItem>(focal_distance, "focal_distance"); Only<CameraItem>(focus_on, "focus_on");
+            Only<CameraItem>(f_stop, "f_stop"); Only<CameraItem>(aperture, "aperture"); Only<CameraItem>(dof_samples, "dof_samples");
+            Only<CameraItem>(motion_blur, "motion_blur"); Only<CameraItem>(shutter, "shutter"); Only<CameraItem>(blur_samples, "blur_samples");
             Only<CameraItem>(zoom, "zoom"); Only<CameraItem>(fov, "fov"); Only<CameraItem>(width, "width"); Only<CameraItem>(height, "height"); Only<CameraItem>(make_current, "make_current");
             Only<ObjectItem>(cast_shadows, "cast_shadows"); Only<ObjectItem>(receive_shadows, "receive_shadows");
             Only<Bone>(rest_length, "rest_length"); Only<Bone>(strength, "strength"); Only<Bone>(active, "active");
@@ -372,9 +392,29 @@ public sealed partial class ModelerTools
                 case LightItem light:
                     if (type != null) light.Type = Json.Choice<LightType>(type, "type");
                     SetLight(light, color, intensity, cone_angle, edge_angle, range, shadows);
+                    SetSoftLight(light, area_size, radius, shadow_samples);
                     break;
                 case CameraItem cam:
                     SetCamera(cam, zoom, fov, width, height);
+                    var dof = cam.DepthOfField;
+                    if (depth_of_field is { } dofOn) dof = dof with { On = dofOn };
+                    if (focal_distance != null && focus_on != null) throw new ArgumentException("Give focal_distance or focus_on, not both.");
+                    if (focal_distance is { } fd) dof = dof with { FocalDistance = fd };
+                    if (f_stop != null && aperture != null) throw new ArgumentException("Give f_stop or aperture, not both.");
+                    if (f_stop is { } fs) dof = dof with { FStop = fs };
+                    if (aperture is { } ap)
+                    {
+                        if (!double.IsFinite(ap) || ap <= 0) throw new ArgumentException("aperture must be more than 0 metres (the lens opening's radius).");
+                        dof = dof with { FStop = DepthOfField.FStopFor(ap, cam.Zoom.Evaluate(l.Frame)) };
+                    }
+                    if (dof_samples is { } ds) dof = dof with { Samples = ds };
+                    cam.DepthOfField = dof.Checked();
+                    if (focus_on != null) l.FocusOn(cam, Item(s, focus_on, "focus_on"));
+                    var blur = cam.MotionBlur;
+                    if (motion_blur is { } mb) blur = blur with { On = mb };
+                    if (shutter is { } sh) blur = blur with { Shutter = sh };
+                    if (blur_samples is { } bs) blur = blur with { Samples = bs };
+                    cam.MotionBlur = blur.Checked();
                     if (make_current == true) s.CurrentCamera = cam;
                     else if (make_current == false && s.CurrentCamera == cam)
                         throw new ArgumentException($"To stop using {cam.Name}, make another camera current instead.");
@@ -572,7 +612,7 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "set_scene", Destructive = true)]
-    [Description("Changes the scene's settings, leaving out what you don't give: the frame range (first_frame, last_frame, whole frames; 1 to 60 by default) and frames per second; ambient light (colour 0 to 255, intensity as a fraction, 0.25 by default); the backdrop: a colour, or a gradient from gradient_bottom (straight down) to gradient_top (straight up); fog (linear: none up to fog_min metres from the camera, full at fog_max); the current camera (the one render_scene uses); and the current frame (where Layout's timeline stands, and the default for the other tools).")]
+    [Description("Changes the scene's settings, leaving out what you don't give: the frame range (first_frame, last_frame, whole frames; 1 to 60 by default) and frames per second; ambient light (colour 0 to 255, intensity as a fraction, 0.25 by default); the backdrop: a colour, or a gradient from gradient_bottom (straight down) to gradient_top (straight up); fog (linear: none up to fog_min metres from the camera, full at fog_max); the current camera (the one render_scene uses); and the current frame (where Layout's timeline stands, and the default for the other tools). Render effects, all off by default: ambient occlusion (ao: darkens creases, corners and contact areas by dimming the ambient light where nearby surfaces hide it; raise ambient_intensity to see it) and an environment picture round the scene (environment: a lat-long .hdr, .png or .jpg file, or builtin:sky / builtin:studio; it replaces the backdrop and shows in reflections, and with environment_lighting it lights the scene too, with soft shadows). Sample counts are rays a pixel, shared among the pixel's antialiasing rays: more is smoother and slower.")]
     public Task<string> SetScene(
         [Description("The first frame, 0 or more.")] int? first_frame = null,
         [Description("The last frame, not before the first.")] int? last_frame = null,
@@ -589,6 +629,15 @@ public sealed partial class ModelerTools
         [Description("The fog's colour [r, g, b], 0 to 255.")] double[]? fog_color = null,
         [Description("The camera to render through, by name.")] string? camera = null,
         [Description("The current frame.")] double? frame = null,
+        [Description("Ambient occlusion on or off (default off).")] bool? ao = null,
+        [Description("Ambient occlusion rays a pixel, 1 to 256 (default 16).")] int? ao_samples = null,
+        [Description("How far, in metres, a surface still shades a point (default 1; about the size of the gaps to darken).")] double? ao_distance = null,
+        [Description("How much of the hidden ambient light is taken away, 0 to 1 (default 1).")] double? ao_strength = null,
+        [Description("The environment picture: a latitude-longitude (equirectangular) image file relative to the working folder (.hdr Radiance for high dynamic range, or .png/.jpg/.bmp), or builtin:sky or builtin:studio (made up, no file needed); \"\" for none (the default). Its middle looks along +Z, straight up is its top edge.")] string? environment = null,
+        [Description("The environment's brightness, 0 or more (default 1).")] double? environment_intensity = null,
+        [Description("Degrees the environment is turned about Y (default 0; positive turns what was ahead toward +X).")] double? environment_heading = null,
+        [Description("Whether the environment lights the scene too, as soft light from every direction with shadows (default off: only seen).")] bool? environment_lighting = null,
+        [Description("Environment lighting rays a pixel, 1 to 256 (default 16).")] int? environment_samples = null,
         CancellationToken cancel = default) =>
         DoScene("changed the scene's settings", (c, l) =>
         {
@@ -609,8 +658,23 @@ public sealed partial class ModelerTools
             CameraItem? cam = null;
             if (camera != null && (cam = Item(s, camera, "camera") as CameraItem) == null) throw new ArgumentException($"{camera} isn't a camera.");
             if (frame is { } fr && (!double.IsFinite(fr) || fr < first || fr > last)) throw new ArgumentException($"frame must be within the frames, {first} to {last}.");
+            var occlusion = s.Occlusion;
+            if (ao is { } aoOn) occlusion = occlusion with { On = aoOn };
+            if (ao_samples is { } aos) occlusion = occlusion with { Samples = aos };
+            if (ao_distance is { } aod) occlusion = occlusion with { Distance = aod };
+            if (ao_strength is { } aost) occlusion = occlusion with { Strength = aost };
+            occlusion.Checked();
+            var env = s.Environment;
+            if (environment != null) env = env with { Image = EnvironmentImage(environment) };
+            if (environment_intensity is { } ei) env = env with { Intensity = ei };
+            if (environment_heading is { } eh) env = env with { Heading = eh };
+            if (environment_lighting is { } el) env = env with { Lighting = el };
+            if (environment_samples is { } es) env = env with { Samples = es };
+            env.Checked();
+            if (env.Lighting && !env.On) throw new ArgumentException("environment_lighting needs an environment: give environment too (a file, or builtin:sky or builtin:studio).");
             bool settings = first_frame != null || last_frame != null || fps != null || ambient_color != null || ambient_intensity != null || background_color != null
-                || gradient != null || gradient_top != null || gradient_bottom != null || fog != null || fog_min != null || fog_max != null || fog_color != null || camera != null;
+                || gradient != null || gradient_top != null || gradient_bottom != null || fog != null || fog_min != null || fog_max != null || fog_color != null || camera != null
+                || occlusion != s.Occlusion || env != s.Environment;
             // Only the frame: that isn't a change to the scene (nor an undo step).
             if (settings) s.Batch(() =>
             {
@@ -626,6 +690,7 @@ public sealed partial class ModelerTools
                 (s.FogMinDistance, s.FogMaxDistance) = (fogMin, fogMax);
                 if (fogColour is { } fc) s.FogColor = fc;
                 if (cam != null) s.CurrentCamera = cam;
+                (s.Occlusion, s.Environment) = (occlusion, env);
                 s.Notify();
             });
             l.SetFrame(frame ?? l.Frame);
@@ -661,7 +726,7 @@ public sealed partial class ModelerTools
     // ───────────────────────────── seeing ─────────────────────────────
 
     [McpServerTool(Name = "render_scene", ReadOnly = true, Idempotent = true)]
-    [Description("Ray-traces a frame of the scene through a camera as a PNG, as Layout's Render Frame does: every surface setting and texture, the scene's lights with ray-traced shadows, ambient light, backdrop and fog, reflections and transparency. The size defaults to the camera's picture shape at up to 640 across. Slower than render_scene_view: start small and with few samples, then go up.")]
+    [Description("Ray-traces a frame of the scene through a camera as a PNG, as Layout's Render Frame does: every surface setting and texture, the scene's lights with ray-traced shadows (soft from area lights and lights with a radius), ambient light (with ambient occlusion if set_scene turned it on), backdrop or environment (and its lighting) and fog, reflections and transparency, and the camera's depth of field and motion blur if set_item turned them on (they raise the rays a pixel to their samples). The size defaults to the camera's picture shape at up to 640 across. Slower than render_scene_view: start small and with few samples, then go up.")]
     public async Task<CallToolResult> RenderScene(
         [Description("The frame (default: the current frame).")] double? frame = null,
         [Description("Width in pixels, 16 to 1920 (default: the camera's, at most 640).")] int? width = null,
@@ -685,7 +750,8 @@ public sealed partial class ModelerTools
         var clock = Stopwatch.StartNew();
         var image = await Rendering(t => ScenePictures.Render(copy, f, cam, w, h, samples, shadows, reflections, transparency, t), RenderTimeLimit,
             "The render took longer than {0} and was stopped: try a smaller size or fewer samples.", cancel).ConfigureAwait(false);
-        string about = FormattableString.Invariant($"Frame {f:0.###} through {cam.Name}, {w}×{h}, {samples} sample{(samples == 1 ? "" : "s")} a pixel, in {clock.Elapsed.TotalSeconds:0.0} s.");
+        int rays = RayTracer.RaysPerPixel(new RenderSettings { SamplesPerPixel = samples }, cam);
+        string about = FormattableString.Invariant($"Frame {f:0.###} through {cam.Name}, {w}×{h}, {rays} ray{(rays == 1 ? "" : "s")} a pixel{(rays != samples ? " (raised by depth of field or motion blur)" : "")}, in {clock.Elapsed.TotalSeconds:0.0} s.");
         if (problems.Count > 0) about += " " + string.Join(" ", problems);
         return new CallToolResult { Content = [ImageContentBlock.FromBytes(image.ToPng(alpha: false), "image/png"), new TextContentBlock { Text = about }] };
     }
@@ -718,7 +784,7 @@ public sealed partial class ModelerTools
     }
 
     [McpServerTool(Name = "render_animation", Destructive = true)]
-    [Description("Ray-traces a run of frames into numbered PNG files in a folder inside the working folder (e.g. frames/frame0001.png, numbered by frame), and returns a contact sheet of them (up to eight a row) and the list of files. With movie (mp4, gif or both) it then joins this run's frames, in order, into frames/frame.mp4 (H.264) and/or a looping frames/frame.gif (at most 640 across), playing at the scene's frames per second divided by step, so it runs at the scene's speed; that needs ffmpeg installed (without it the frames are still saved and the reply says so). Bounded so it can't run away: at most 120 frames, 960 pixels each way and 4 samples a pixel, and width × height × samples × frames at most 20 million; it stops after 5 minutes. For a longer movie, render the frames in parts (first/last) into one folder, then join them all with make_movie. An existing file is only replaced when overwrite is true.")]
+    [Description("Ray-traces a run of frames into numbered PNG files in a folder inside the working folder (e.g. frames/frame0001.png, numbered by frame), and returns a contact sheet of them (up to eight a row) and the list of files. With movie (mp4, gif or both) it then joins this run's frames, in order, into frames/frame.mp4 (H.264) and/or a looping frames/frame.gif (at most 640 across), playing at the scene's frames per second divided by step, so it runs at the scene's speed; that needs ffmpeg installed (without it the frames are still saved and the reply says so). Bounded so it can't run away: at most 120 frames, 960 pixels each way and 4 samples a pixel, and width × height × rays a pixel × frames at most 20 million (the camera's depth of field and motion blur, which render_animation honours, count their samples as the rays a pixel); it stops after 5 minutes. For a longer movie, render the frames in parts (first/last) into one folder, then join them all with make_movie. An existing file is only replaced when overwrite is true.")]
     public async Task<CallToolResult> RenderAnimation(
         [Description("The folder for the files, relative to the working folder (default \"frames\"); made if needed.")] string folder = "frames",
         [Description("The files' names before the frame number (default \"frame\").")] string name = "frame",
@@ -749,9 +815,10 @@ public sealed partial class ModelerTools
             if (frames.Count > MaxAnimationFrames) throw new ArgumentException($"That's {frames.Count} frames; render_animation does at most {MaxAnimationFrames} at a time. Use a bigger step, or render it in parts.");
             var cm = RenderCamera(s, camera);
             var (pw, ph) = PictureSize(cm, width, height, 320, MaxAnimationSize);
-            long work = (long)pw * ph * samples * frames.Count;
+            int rays = RayTracer.RaysPerPixel(new RenderSettings { SamplesPerPixel = samples }, cm);
+            long work = (long)pw * ph * rays * frames.Count;
             if (work > MaxAnimationWork)
-                throw new ArgumentException(FormattableString.Invariant($"That's {work / 1e6:0.#} million rays (width × height × samples × frames); at most {MaxAnimationWork / 1e6:0} million at a time. Render smaller, with fewer samples or frames."));
+                throw new ArgumentException(FormattableString.Invariant($"That's {work / 1e6:0.#} million rays (width × height × rays a pixel × frames, with {rays} rays a pixel{(rays != samples ? " from the camera's depth of field or motion blur samples" : "")}); at most {MaxAnimationWork / 1e6:0} million at a time. Render smaller, with fewer samples (dof_samples, blur_samples) or frames."));
             var files = Files(c);
             string dir = Path.GetDirectoryName(files.Resolve(Path.Combine(folder, "frame.png")))!;
             var paths = frames.Select(fr => Path.Combine(dir, FormattableString.Invariant($"{name}{fr:0000}.png"))).ToList();
@@ -1035,6 +1102,27 @@ public sealed partial class ModelerTools
         if (shadows is { } sh) light.Shadows = sh;
     }
 
+    private static void SetSoftLight(LightItem light, double[]? areaSize, double? radius, int? samples)
+    {
+        if (areaSize != null)
+        {
+            if (light.Type != LightType.Area) throw new ArgumentException($"area_size is for area lights, and {light.Name} is a {light.Type.ToString().ToLowerInvariant()} light (set type area).");
+            if (areaSize.Length != 2 || areaSize.Any(v => !double.IsFinite(v) || v <= 0)) throw new ArgumentException("area_size must be [width, height], each more than 0 metres.");
+            (light.AreaWidth, light.AreaHeight) = (areaSize[0], areaSize[1]);
+        }
+        if (radius is { } r)
+        {
+            if (light.Type is not (LightType.Point or LightType.Spot)) throw new ArgumentException($"radius is for point and spot lights (an area light's size is area_size), and {light.Name} is a {light.Type.ToString().ToLowerInvariant()} light.");
+            if (!double.IsFinite(r) || r < 0) throw new ArgumentException("radius must be 0 (a point, hard shadows) or more, in metres.");
+            light.Radius = r;
+        }
+        if (samples is { } n)
+        {
+            if (n < 1 || n > RenderEffects.MaxSamples) throw new ArgumentException($"shadow_samples must be from 1 to {RenderEffects.MaxSamples}.");
+            light.ShadowSamples = n;
+        }
+    }
+
     private static void SetCamera(CameraItem cam, double? zoom, double? fov, int? width, int? height)
     {
         if (zoom != null && fov != null) throw new ArgumentException("Give zoom or fov, not both.");
@@ -1060,6 +1148,25 @@ public sealed partial class ModelerTools
             if (h < 16 || h > 8192) throw new ArgumentException("height must be from 16 to 8192 pixels.");
             cam.Height = h;
         }
+    }
+
+    /// <summary>
+    /// An environment image an agent gave: "" for none, a built-in name as it is, or a file in (or below) the working
+    /// folder, made absolute, which must be there and readable.
+    /// </summary>
+    private string EnvironmentImage(string given)
+    {
+        string image = given.Trim();
+        if (image.Length == 0) return "";
+        if (image.StartsWith(EnvironmentMap.BuiltinPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            if (EnvironmentMap.Load(image, null, out var builtinProblem) == null) throw new ArgumentException(builtinProblem);
+            return image.ToLowerInvariant();
+        }
+        string full = Path.GetFullPath(Path.Combine(host.Root, image));
+        if (EnvironmentMap.Load(full, null, out var problem) == null)
+            throw new ArgumentException($"{problem} The path is relative to the working folder; or use builtin:sky or builtin:studio, which need no file.");
+        return full;
     }
 
     private static CameraItem RenderCamera(SceneModel s, string? camera)

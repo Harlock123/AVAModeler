@@ -15,7 +15,7 @@ namespace AVAModeler.Mcp.Tests;
 /// </summary>
 public class RecipeTests
 {
-    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table"];
+    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table", "product_shot"];
 
     /// <summary>Each recipe with arguments that keep it quick (small pictures, few frames).</summary>
     public static TheoryData<string, string> Cases => new()
@@ -32,6 +32,7 @@ public class RecipeTests
         { "printable_part", """{"width": "0.05", "hole": "0.01"}""" },
         { "rounded_box", """{"segments": "2"}""" },
         { "marble_table", """{"check": "0.4"}""" },
+        { "product_shot", """{"width": "48", "environment": "builtin:sky"}""" },
     };
 
     /// <summary>A recipe's tool calls, read from its text as an agent reads them.</summary>
@@ -121,6 +122,17 @@ public class RecipeTests
             case "chess_pawn":
                 Assert.Equal(0.06, Bounds(0).Size.Y, 3);
                 Assert.Equal(2 * 0.3 * 0.06 / 0.88, Bounds(0).Size.X, 3);
+                break;
+            case "product_shot":
+                Assert.True(b.Scene.Occlusion.On);
+                Assert.Equal("builtin:sky", b.Scene.Environment.Image);
+                Assert.True(b.Scene.Environment.Lighting);
+                var key = Assert.IsType<LightItem>(b.Scene.Items.Single(i => i.Name == "Key"));
+                Assert.Equal((LightType.Area, 1.2), (key.Type, key.AreaWidth));
+                var dof = b.Scene.CurrentCamera!.DepthOfField;
+                Assert.True(dof.On);
+                // Focused on the ball's middle, about 2.3 m away.
+                Assert.InRange(dof.FocalDistance, 2.0, 2.6);
                 break;
             case "three_point_lighting":
                 Assert.Equal(["Camera", "Modeler object", "Key", "Fill", "Rim"], b.Scene.Items.Select(i => i.Name));

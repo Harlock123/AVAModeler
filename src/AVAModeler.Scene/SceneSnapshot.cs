@@ -4,7 +4,7 @@ namespace AVAModeler.Scene;
 
 /// <summary>
 /// A scene as it was at one moment (<see cref="Scene.Snapshot"/>), to put back with <see cref="Restore"/>: its
-/// settings and current camera, which items it held and in what order, and each item's name, parent, pivot,
+/// settings (the render effects' among them) and current camera, which items it held and in what order, and each item's name, parent, pivot,
 /// visibility, channels and own settings (a light's, a camera's, an object's, a bone's). Items are kept by reference,
 /// so restoring brings back the very items that were removed since, takes away those added since, and leaves anything
 /// that holds an item (a selection) pointing at the right one. An object's morph targets and displacements are kept by
@@ -20,6 +20,8 @@ public sealed class SceneSnapshot
     private readonly double _ambientIntensity, _fogMin, _fogMax;
     private readonly bool _gradient;
     private readonly FogType _fog;
+    private readonly AmbientOcclusion _occlusion;
+    private readonly EnvironmentSettings _environment;
     private readonly CameraItem? _camera;
     private readonly List<SceneItem> _items;
     private readonly List<ItemState> _states;
@@ -32,6 +34,7 @@ public sealed class SceneSnapshot
         (_ambient, _ambientIntensity, _background, _gradient, _top, _bottom) =
             (scene.AmbientColor, scene.AmbientIntensity, scene.BackgroundColor, scene.GradientBackground, scene.GradientTop, scene.GradientBottom);
         (_fog, _fogMin, _fogMax, _fogColor) = (scene.Fog, scene.FogMinDistance, scene.FogMaxDistance, scene.FogColor);
+        (_occlusion, _environment) = (scene.Occlusion, scene.Environment);
         _camera = scene.CameraField;
         _items = [.. scene.ItemList];
         _states = _items.Select(i => new ItemState(i)).ToList();
@@ -56,6 +59,7 @@ public sealed class SceneSnapshot
         (Scene.AmbientColor, Scene.AmbientIntensity, Scene.BackgroundColor, Scene.GradientBackground, Scene.GradientTop, Scene.GradientBottom) =
             (_ambient, _ambientIntensity, _background, _gradient, _top, _bottom);
         (Scene.Fog, Scene.FogMinDistance, Scene.FogMaxDistance, Scene.FogColor) = (_fog, _fogMin, _fogMax, _fogColor);
+        (Scene.Occlusion, Scene.Environment) = (_occlusion, _environment);
         Scene.Notify();
     });
 
@@ -99,10 +103,12 @@ public sealed class SceneSnapshot
         private static Action Light(LightItem l)
         {
             var (type, color, range, cone, edge, shadows) = (l.Type, l.Color, l.Range, l.ConeAngle, l.EdgeAngle, l.Shadows);
+            var (width, height, radius, samples) = (l.AreaWidth, l.AreaHeight, l.Radius, l.ShadowSamples);
             var intensity = new EnvelopeState(l.Intensity);
             return () =>
             {
                 (l.Type, l.Color, l.Range, l.ConeAngle, l.EdgeAngle, l.Shadows) = (type, color, range, cone, edge, shadows);
+                (l.AreaWidth, l.AreaHeight, l.Radius, l.ShadowSamples) = (width, height, radius, samples);
                 intensity.Restore();
             };
         }
@@ -110,10 +116,12 @@ public sealed class SceneSnapshot
         private static Action Camera(CameraItem c)
         {
             var (w, h, aspect, action, title) = (c.Width, c.Height, c.PixelAspect, c.ActionSafe, c.TitleSafe);
+            var (dof, blur) = (c.DepthOfField, c.MotionBlur);
             var zoom = new EnvelopeState(c.Zoom);
             return () =>
             {
                 (c.Width, c.Height, c.PixelAspect, c.ActionSafe, c.TitleSafe) = (w, h, aspect, action, title);
+                (c.DepthOfField, c.MotionBlur) = (dof, blur);
                 zoom.Restore();
             };
         }

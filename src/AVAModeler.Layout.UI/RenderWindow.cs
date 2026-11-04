@@ -12,7 +12,8 @@ namespace AVAModeler.Layout.UI;
 
 /// <summary>
 /// Rendering a frame with the ray tracer: the settings (size, antialiasing, shadows, reflections), a progress bar
-/// with Stop, the picture as it finishes, and Save as PNG.
+/// with Stop, the picture as it finishes, and Save as PNG. The render effects are the scene's, the camera's and the
+/// lights' own settings, so they're set there (Scene Settings and the item panels), not here.
 /// </summary>
 public sealed class RenderWindow : Window
 {
@@ -107,7 +108,8 @@ public sealed class RenderWindow : Window
             IProgress<double> report = progress;
             _result = await Task.Run(() => RayTracer.Render(scene, frame, settings, report.Report, token), token);
             _image.Source = ToBitmap(_result);
-            _status.Text = $"Frame {frame:0}: {_result.Width} × {_result.Height} in {(DateTime.Now - started).TotalSeconds:0.0} s.";
+            int rays = scene.CurrentCamera is { } cam ? RayTracer.RaysPerPixel(settings, settings.Camera ?? cam) : settings.SamplesPerPixel;
+            _status.Text = $"Frame {frame:0}: {_result.Width} × {_result.Height}, {rays} ray{(rays == 1 ? "" : "s")} a pixel, in {(DateTime.Now - started).TotalSeconds:0.0} s.";
             var missing = _session.ImageProblems();
             if (missing.Count > 0) _status.Text += " " + string.Join(" ", missing);
         }

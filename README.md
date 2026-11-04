@@ -278,6 +278,13 @@ Modeler and Layout shows the change at once.
     replaces its starting value, so its motion begins at the first frame you key. AI agents' keys follow the same rule.
   - Delete Key leaves a channel's only key, which holds its value.
   - The timeline plays, steps, and shows the chosen item's keys.
+  - **The dope sheet** (D, or View › Dope Sheet, in the graph editor's place): every item as a row against the frames
+    (and with Channels, each keyed channel as a row of its own), each key a diamond. Click a key to choose it,
+    Shift-click to add or take one away, or drag a box round several; drag the chosen keys sideways to move them in
+    time, snapped to whole frames (a key they land on is replaced). Delete removes them (a channel's last key stays),
+    Ctrl+C and Ctrl+V copy them and paste them at the current frame onto the same channels, Ctrl+A chooses them all,
+    the arrow keys nudge them a frame, and Scale × stretches or squeezes their timing about the earliest. Clicking the
+    frame numbers moves to that frame. Each change is one undo step, and keys keep their values and TCB settings.
   - The graph editor shows the channels as curves. Choose a key to set its value, tension, continuity, bias and
     linear flag, and set what happens before the first key and after the last.
 - **Undo**: Ctrl+Z (Edit › Undo) takes back the last change to the scene, and Ctrl+Shift+Z or Ctrl+Y (Edit › Redo)
@@ -397,6 +404,7 @@ On Windows, unzip and run `AVAModeler.exe`. On macOS, if Gatekeeper refuses to o
 | Backdrops | View › Backdrop…, or the Display tab | D the Backdrop panel |
 | Edit | | Ctrl+Z undo, Ctrl+Shift+Z redo, X cut, C copy, Ctrl+V paste, Delete remove; in Layout, Ctrl+Z undoes the scene, Ctrl+Shift+Z or Ctrl+Y redoes |
 | Workspaces | | F1 Modeler, F2 Layout, F4 the AI Chat panel, F9 render a frame and F10 an animation (in Layout) |
+| Dope sheet (Layout) | Click a key, Shift-click to add, drag a box; drag keys to move them in time; click the frame numbers to go there | D shows it (or the graph editor again); with it focused, Delete, Ctrl+C, Ctrl+V (at the current frame), Ctrl+A, and ← → to nudge a frame |
 | Files | | Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Q quit (File › Quit) |
 
 The default tool keys follow the classic layout: T Move, Y Rotate, H Size, Shift+H Stretch, Shift+X Box, Shift+O
@@ -582,6 +590,7 @@ The Layout tools:
 | `set_ik`, `bake_ik` | Inverse kinematics: a bone's goal (its chain reaches for it), full-time IK, anchor, locked channels and heading, pitch and bank limits; and baking the chain's solved rotations into keys over a run of frames. `get_scene` shows each bone's chain, reach, `tip_to_goal` and `ik_rotation`. |
 | `set_transform`, `look_at` | Position, rotation and scale at a frame, as keys or as plain values (the rule is in the tool's description); turning anything to face a point or another item. |
 | `set_key`, `delete_key`, `set_end_behavior` | One key on one channel with tension, continuity, bias and the linear flag; removing keys; what a channel does before its first key and after its last. |
+| `shift_keys`, `scale_keys` | Moving keys in time, as the dope sheet does: an item's keys (or every item's), on one channel or all, between two frames, shifted by whole frames or scaled about a pivot frame (snapped to frames, keeping their values and TCB settings). |
 | `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame; ambient occlusion (`ao`, samples, distance in metres, strength) and the environment (`environment`: a lat-long `.hdr`, `.png` or `.jpg` in the working folder, or `builtin:sky` or `builtin:studio`; intensity, heading, and `environment_lighting` with its samples). |
 | `undo_scene`, `redo_scene` | Layout's undo and redo, on the history the person's Ctrl+Z uses: each scene call is one step ("Agent: …"), and the person's steps can be undone too. |
 | `render_scene_view` | A quick picture as Layout's view draws it, through the camera (bank included) or from above, the front, the side or an orbit, with the lights, cameras, nulls and bones drawn; it also says where each item landed in the picture. |
@@ -825,6 +834,10 @@ Layout reuses them.
   a light's radius, the effects' sample counts, ambient occlusion and the environment have no place there and are
   kept only in `.avascene`. glTF export leaves them all out.
 
+- **The dope sheet** always fits the scene's frames across its width (there's no zooming in on a stretch of frames),
+  and shows only keys inside them; channels never keyed (holding a constant) have no row or keys. Keys move by whole
+  frames only. Scaling that brings keys of one channel onto the same frame keeps the later one. Copied keys paste onto
+  the same items' channels (not onto another item), and the clipboard is the dope sheet's own, not the system's.
 - **Inverse kinematics** is for bones: objects, nulls, lights and cameras have no goals (LightWave's IK on any item,
   goal strength and matching the goal's orientation aren't there). A chain has one goal, on its end bone; where two
   chains share bones, the first in the scene turns them. The solver starts each frame from the keyed pose, so which

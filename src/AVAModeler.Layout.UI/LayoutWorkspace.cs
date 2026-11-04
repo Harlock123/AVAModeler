@@ -14,13 +14,15 @@ namespace AVAModeler.Layout.UI;
 
 /// <summary>
 /// The Layout workspace: the scene's items and the chosen one's settings on the left, the view in the middle, and
-/// the timeline (with play, keys and the dope sheet's key marks) and graph editor below.
+/// the timeline (with play, keys and the chosen item's key marks) and the graph editor or the dope sheet below.
 /// </summary>
 public sealed class LayoutWorkspace : DockPanel
 {
     public LayoutSession Session { get; }
     public SceneView View { get; }
     public GraphEditor Graph { get; }
+    /// <summary>The dope sheet (D, View › Dope Sheet), shown in the graph editor's place.</summary>
+    public DopeSheetPanel DopeSheet { get; }
     private readonly Func<Document> _modelerDocument;
     private readonly ListBox _items = new() { Height = 220 };
     private readonly StackPanel _properties = new() { Spacing = 3 };
@@ -45,6 +47,7 @@ public sealed class LayoutWorkspace : DockPanel
         Background = Look.Panel;
         View = new SceneView(session);
         Graph = new GraphEditor(session) { Height = 200 };
+        DopeSheet = new DopeSheetPanel(session) { Height = 200, IsVisible = false };
         _marks = new KeyMarks(session) { Height = 14 };
 
         var header = new StackPanel { Background = Look.PanelDark, Children = { BuildMenu(), Toolbar() } };
@@ -76,7 +79,7 @@ public sealed class LayoutWorkspace : DockPanel
         timeline.Children.Add(transport);
         timeline.Children.Add(_frameText);
         timeline.Children.Add(new StackPanel { Children = { _timeline, _marks } });
-        var bottom = new StackPanel { Background = Look.PanelDark, Children = { timeline, Graph, _status } };
+        var bottom = new StackPanel { Background = Look.PanelDark, Children = { timeline, Graph, DopeSheet, _status } };
         SetDock(bottom, Dock.Bottom);
         Children.Add(bottom);
         Children.Add(View);
@@ -140,15 +143,38 @@ public sealed class LayoutWorkspace : DockPanel
         _redo.IsEnabled = h.CanRedo;
     }
 
+    /// <summary>Whether the dope sheet is showing (in the graph editor's place).</summary>
+    public bool DopeSheetShown
+    {
+        get => DopeSheet.IsVisible;
+        set
+        {
+            DopeSheet.IsVisible = value;
+            Graph.IsVisible = !value;
+            if (value)
+            {
+                DopeSheet.Sheet.Prune();
+                DopeSheet.View.InvalidateMeasure();
+                DopeSheet.View.InvalidateVisual();
+            }
+        }
+    }
+
+    /// <summary>Shows the dope sheet, or the graph editor again (D, View › Dope Sheet).</summary>
+    public void ToggleDopeSheet() => DopeSheetShown = !DopeSheetShown;
+
     /// <summary>
-    /// A key pressed anywhere in Layout (not in a text box, which keeps its own Ctrl+Z): F9 renders, Ctrl+Z undoes the
-    /// scene, Ctrl+Shift+Z and Ctrl+Y redo. Returns whether it was used.
+    /// A key pressed anywhere in Layout (not in a text box, which keeps its own Ctrl+Z): F9 renders, D shows the dope
+    /// sheet (whose own keys work while it has the focus), Ctrl+Z undoes the scene, Ctrl+Shift+Z and Ctrl+Y redo.
+    /// Returns whether it was used.
     /// </summary>
     public bool HandleKey(KeyEventArgs e)
     {
         if (e.Key == Key.F9) { Render(); return true; }
         if (e.Key == Key.F10) { RenderAnimation(); return true; }
         if (e.Source is TextBox) return false;
+        if (e.Key == Key.D && e.KeyModifiers == KeyModifiers.None) { ToggleDopeSheet(); return true; }
+        if (DopeSheetShown && DopeSheet.IsKeyboardFocusWithin && DopeSheet.HandleKey(e)) return true;
         var mods = e.KeyModifiers;
         if (!mods.HasFlag(KeyModifiers.Control) && !mods.HasFlag(KeyModifiers.Meta) || mods.HasFlag(KeyModifiers.Alt)) return false;
         bool shift = mods.HasFlag(KeyModifiers.Shift);
@@ -579,6 +605,7 @@ public sealed class LayoutWorkspace : DockPanel
                     Item("Save as _LWS…", () => _ = SaveScene(".lws")), Item("Export _glTF…", () => _ = ExportGltf()), Item("Scene _Settings…", () => _ = SceneSettings()),
                     Item("_Quit", () => Owner?.Close())),
                 Group("_Edit", _undo, _redo),
+                Group("_View", Item("_Graph Editor", () => DopeSheetShown = false), Item("_Dope Sheet  (D)", ToggleDopeSheet)),
                 Group("_Add", Item("The _Modeler's Object", () => Session.ShowModelerObject(_modelerDocument())), Item("_Object from a File…", () => _ = LoadObject()),
                     Item("_Null", () => Session.Add(new NullItem("Null"))),
                     Item("_Distant Light", () => Session.Add(new LightItem("Distant Light"))),
@@ -607,6 +634,11 @@ public sealed class LayoutWorkspace : DockPanel
         Full-time IK, the chain turns at every frame so its tip reaches the goal. Limits and locks keep each bone's heading,
         pitch and bank in bounds; an Anchor stops chains below it. Key IK here keys the pose at this frame; Bake IK keys every
         frame and turns full-time IK off.
+
+        The dope sheet (D, or View › Dope Sheet) lists every item (and with Channels, each keyed channel) against the frames,
+        each key a diamond. Click a key, Shift-click to add more, or drag a box round them; drag them sideways to move them in
+        time, snapped to frames. Delete removes them, Ctrl+C and Ctrl+V copy them and paste them at the current frame, the
+        arrow keys nudge them a frame, and Scale × stretches their timing. Each is one undo step.
 
         The graph editor shows the chosen item's channels as curves; click a key to set its value, tension, continuity and
         bias (TCB, as classic LightWave), and what happens before the first key and after the last.

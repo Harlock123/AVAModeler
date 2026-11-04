@@ -15,7 +15,7 @@ namespace AVAModeler.Mcp;
 internal static class SceneCensus
 {
     /// <summary>The channel names agents use, in the order of <see cref="Channel"/>.</summary>
-    public static readonly string[] ChannelNames = ["position.x", "position.y", "position.z", "heading", "pitch", "bank", "scale.x", "scale.y", "scale.z"];
+    public static readonly string[] ChannelNames = SceneChannels.MotionNames;
 
     private static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
 
@@ -51,29 +51,16 @@ internal static class SceneCensus
             if (scene.Items.All(i => i.Name != $"{name} ({n})")) return $"{name} ({n})";
     }
 
-    /// <summary>
-    /// The channels an item has: its nine motion channels, a light's intensity, a camera's zoom, and an object's morph
-    /// weights ("morph.Smile") and displacement amplitudes ("displacement.1.amplitude", numbered from 1).
-    /// </summary>
-    public static IEnumerable<(string Name, Envelope Envelope)> Channels(SceneItem item)
-    {
-        for (int i = 0; i < 9; i++) yield return (ChannelNames[i], item.Channels[i]);
-        if (item is LightItem l) yield return ("intensity", l.Intensity);
-        if (item is CameraItem c) yield return ("zoom", c.Zoom);
-        if (item is ObjectItem o)
-        {
-            foreach (var m in o.Morphs) yield return (MorphChannel(m), m.Weight);
-            for (int i = 0; i < o.Displacements.Count; i++) yield return (DisplacementChannel(i), o.Displacements[i].Amplitude);
-        }
-    }
+    /// <summary>The channels an item has (<see cref="SceneChannels.Of"/>): motion, intensity, zoom, morph weights, displacement amplitudes.</summary>
+    public static IEnumerable<(string Name, Envelope Envelope)> Channels(SceneItem item) => SceneChannels.Of(item);
 
     /// <summary>A morph's weight channel: "morph." and its name.</summary>
-    public static string MorphChannel(MorphTarget m) => MorphPrefix + m.Name;
+    public static string MorphChannel(MorphTarget m) => SceneChannels.MorphChannel(m);
 
     /// <summary>A displacement's amplitude channel, numbered from 1: "displacement.1.amplitude".</summary>
-    public static string DisplacementChannel(int index) => FormattableString.Invariant($"{DisplacementPrefix}{index + 1}.amplitude");
+    public static string DisplacementChannel(int index) => SceneChannels.DisplacementChannel(index);
 
-    public const string MorphPrefix = "morph.", DisplacementPrefix = "displacement.";
+    public const string MorphPrefix = SceneChannels.MorphPrefix, DisplacementPrefix = SceneChannels.DisplacementPrefix;
 
     /// <summary>The frames an item has keys at, on any of its channels (morph weights and displacements' amplitudes too).</summary>
     public static IReadOnlyList<double> KeyFrames(SceneItem item)

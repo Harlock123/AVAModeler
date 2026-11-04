@@ -114,6 +114,12 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     scene, loading and saving scenes (with an object loader passed in), the modified flag, and the scene's undo
     (`Edit`, `BeginEdit`/`EndEdit`, `Undo`, `Redo`).
   - `SceneUndo.cs`: Layout's undo history (`LayoutSession.History`), `SceneSnapshot`s shared by the person and agents.
+  - `SceneChannels.cs`: every animatable channel an item has, by name (`Of`, `Find`, `Keyed`): motion, a light's
+    intensity, a camera's zoom, morph weights, displacement amplitudes. The dope sheet and the MCP census both read it,
+    so a new animatable setting is added there once.
+  - `DopeSheet.cs`: the dope sheet without its control (rows, `KeyId`s, choosing keys by click, Shift and box, copy and
+    paste) and `KeyTiming` (resolving keys to envelopes, `Retime`, `Shift`, `Scale` and `Delete`, snapped to whole frames,
+    each one undo step), which agents' `shift_keys` and `scale_keys` use too.
   - `SceneDrawing.cs` (what Layout's views draw, and looking through a scene camera: `LookThrough` copies its heading,
     pitch and bank into the `ViewCamera`, whose `Bank` rolls its basis, so the view tilts as the ray tracer's picture
     does) and `Keying.cs` (how values become keys: one rule for Layout's controls and agents alike).
@@ -128,9 +134,10 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     the SDK's attribute model; `ModelerServer.cs` builds the server, its instructions to agents and its prompts.
     `Recipes.cs` holds the prompts (saved recipes), one static method each in the SDK's `[McpServerPrompt]` model. `ToolCatalog.cs`
     describes the Modeler's tools from the registry and `[Param]`s; `SceneCensus.cs` describes the scene and reads
-    agents' item and channel names (`morph.<name>` and `displacement.<number>.amplitude` among them: extend
-    `Channels` and `Channel` there when an item gets a new animatable setting, and get_keys, set_key, delete_key and
-    set_end_behavior pick it up).
+    agents' item and channel names (`morph.<name>` and `displacement.<number>.amplitude` among them; the list itself is
+    `SceneChannels.Of` in AVAModeler.Layout: extend it, and `Channel` here if the name needs parsing, when an item gets
+    a new animatable setting, and get_keys, set_key, delete_key, set_end_behavior, shift_keys, scale_keys and the dope
+    sheet pick it up).
   - `ModelerHost.cs`: `IModelerHost` runs the handlers' work on the document's thread, with the command API
     (`RunAsync`) or with Layout's `LayoutSession` beside it (`RunSceneAsync`). `HeadlessHost` owns a document and a
     `LayoutSession`; `LiveHost` runs on the app's UI thread through `IUiThread`, against `ILiveModeler.Commands` and
@@ -164,6 +171,9 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
 - `src/AVAModeler.Modeler.UI/` and `src/AVAModeler.Layout.UI/`: the two workspaces. `Session.cs` holds
   `Preferences`. The Layout workspace shows a `LayoutSession` (from `AVAModeler.Layout`) and keeps no state of its own.
   - `AnimationWindow.cs` is Render › Render Animation (F10), a thin window over `AnimationRender` and `MovieEncoder`.
+  - `DopeSheetPanel.cs` is the dope sheet (D, View › Dope Sheet), shown in the graph editor's place: a bar (Channels,
+    Copy, Paste, Delete, Scale ×) and `DopeSheetView`, which draws the rows and diamonds and turns clicks, boxes and
+    drags into `DopeSheet` calls (`PointOf` gives a key's diamond for tests).
   - `SceneSettingsPanel.cs` is Scene › Scene Settings' contents (frames, ambient, backdrop, ambient occlusion and
     the environment), one undo step on OK; the camera's depth of field and motion blur and the lights' soft-shadow
     settings are in `LayoutWorkspace`'s item panel, with Focus on calling `LayoutSession.FocusOn`.

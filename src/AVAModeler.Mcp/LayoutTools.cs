@@ -611,6 +611,80 @@ public sealed partial class ModelerTools
             };
         }, cancel);
 
+    [McpServerTool(Name = "shift_keys", Destructive = true)]
+    [Description("Moves keys in time, as dragging them in Layout's dope sheet does: every key between from and to (on one item or all, one channel or all) shifts by offset whole frames (negative is earlier), keeping its value and its tension, continuity, bias and linear flag. A key landing where an unmoved one is replaces it. Channels never keyed (holding a constant) aren't touched. One undo step. Use it to start an animation later, or to slide one item's motion against another's.")]
+    public Task<string> ShiftKeys(
+        [Description("Whole frames to move the keys by; negative moves them earlier.")] double offset,
+        [Description("The item, by name or #index (default: every item).")] string? item = null,
+        [Description("Just this channel, e.g. \"heading\" or \"morph.Smile\" (default: all the item's channels; needs item).")] string? channel = null,
+        [Description("Only keys at this frame or later (default: all).")] double? from = null,
+        [Description("Only keys at this frame or earlier (default: all).")] double? to = null,
+        CancellationToken cancel = default) =>
+        DoScene("moved keys in time", (c, l) =>
+        {
+            var keys = KeysToRetime(l, item, channel, from, to);
+            if (!double.IsFinite(offset) || Math.Abs(offset - Math.Round(offset)) > 1e-9) throw new ArgumentException("offset is a whole number of frames, like 10 or -5.");
+            var (moved, replaced) = KeyTiming.Shift(l, keys, offset, "Shift Keys");
+            return Retimed(l, keys, moved, replaced);
+        }, cancel);
+
+    [McpServerTool(Name = "scale_keys", Destructive = true)]
+    [Description("Scales keys' timing, as the dope sheet's Scale does: every key between from and to (on one item or all, one channel or all) moves to pivot + (frame - pivot) × factor, snapped to a whole frame, so factor 2 makes the motion take twice as long and 0.5 half as long. Values, tension, continuity, bias and linear flags are kept; where two keys end up on one frame the later one wins, and a key landing on an unmoved one replaces it. One undo step. To retime a whole animation, scale its keys about the first frame, then set_scene last_frame to fit.")]
+    public Task<string> ScaleKeys(
+        [Description("How much longer the keyed motion takes: more than 0 (2 doubles it, 0.5 halves it).")] double factor,
+        [Description("The frame the keys scale about, which stays put (default: the earliest key being scaled).")] double? pivot = null,
+        [Description("The item, by name or #index (default: every item).")] string? item = null,
+        [Description("Just this channel (default: all the item's channels; needs item).")] string? channel = null,
+        [Description("Only keys at this frame or later (default: all).")] double? from = null,
+        [Description("Only keys at this frame or earlier (default: all).")] double? to = null,
+        CancellationToken cancel = default) =>
+        DoScene("scaled keys in time", (c, l) =>
+        {
+            var keys = KeysToRetime(l, item, channel, from, to);
+            if (!(factor > 0) || !double.IsFinite(factor)) throw new ArgumentException("factor must be more than 0 (2 makes the keyed motion twice as long, 0.5 half as long).");
+            var (moved, replaced) = KeyTiming.Scale(l, keys, factor, pivot ?? keys.Min(k => k.Frame), "Scale Keys");
+            return Retimed(l, keys, moved, replaced);
+        }, cancel);
+
+    /// <summary>The keys shift_keys and scale_keys act on: each keyed channel's keys between two frames, on one item or every one.</summary>
+    private static List<KeyId> KeysToRetime(LayoutSession l, string? item, string? channel, double? from, double? to)
+    {
+        var s = l.Scene;
+        if (channel != null && item == null) throw new ArgumentException("Give item with channel: the channel is one of that item's.");
+        foreach (var (v, what) in new[] { (from, "from"), (to, "to") })
+            if (v is { } x && !double.IsFinite(x)) throw new ArgumentException($"{what} must be a frame.");
+        if (from > to) throw new ArgumentException($"from ({from:0.###}) is after to ({to:0.###}).");
+        var items = item == null ? s.Items.ToList() : [Item(s, item)];
+        string? name = channel == null ? null : Channel(items[0], channel).Name;
+        var keys = new List<KeyId>();
+        foreach (var it in items)
+            foreach (var (n, env) in SceneChannels.Keyed(it, s))
+            {
+                if (name != null && n != name) continue;
+                foreach (var k in env.Keys)
+                    if ((from == null || k.Frame >= from - 1e-9) && (to == null || k.Frame <= to + 1e-9)) keys.Add(new KeyId(it, n, k.Frame));
+            }
+        if (keys.Count == 0)
+            throw new ArgumentException($"There are no keys {(item == null ? "in the scene" : $"on {items[0].Name}{(name != null ? $"'s {name}" : "")}")}{(from != null || to != null ? $" between frames {from ?? s.FirstFrame:0.###} and {to ?? s.LastFrame:0.###}" : "")} to move. get_keys lists them.");
+        return keys;
+    }
+
+    private static JsonObject Retimed(LayoutSession l, List<KeyId> keys, int moved, int replaced)
+    {
+        var items = keys.Select(k => k.Item).Distinct().ToList();
+        return new JsonObject
+        {
+            ["moved"] = moved,
+            ["replaced"] = replaced,
+            ["items"] = new JsonArray(items.Select(it => (JsonNode)new JsonObject
+            {
+                ["item"] = it.Name,
+                ["frames_with_keys"] = new JsonArray(SceneChannels.Keyed(it, l.Scene).SelectMany(ch => ch.Envelope.Keys.Select(k => k.Frame)).Distinct().Order().Select(f => (JsonNode)Census.Round(f)).ToArray()),
+            }).ToArray()),
+            ["note"] = moved == 0 ? "Nothing moved: the keys were already there." : null,
+        };
+    }
+
     [McpServerTool(Name = "set_scene", Destructive = true)]
     [Description("Changes the scene's settings, leaving out what you don't give: the frame range (first_frame, last_frame, whole frames; 1 to 60 by default) and frames per second; ambient light (colour 0 to 255, intensity as a fraction, 0.25 by default); the backdrop: a colour, or a gradient from gradient_bottom (straight down) to gradient_top (straight up); fog (linear: none up to fog_min metres from the camera, full at fog_max); the current camera (the one render_scene uses); and the current frame (where Layout's timeline stands, and the default for the other tools). Render effects, all off by default: ambient occlusion (ao: darkens creases, corners and contact areas by dimming the ambient light where nearby surfaces hide it; raise ambient_intensity to see it) and an environment picture round the scene (environment: a lat-long .hdr, .png or .jpg file, or builtin:sky / builtin:studio; it replaces the backdrop and shows in reflections, and with environment_lighting it lights the scene too, with soft shadows). Sample counts are rays a pixel, shared among the pixel's antialiasing rays: more is smoother and slower.")]
     public Task<string> SetScene(

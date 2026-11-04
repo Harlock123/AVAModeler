@@ -181,6 +181,35 @@ public sealed class Selection
     }
 
     /// <summary>
+    /// The edges a tool should work on in a layer: those selected (Edges mode); those whose two points are both
+    /// selected (Points mode); every edge of the selected polygons (Polygons mode) or of the polygons in the volume; or,
+    /// with nothing selected, every edge.
+    /// </summary>
+    public IReadOnlyCollection<Edge> ActiveEdges(int layer, Mesh mesh)
+    {
+        var map = mesh.EdgeMap();
+        if (!Any) return map.Keys.ToArray();
+        switch (Mode)
+        {
+            case SelectionMode.Edges:
+                return Edges.TryGetValue(layer, out var es) ? es.Where(map.ContainsKey).ToArray() : [];
+            case SelectionMode.Points:
+            {
+                if (!Points.TryGetValue(layer, out var pts) || pts.Count < 2) return [];
+                return map.Keys.Where(e => pts.Contains(e.A) && pts.Contains(e.B)).ToArray();
+            }
+            default:
+            {
+                var set = new HashSet<Edge>();
+                foreach (int pi in ActivePolygons(layer, mesh))
+                    foreach (var (a, b) in mesh.Polygons[pi].Edges())
+                        if (a != b) set.Add(Edge.Of(a, b));
+                return set;
+            }
+        }
+    }
+
+    /// <summary>
     /// The polygons a tool should work on in a layer: those selected; those using a selected point (Points mode)
     /// or edge (Edges mode); those in the volume; or, with nothing selected, every polygon.
     /// </summary>

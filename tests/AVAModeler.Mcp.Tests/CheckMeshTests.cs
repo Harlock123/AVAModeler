@@ -57,6 +57,7 @@ public class CheckMeshTests
         Assert.Null(r["volume_m3"]);
         Assert.Contains("closed", (string?)r["volume_note"]);
         Assert.Equal(2, r["per_layer"]![0]!["examples"]!["boundary_edges"]!.AsArray().Count);
+        Assert.Contains("\"Fill Hole\"", string.Join("\n", r["how_to_fix"]!.AsArray().Select(x => (string)x!)));
     }
 
     [Fact]

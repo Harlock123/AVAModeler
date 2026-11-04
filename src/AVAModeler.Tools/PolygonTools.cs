@@ -1,4 +1,5 @@
 using AVAModeler.Core;
+using AVAModeler.Geometry;
 
 namespace AVAModeler.Tools;
 
@@ -295,6 +296,39 @@ public static class SelectionOps
                     if (seen.Add(q)) queue.Enqueue(q);
         }
         return seen;
+    }
+
+    /// <summary>
+    /// Select Loop: adds the edge loop through each selected edge (in Points mode, each edge whose two points are
+    /// selected): straight on across points where four quads meet, or round a hole's rim for a rim edge. Switches to
+    /// Edges mode. Returns how many edges are selected afterwards.
+    /// </summary>
+    public static int Loop(Document doc) => Extend(doc, EdgeLoops.Loop);
+
+    /// <summary>
+    /// Select Ring: adds the edge ring through each selected edge (in Points mode, each edge whose two points are
+    /// selected): the parallel edges across the strip of quads it crosses. Switches to Edges mode. Returns how many
+    /// edges are selected afterwards.
+    /// </summary>
+    public static int Ring(Document doc) => Extend(doc, EdgeLoops.Ring);
+
+    private static int Extend(Document doc, Func<Mesh, Edge, List<Edge>> walk)
+    {
+        var s = doc.Selection;
+        var seeds = new Dictionary<int, List<Edge>>();
+        foreach (int l in doc.ForegroundLayers)
+            seeds[l] = s.Any && s.Mode is SelectionMode.Edges or SelectionMode.Points ? [.. s.ActiveEdges(l, doc.Layers[l].Mesh)] : [];
+        s.Mode = SelectionMode.Edges;
+        int count = 0;
+        foreach (var (l, edges) in seeds)
+        {
+            var mesh = doc.Layers[l].Mesh;
+            var set = s.EdgesIn(l);
+            foreach (var e in edges) set.UnionWith(walk(mesh, e));
+            count += set.Count;
+        }
+        doc.Notify();
+        return count;
     }
 
     /// <summary>Grows the polygon selection by the polygons that share a point with it.</summary>

@@ -15,7 +15,7 @@ namespace AVAModeler.Mcp.Tests;
 /// </summary>
 public class RecipeTests
 {
-    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part"];
+    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box"];
 
     /// <summary>Each recipe with arguments that keep it quick (small pictures, few frames).</summary>
     public static TheoryData<string, string> Cases => new()
@@ -30,6 +30,7 @@ public class RecipeTests
         { "morph_smile", """{"frames": "10", "width": "96"}""" },
         { "wave_flag", """{"frames": "6", "width": "48"}""" },
         { "printable_part", """{"width": "0.05", "hole": "0.01"}""" },
+        { "rounded_box", """{"segments": "2"}""" },
     };
 
     /// <summary>A recipe's tool calls, read from its text as an agent reads them.</summary>
@@ -170,6 +171,16 @@ public class RecipeTests
                 double bored = (0.05 * 0.05 - Math.PI * 0.01 * 0.01 / 4) * 0.02;
                 Assert.InRange(check.Volume!.Value, bored, bored * 1.01);
                 Assert.True(new FileInfo(b.Folder.File("part.stl")).Length > 84);
+                break;
+            case "rounded_box":
+                var box = AVAModeler.Geometry.MeshCheck.Document(doc);
+                Assert.True(box.Printable, box.Verdict);
+                Assert.Equal(1, box.Shells);
+                // Six faces, twelve rounded edges of two strips, eight corners, and the sunk panel's four walls.
+                Assert.Equal(6 + 12 * 2 + 8 + 4, box.Polygons);
+                Assert.InRange(box.Volume!.Value, 0.4 * 0.2 * 0.3 * 0.9, 0.4 * 0.2 * 0.3);
+                var panel = doc.Current.Mesh.Polygons.Where(p => p.Count == 4 && doc.Current.Mesh.Normal(p).Y > 0.99).Select(p => doc.Current.Mesh.Centroid(p)).ToList();
+                Assert.Contains(panel, c => Math.Abs(c.Y - 0.18) < 1e-9);
                 break;
         }
     }

@@ -135,6 +135,33 @@ public static class Recipes
         return recipe.Text("For a print, keep walls at least a millimetre or two thick (0.001 to 0.002), and check_mesh again after any further boolean.");
     }
 
+    [McpServerPrompt(Name = "rounded_box", Title = "Rounded box with a recessed panel")]
+    [Description("Models a box with rounded edges (Chamfer on every edge, in segments) and a panel sunk into its top (Inset with a negative depth), and checks it is still a closed solid with check_mesh.")]
+    public static string RoundedBox(
+        [Description("Width along X in metres (default 0.4).")] string? width = null,
+        [Description("Height in metres (default 0.2).")] string? height = null,
+        [Description("Depth along Z in metres (default 0.3).")] string? depth = null,
+        [Description("How round the edges are: the chamfer's width in metres (default 0.02), less than a quarter of the smallest side.")] string? radius = null,
+        [Description("Segments round each edge, 1 (a flat chamfer) to 8 (default 3).")] string? segments = null)
+    {
+        double w = Number(width, 0.4, "width", 0.01, 20), h = Number(height, 0.2, "height", 0.01, 20), d = Number(depth, 0.3, "depth", 0.01, 20);
+        double r = Number(radius, 0.02, "radius", 0.0005, 5);
+        int n = Whole(segments, 3, "segments", 1, 8);
+        double smallest = Math.Min(w, Math.Min(h, d));
+        if (r >= smallest / 4) throw new McpException($"radius must be less than a quarter of the smallest side ({F(smallest / 4)} m here), so the rounded edges don't meet.");
+        double rim = Math.Min(w, d) / 8, sink = h / 10;
+        var recipe = new Recipe($"Model a {F(w)} × {F(h)} × {F(d)} m box standing on y = 0 with its edges rounded {F(r)} m in {n} segment{(n == 1 ? "" : "s")}, and a panel {F(sink)} m deep sunk into its top, {F(rim)} m in from the edges.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("The box.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Center"] = V(0, h / 2, 0), ["Size"] = V(w, h, d), ["Surface"] = "Case" } });
+        recipe.Step("Round every edge: with nothing selected Chamfer works on all of them, replacing each with a curved strip and closing each corner with one polygon.", "run_tool", new { name = "Chamfer", @params = new Dictionary<string, object> { ["Width"] = r, ["Segments"] = n } });
+        recipe.Step("Select the top face (now the flat panel inside the rounded edges): in Polygons mode, select_box takes the polygons wholly inside the box.", "set_selection_mode", new { mode = "polygons" });
+        recipe.Step(null, "select_box", new { min = V(-w, h - r / 10, -d), max = V(w, h + r / 10, d) });
+        recipe.Step("Inset it and sink it: a border band of quads stays at the top, and the panel drops below it.", "run_tool", new { name = "Inset", @params = new Dictionary<string, object> { ["Mode"] = "Group", ["Thickness"] = rim, ["Depth"] = -sink } });
+        recipe.Step("Check it. It should still say \"Closed and printable (1 shell)\", with a volume a little under the box's.", "check_mesh", new { });
+        recipe.Step("Look at it.", "render_view", new { view = "perspective", width = 320, height = 240 });
+        return recipe.Text("For softer edges raise segments; Inset on the side faces (Mode Individual) makes more panels the same way.");
+    }
+
     // ───────────────────────────── scenes ─────────────────────────────
 
     [McpServerPrompt(Name = "three_point_lighting", Title = "Three-point lighting")]

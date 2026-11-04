@@ -35,7 +35,7 @@ internal static class UVTransfer
     }
 
     /// <summary>A face's UVs as a function of position: its triangles, each with its corners' UVs.</summary>
-    private sealed class Interpolant
+    internal sealed class Interpolant
     {
         private readonly List<(Vec3 A, Vec3 B, Vec3 C, Vec2 Ua, Vec2 Ub, Vec2 Uc)> _tris = [];
 
@@ -55,7 +55,13 @@ internal static class UVTransfer
         }
 
         /// <summary>The UVs at a point: from the triangle it lies in (or, failing that, the nearest), by barycentric weights.</summary>
-        public Vec2 At(Vec3 p)
+        public Vec2 At(Vec3 p) => At(p, out _);
+
+        /// <summary>
+        /// The UVs at a point, and how well inside the face it lies: the smallest barycentric weight in the best triangle
+        /// (negative outside the face).
+        /// </summary>
+        public Vec2 At(Vec3 p, out double inside)
         {
             Vec2 best = _tris[0].Ua;
             double bestScore = double.NegativeInfinity;
@@ -77,6 +83,7 @@ internal static class UVTransfer
                 }
                 best = t.Ua * w0 + t.Ub * w1 + t.Uc * w2;
             }
+            inside = bestScore;
             return best;
         }
 

@@ -449,7 +449,18 @@ public sealed class ViewportControl : Panel
             Right = r, Up = u, Forward = f, First = first, Alternate = _alternate, Constrain = _mods.HasFlag(KeyModifiers.Shift),
             UnitsPerPixel = Camera.DragDelta(1, 0, _toolStart).Length,
         };
-        tool.Drag(drag);
+        try
+        {
+            tool.Drag(drag);
+        }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException)
+        {
+            // A tool that can't work on this selection (Loop Cut with no edge chosen, say) says why and lets go.
+            Session.CancelTool();
+            Session.SetStatus($"{tool.Name}: {e.Message}");
+            _gesture = Gesture.None;
+            return;
+        }
         ToolUsed = true;
         if (Session.UVEditBroken)
         {

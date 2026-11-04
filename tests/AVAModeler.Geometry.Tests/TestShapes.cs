@@ -95,6 +95,56 @@ internal static class TestShapes
         return m;
     }
 
+    /// <summary>
+    /// A cylinder round Y from y = 0 to <paramref name="height"/>: rings of quads (<paramref name="segments"/> high), with
+    /// an n-gon cap at each end (or open ends, a tube), every face facing out.
+    /// </summary>
+    public static Mesh Cylinder(int sides = 8, int segments = 1, double radius = 1, double height = 2, bool caps = true)
+    {
+        var m = new Mesh();
+        for (int j = 0; j <= segments; j++)
+            for (int i = 0; i < sides; i++)
+            {
+                double a = 2 * Math.PI * i / sides;
+                m.Points.Add(new Vec3(Math.Cos(a) * radius, height * j / segments, Math.Sin(a) * radius));
+            }
+        for (int j = 0; j < segments; j++)
+            for (int i = 0; i < sides; i++)
+            {
+                int a = j * sides + i, b = j * sides + (i + 1) % sides;
+                m.Polygons.Add(new Polygon([a, b, b + sides, a + sides]));
+            }
+        if (caps)
+        {
+            m.Polygons.Add(new Polygon(Enumerable.Range(0, sides)));
+            m.Polygons.Add(new Polygon(Enumerable.Range(segments * sides, sides)));
+        }
+        m.Touch();
+        var centre = new Vec3(0, height / 2, 0);
+        foreach (var p in m.Polygons)
+            if (Vec3.Dot(m.Normal(p), m.Centroid(p) - centre) < 0) p.Points.Reverse();
+        m.Touch();
+        return m;
+    }
+
+    /// <summary>A UV map "UV" on every point: the point's X and Y (linear in position, so interpolated UVs can be checked).</summary>
+    public static void MapXY(Mesh m)
+    {
+        var map = m.AddUVMap("UV");
+        for (int i = 0; i < m.Points.Count; i++) map.Points[i] = new Vec2(m.Points[i].X, m.Points[i].Y);
+    }
+
+    /// <summary>Asserts a mesh is a clean closed solid: no holes, no edge shared by three faces, every neighbour agreeing, facing out.</summary>
+    public static void AssertSolid(Mesh m)
+    {
+        var c = MeshCheck.Mesh(m);
+        Assert.True(c.Watertight, $"not watertight: {c.BoundaryEdges.Count} boundary, {c.NonManifoldEdges.Count} non-manifold edges");
+        Assert.Empty(c.InconsistentEdges);
+        Assert.Empty(c.FlippedPolygons);
+        Assert.Empty(c.DegeneratePolygons);
+        Assert.True(c.Volume > 0, $"volume {c.Volume}");
+    }
+
     /// <summary>The area of a regular polygon of n sides inscribed in a circle.</summary>
     public static double RegularPolygonArea(double radius, int sides) => 0.5 * sides * radius * radius * Math.Sin(2 * Math.PI / sides);
 

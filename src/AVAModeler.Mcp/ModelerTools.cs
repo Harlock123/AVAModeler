@@ -172,6 +172,47 @@ public sealed partial class ModelerTools(IModelerHost host)
     public Task<string> SelectConnected(CancellationToken cancel) =>
         Do("selected connected", c => { SelectionOps.Connected(c.Document); return Census.Selection(c.Document); }, cancel);
 
+    [McpServerTool(Name = "select_edges", Idempotent = true)]
+    [Description("Selects edges of the current layer, each given by its two point indices (an edge of some polygon there), and switches to Edges mode. Replaces the edge selection unless add is true. Edges are what Loop Cut, Chamfer, Bridge and Fill Hole work from, and what select_loop and select_ring start from. Not an undo step.")]
+    public Task<string> SelectEdges(
+        [Description("Edges as pairs of point indices in the current layer, from 0, e.g. [[0, 1], [1, 3]]. get_polygons shows which points polygons share.")] int[][] edges,
+        [Description("Add to the edges already selected rather than replacing them.")] bool add = false,
+        CancellationToken cancel = default) =>
+        Do("selected edges", c =>
+        {
+            if (edges.Length == 0) throw new ArgumentException("Give at least one edge as [a, b].");
+            for (int i = 0; i < edges.Length; i++)
+                if (edges[i] is not { Length: 2 }) throw new ArgumentException($"Edge {i} needs two point indices [a, b].");
+            Census.CheckIndices(edges.SelectMany(e => e).ToArray(), c.Document.Current.Mesh.Points.Count, "point");
+            var pairs = edges.Select(e => (e[0], e[1])).ToList();
+            var map = c.Document.Current.Mesh.EdgeMap();
+            foreach (var (x, y) in pairs)
+                if (!map.ContainsKey(Edge.Of(x, y)))
+                    throw new ArgumentException($"Points {x} and {y} aren't joined by an edge of any polygon in the current layer: pick two points that follow each other round a polygon (get_polygons lists them).");
+            c.SelectMode(SelectionMode.Edges);
+            if (!add) c.SelectNone();
+            c.SelectEdges(pairs);
+            return Census.Selection(c.Document);
+        }, cancel);
+
+    [McpServerTool(Name = "select_loop", Idempotent = true)]
+    [Description("Adds the edge loop through each selected edge (in Points mode, each edge between two selected points) and switches to Edges mode: the loop runs straight on across points where four quads meet (a row of a grid, a ring round a cylinder) and stops at triangles, n-gons and poles; an edge on a hole's rim selects the whole rim, ready for Bridge or Fill Hole. Select an edge first with select_edges. Not an undo step.")]
+    public Task<string> SelectLoop(CancellationToken cancel) =>
+        Do("selected loops", c => { RequireEdges(c, "select_loop"); c.SelectLoop(); return Census.Selection(c.Document); }, cancel);
+
+    [McpServerTool(Name = "select_ring", Idempotent = true)]
+    [Description("Adds the edge ring through each selected edge (in Points mode, each edge between two selected points) and switches to Edges mode: the parallel edges across the strip of quads it crosses (round a box or a cylinder it closes on itself), stopping at anything that isn't a quad. Loop Cut cuts across exactly this ring. Select an edge first with select_edges. Not an undo step.")]
+    public Task<string> SelectRing(CancellationToken cancel) =>
+        Do("selected rings", c => { RequireEdges(c, "select_ring"); c.SelectRing(); return Census.Selection(c.Document); }, cancel);
+
+    private static void RequireEdges(Commands c, string tool)
+    {
+        var doc = c.Document;
+        if (doc.Selection.Mode is SelectionMode.Edges or SelectionMode.Points && doc.Selection.Any
+            && doc.ForegroundLayers.Any(l => doc.Selection.ActiveEdges(l, doc.Layers[l].Mesh).Count > 0)) return;
+        throw new ArgumentException($"{tool} starts from a selected edge: select one with select_edges (or two neighbouring points with select_points) first.");
+    }
+
     [McpServerTool(Name = "set_layers", Idempotent = true)]
     [Description("Chooses the foreground layers (being edited; new geometry goes into the lowest-numbered one) and the background layers (shown dimmed, and the other operand for Boolean, Drill, Path Extrude and Rail Extrude). The rest are turned off. Layers are numbered 1 to 10, as the app's layer buttons show them. Not an undo step.")]
     public Task<string> SetLayers(

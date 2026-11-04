@@ -100,7 +100,7 @@ internal static class CheckReport
         {
             if (when) list.Add(text);
         }
-        Add(r.BoundaryEdges > 0, "Holes: run_tool \"Select Problems\" {\"Problem\": \"BoundaryEdges\"} and render_view to see their rims. Rims that lie on top of each other are duplicate points: Merge Points welds them. Otherwise close a hole with add_polygons (or Make Polygon) through its rim's points, clockwise seen from outside.");
+        Add(r.BoundaryEdges > 0, "Holes: run_tool \"Select Problems\" {\"Problem\": \"BoundaryEdges\"} and render_view to see their rims. Rims that lie on top of each other are duplicate points: Merge Points welds them. Otherwise run_tool \"Fill Hole\" closes them, each with a face wound to match its neighbours (every hole with nothing selected; Mode \"Triangles\" for a rim that isn't flat), or \"Bridge\" joins two holes with a band of quads.");
         Add(r.NonManifoldEdges > 0, "Non-manifold edges: select them with \"Select Problems\" {\"Problem\": \"NonManifoldEdges\"}. Usually a face left inside a solid (Remove it) or two solids sharing an edge (Boolean Union them).");
         Add(r.InconsistentEdges > 0 || r.InwardShells > 0, "Winding: run_tool \"Align\" turns faces to agree with their neighbours and closed shells to face outward (\"Select Problems\" {\"Problem\": \"FlippedPolygons\"} shows which it would turn).");
         Add(r.DegeneratePolygons > 0, "Degenerate polygons: run_tool \"Remove Degenerate\".");

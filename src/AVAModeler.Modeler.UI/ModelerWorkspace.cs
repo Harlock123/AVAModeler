@@ -133,6 +133,8 @@ public sealed class ModelerWorkspace : DockPanel
             ["Deselect"] = () => SelectionOps.None(D()),
             ["Invert Selection"] = () => SelectionOps.Invert(D()),
             ["Select Connected"] = () => SelectionOps.Connected(D()),
+            ["Select Loop"] = () => SelectLoopOrRing(SelectionOps.Loop),
+            ["Select Ring"] = () => SelectLoopOrRing(SelectionOps.Ring),
             ["Grow Selection"] = () => SelectionOps.Grow(D()),
             ["Shrink Selection"] = () => SelectionOps.Shrink(D()),
             ["Cycle Selection Mode"] = s.CycleSelectionMode,
@@ -176,6 +178,21 @@ public sealed class ModelerWorkspace : DockPanel
         © 2026 Lonnie Watson, MIT License. LightWave is a trademark of its owner; AVA Modeler is an independent project, not
         affiliated with or endorsed by it. It reads and writes the classic object formats for compatibility.
         """;
+
+    /// <summary>Select Loop or Select Ring, saying what it did (or what it needs) in the status bar.</summary>
+    private void SelectLoopOrRing(Func<Document, int> select)
+    {
+        var doc = Session.Document;
+        var s = doc.Selection;
+        bool any = s.Any && s.Mode is SelectionMode.Edges or SelectionMode.Points
+            && doc.ForegroundLayers.Any(l => s.ActiveEdges(l, doc.Layers[l].Mesh).Count > 0);
+        if (!any)
+        {
+            Session.SetStatus("Select an edge first (Edges mode, or two points joined by an edge).");
+            return;
+        }
+        Session.SetStatus($"{select(doc)} edges selected.");
+    }
 
     /// <summary>Chooses the next UV map to work on (and show in the UV view).</summary>
     private void NextUVMap()
@@ -500,7 +517,7 @@ public sealed class ModelerWorkspace : DockPanel
                     Item("Export gl_TF…", "Export glTF"), Item("Export S_TL…", "Export STL"), Item("Export STL (AS_CII)…", "Export STL ASCII"), Item("Export with a _Plugin…", "Export Plugin Format"), "-", Item("_Quit", "Quit")),
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",
                     Item("Select _All", "Select All"), Item("_Deselect", "Deselect"), Item("_Invert", "Invert Selection"), Item("Select C_onnected", "Select Connected"),
-                    Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),
+                    Item("Select _Loop", "Select Loop"), Item("Select Ri_ng", "Select Ring"), Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),
                 Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), Item("Mesh _Info", "Mesh Info"), "-",
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
                     Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",

@@ -260,6 +260,29 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
         Document.Notify();
     }
 
+    /// <summary>
+    /// Adds edges of the current layer to the selection (in Edges mode), each given by its two points; a pair that isn't
+    /// an edge of a polygon there throws, selecting nothing.
+    /// </summary>
+    public void SelectEdges(IEnumerable<(int A, int B)> edges)
+    {
+        var list = edges.ToList();
+        var mesh = Document.Current.Mesh;
+        Check(list.SelectMany(e => new[] { e.A, e.B }).ToList(), mesh.Points.Count, "point");
+        var map = mesh.EdgeMap();
+        foreach (var (a, b) in list)
+            if (!map.ContainsKey(Edge.Of(a, b))) throw new ArgumentException($"Points {a} and {b} aren't joined by an edge of any polygon in the current layer.");
+        Document.Selection.Mode = SelectionMode.Edges;
+        Document.Selection.EdgesIn(Document.CurrentLayer).UnionWith(list.Select(e => Edge.Of(e.A, e.B)));
+        Document.Notify();
+    }
+
+    /// <summary>Select Loop (see <see cref="SelectionOps.Loop"/>): the loops through the selected edges; returns how many edges are selected.</summary>
+    public int SelectLoop() => SelectionOps.Loop(Document);
+
+    /// <summary>Select Ring (see <see cref="SelectionOps.Ring"/>): the rings through the selected edges; returns how many edges are selected.</summary>
+    public int SelectRing() => SelectionOps.Ring(Document);
+
     private static void Check(List<int> indices, int count, string what)
     {
         foreach (int i in indices)

@@ -28,6 +28,8 @@ public static class Macros
         ("polypoints(n)", "a polygon's point numbers"),
         ("selmode(\"points\" | \"polygons\" | \"edges\" | \"volume\")", "the selection mode"),
         ("selpoints({...}) / selpolygons({...})", "selects points or polygons by number"),
+        ("seledges({{p1, p2}, ...})", "selects edges by their two points' numbers (Edges mode)"),
+        ("selloop() / selring()", "adds the edge loop or edge ring through each selected edge (or the edge between two selected points), in Edges mode; returns how many edges are selected"),
         ("selbox(x0, y0, z0, x1, y1, z1)", "selects (in the current mode) the points inside a box, or the polygons wholly inside it"),
         ("selectall() / deselect() / invert()", "selection"),
         ("setlayers({fg...}, {bg...})", "which layers are foreground and background"),
@@ -68,6 +70,13 @@ public static class Macros
         g["selmode"] = (Action<string>)(m => commands.SelectMode(Enum.Parse<SelectionMode>(m, ignoreCase: true)));
         g["selpoints"] = (Action<Table>)(t => commands.SelectPoints(Indices(t)));
         g["selpolygons"] = (Action<Table>)(t => commands.SelectPolygons(Indices(t)));
+        g["seledges"] = (Action<Table>)(t => commands.SelectEdges(t.Values.Select(v =>
+        {
+            var pair = v.Table?.Values.Select(x => (int)x.Number - 1).ToArray();
+            return pair is { Length: 2 } ? (pair[0], pair[1]) : throw new ArgumentException("seledges wants pairs of point numbers: {{1, 2}, {2, 3}}.");
+        }).ToList()));
+        g["selloop"] = (Func<int>)commands.SelectLoop;
+        g["selring"] = (Func<int>)commands.SelectRing;
         g["selbox"] = (Action<double, double, double, double, double, double>)((x0, y0, z0, x1, y1, z1) =>
             commands.SelectInside(Box3.FromCorners(new Vec3(x0, y0, z0), new Vec3(x1, y1, z1))));
         g["selectall"] = (Action)commands.SelectAll;

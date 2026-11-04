@@ -32,10 +32,12 @@ public sealed class SelectProblemsTool : Tool
 
     /// <summary>
     /// The tool that already fixes a kind of problem across the foreground, safely and in one step, or null where it
-    /// takes judgement (a hole to close, an extra face to find).
+    /// takes judgement (an extra face to find). Holes go to Fill Hole, which closes each with a face wound to match its
+    /// neighbours (a rim lying on top of another is duplicate points, for Merge Points, rather than a hole to fill).
     /// </summary>
     public static string? FixFor(MeshProblem problem) => problem switch
     {
+        MeshProblem.BoundaryEdges => "Fill Hole",
         MeshProblem.FlippedPolygons => "Align",
         MeshProblem.DegeneratePolygons or MeshProblem.UnusedPoints => "Remove Degenerate",
         MeshProblem.DuplicatePoints => "Merge Points",

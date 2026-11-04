@@ -45,13 +45,23 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
     the faces Align would turn, cavities, degenerate and non-planar polygons, duplicate and unused points, volume and
     centre of mass), its verdict, issues, notes and text lines. It changes nothing; the volume is
     `MeshMeasure.Volume`'s, so a closed shell wound LightWave's way (clockwise from outside) is positive.
+  - The edge and face tools' algorithms: `EdgeLoops.cs` (edge loops and rings, the strip of quads a ring crosses, and
+    Loop Cut; `FaceUVs` there captures a face's corner UVs by point for tools that rebuild faces), `Holes.cs` (holes as
+    loops from the mesh check's boundary edges via `Topology.ChainBoundary`, Fill Hole, and Bridge between edge runs,
+    faces or holes), `Inset.cs` (`Insets.Apply`, individual or group, the group bevel) and `Chamfer.cs` (edge bevel,
+    closing corners with `Holes.Fill`). New UVs come from `UVTransfer.Interpolant` (a face's UVs as a function of
+    position) or from interpolating along edges, face by face so seams stay seams.
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
   - `Tool.cs` is the base class and `[Param]`. `Commands.cs` has the `ToolRegistry` and the command API.
   - `Macros.cs` runs Lua; the other files hold the tools, grouped by kind (`ModifyTools.cs`, `UVTools.cs` and so on).
     `CheckTools.cs` has Select Problems (selects one kind of problem the mesh check finds, as an undo step that changes
     only the selection: `Tool.SelectsOnly` keeps the object unmodified) and Remove Degenerate; `SelectProblemsTool.FixFor`
-    names the existing tool that fixes each kind (Align, Merge Points, Remove Degenerate). Don't add a second tool for a
-    fix one of those already makes.
+    names the existing tool that fixes each kind (Fill Hole, Align, Merge Points, Remove Degenerate). Don't add a second
+    tool for a fix one of those already makes.
+  - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
+    commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
+    `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).
+    Edge tools read their edges through `Selection.ActiveEdges` (Core), which follows the app's selection rules.
 - `src/AVAModeler.Rendering/`: `IRenderer` with the software and OpenGL (Silk.NET) renderers, view cameras and
   picking.
 - `src/AVAModeler.Scene/`: Layout's model: items, envelopes, bones, LWS and JSON scenes, and the ray tracer.
@@ -126,6 +136,13 @@ python3 samples/images/make_textures.py           # redraws the sample texture i
   negate Z (`GltfBuilder.ToGltf`/`FromGltf`), STL swaps Y and Z for Z up (`Stl.ToStl`/`FromStl`), and each reverses
   every face's winding, since both are mirrorings. A transform goes over as `F · M · F` with F the Z flip
   (`GltfBuilder.Decompose`). Tests check a known triangle faces the same way after each conversion.
+- **Edge and face tools leave a valid mesh.** New faces wind against the faces beside them (LightWave's clockwise way),
+  so a closed mesh stays closed with consistent winding and a positive volume; their tests run `MeshCheck` after each
+  tool on closed inputs, check UVs on the new points and that undo puts the mesh back exactly. Find holes with the mesh
+  check's boundary edges (`Holes.BoundaryLoops`), not a second detector.
+- **A tool that can't work on the selection throws.** It throws an `InvalidOperationException` (or
+  `ArgumentException`) saying what to select; `Commands.Run` cancels it, agents get the message, and the UI shows it in
+  the status bar, also when the error comes from a drag or a numeric-panel edit of an armed tool.
 - **Repeatable randomness.** Tools such as Jitter hash a `Seed` parameter rather than using `Random`, so the same
   seed gives the same result.
 - **OpenGL tests may skip.** `OffscreenGl` makes a windowless EGL context where Mesa offers one. Without it, the

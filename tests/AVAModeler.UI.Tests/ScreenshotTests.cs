@@ -3,6 +3,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.LogicalTree;
 using AVAModeler.Core;
+using AVAModeler.Geometry;
 using AVAModeler.Layout;
 using AVAModeler.Layout.UI;
 using AVAModeler.Modeler.UI;
@@ -218,6 +219,42 @@ public class ScreenshotTests
         Ui.Fit(w);
         Persp(w, 20, 32, 1.3);
         Shot(w, "mesh-info");
+    }
+
+    [AvaloniaFact]
+    public void Edge_tools_round_a_box_and_cut_loops_round_a_tube()
+    {
+        // A case with every edge chamfered round in three segments and a panel inset and sunk into its top; beside it a
+        // tube with three loops just cut round it (Loop Cut selects them). The Multiply tab shows Inset, Chamfer and
+        // Bridge, with Chamfer's numbers in the panel.
+        var w = Ui.Open(1400, 860);
+        var cmd = w.Session.Commands;
+        var doc = w.Session.Document;
+        cmd.Run("Box", new Dictionary<string, object?> { ["Center"] = new[] { -0.75, 0.35, 0 }, ["Size"] = new[] { 1.1, 0.7, 0.8 }, ["Surface"] = "Case" });
+        cmd.Run("Chamfer", new Dictionary<string, object?> { ["Width"] = 0.08, ["Segments"] = 3 });
+        cmd.SelectMode(SelectionMode.Polygons);
+        cmd.SelectInside(new Box3(new Vec3(-2, 0.69, -1), new Vec3(1, 0.71, 1)));
+        Assert.Single(doc.Selection.PolygonsIn(0));
+        cmd.Run("Inset", new Dictionary<string, object?> { ["Thickness"] = 0.1, ["Depth"] = -0.08 });
+        cmd.SelectNone();
+        cmd.Run("Disc", new Dictionary<string, object?> { ["Center"] = new[] { 0.8, 0.5, 0 }, ["Radius"] = new[] { 0.35, 0.35, 0.35 }, ["Height"] = 1.0, ["Sides"] = 16, ["Surface"] = "Tube" });
+        var mesh = doc.Current.Mesh;
+        var upright = mesh.EdgeMap().Keys.First(e => Vec3.Near(mesh.Points[e.A], new Vec3(1.15, 0, 0), 1e-9) && Vec3.Near(mesh.Points[e.B], new Vec3(1.15, 1, 0), 1e-9)
+            || Vec3.Near(mesh.Points[e.B], new Vec3(1.15, 0, 0), 1e-9) && Vec3.Near(mesh.Points[e.A], new Vec3(1.15, 1, 0), 1e-9));
+        cmd.SelectEdges([(upright.A, upright.B)]);
+        cmd.Run("Loop Cut", new Dictionary<string, object?> { ["Count"] = 3 });
+        Assert.Equal(48, doc.Selection.EdgesIn(0).Count);
+        Assert.True(MeshCheck.Document(doc).Printable);
+        doc.Surfaces[doc.SurfaceIndex("Case")].Color = new Rgb(120, 160, 210);
+        doc.Surfaces[doc.SurfaceIndex("Case")].Specular = 0.4;
+        doc.Surfaces[doc.SurfaceIndex("Tube")].Color = new Rgb(214, 150, 96);
+        doc.Notify();
+        w.Modeler.Tabs.ShowTab("Multiply");
+        w.Modeler.PickTool("Chamfer");
+        Ui.Fit(w);
+        Persp(w, 150, 34, 1.8);
+        Shot(w, "edge-tools");
+        w.Session.CancelTool();
     }
 
     [AvaloniaFact]

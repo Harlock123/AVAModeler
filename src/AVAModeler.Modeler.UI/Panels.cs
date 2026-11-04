@@ -62,7 +62,7 @@ public sealed class ToolTabs : DockPanel
         ["Objects"] = [],
         ["Modify"] = [],
         ["Multiply"] = [],
-        ["Polygon"] = [],
+        ["Polygon"] = [("Select Loop", "Select Loop"), ("Select Ring", "Select Ring")],
         ["Tools"] = [("Cut", "Cut"), ("Copy", "Copy"), ("Paste", "Paste"), ("Swap Layers", "Swap Layers"), ("Run Macro", "Run Macro")],
         ["Display"] = [("Fit All", "Fit All"), ("Fit Selected", "Fit Selected"), ("Maximize", "Maximize View"), ("Numeric", "Numeric Panel"), ("Mesh Info", "Mesh Info"), ("UV View", "UV View"), ("Next UV Map", "Next UV Map"), ("Wireframe", "Style Wireframe"),
             ("Shaded", "Style Shaded"), ("Shaded + Wire", "Style ShadedWireframe"), ("MetaNURBS", "MetaNURBS"), ("Backfaces", "Backface Tint"),
@@ -117,8 +117,8 @@ public sealed class ToolTabs : DockPanel
     [
         "Box", "Ball", "Disc", "Cone", "Points", "Make Polygon", "Text",
         "Move", "Rotate", "Size", "Stretch", "Shear", "Bend", "Twist", "Taper", "Magnet", "Drag", "Jitter", "Smooth", "Center", "Quantize",
-        "Extrude", "Lathe", "Mirror", "Clone", "Array", "Path Extrude", "Rail Extrude", "Bevel", "Smooth Shift",
-        "Flip", "Triple", "Merge Points", "Align", "Unify", "Remove Degenerate", "Select Problems", "Subdivide", "Metaform", "Surface", "Make UVs", "Merge Polygons", "Split", "Remove",
+        "Extrude", "Lathe", "Mirror", "Clone", "Array", "Path Extrude", "Rail Extrude", "Bevel", "Smooth Shift", "Inset", "Chamfer", "Bridge",
+        "Flip", "Triple", "Merge Points", "Align", "Unify", "Remove Degenerate", "Select Problems", "Subdivide", "Metaform", "Surface", "Make UVs", "Merge Polygons", "Split", "Loop Cut", "Fill Hole", "Remove",
         "Boolean", "Drill",
     ];
 

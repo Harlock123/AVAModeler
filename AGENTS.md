@@ -264,7 +264,9 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   the chat has it too (a test checks the lists match).
 - **Preferences live in the app-data folder.** `preferences.json`, `backdrops.json`, `plugins/` and `autosave/` sit
   under `AVAModeler` in `SpecialFolder.ApplicationData`. Tests use temporary folders and never touch them (a test
-  that needs the backdrop memory gives the session a `BackdropMemory` in a temporary folder).
+  that needs the backdrop memory gives the session a `BackdropMemory` in a temporary folder). `Preferences.Save()`
+  writes only to the file the preferences were loaded from (`Location`): ones made with `new`, as test windows' are,
+  save nowhere, so a test that opens or saves a file can't add it to the person's recent files.
 - **Backdrops are a display setting, not the object.** They're never written into object or scene files (LWOB round
   trips stay byte-identical) and never undo steps; `Document.Copy` carries them, so pictures drawn off the UI thread
   show them. Both renderers draw them from the same `BackdropQuad` (the software one with `FillTextured`, OpenGL

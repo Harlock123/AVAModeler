@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The hub: the live link between AVA Modeler and AVALightWave (the standalone Layout), over a local pipe only the
+       current user can open, as the original package linked its modeler and its Layout. No UI, no network. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Hub</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AVAModeler.Hub.Tests" />
+  </ItemGroup>
+</Project>

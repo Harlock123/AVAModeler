@@ -158,6 +158,14 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   - `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
     proxy to that pipe), `McpCommandLine.cs` (`--mcp`), `Workspace.cs` (the working folder's file rules),
     `Pictures.cs` (render_view and render), `CheckReport.cs` (check_mesh's JSON, with `how_to_fix`), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
+- `src/AVAModeler.Hub/`: the hub, the live link with AVALightWave (the standalone Layout, which builds on this engine
+  as a submodule), no UI. `HubProtocol` (each app's per-user pipe, `PipeName`; one JSON line asked, one answered),
+  `HubMessage` (`hello`, `edit_object`, `object_saved`, `add_object`; files by full path, a link id tying a scene object
+  to the document modeled), `HubListener` (an app's end; refuses a second copy), `HubClient` (sends, with a short
+  timeout: `HubUnavailableException` when the other app isn't there), `HubFiles` (the owner-only `hub/` folder in the
+  settings folder for objects handed over without a file) and `AppLauncher` (finds the other program: a setting,
+  `AVAMODELER_PATH`/`AVALIGHTWAVE_PATH`, beside this one, a sibling folder, the PATH; starts it with
+  `file --hub-link id`).
 - `src/AVAModeler.Chat/`: the AI Chat panel's logic, no UI, with two providers (`ChatProvider`): Claude on the
   official Anthropic C# SDK (NuGet `Anthropic`), and any OpenAI-compatible Chat Completions server (Ollama's `/v1`, LM
   Studio, vLLM, llama.cpp, a gateway) on plain `HttpClient` and System.Text.Json (no OpenAI SDK).

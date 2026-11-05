@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The AI Chat panel's controls (its logic is AVAModeler.Chat): AVA Modeler docks it beside its workspaces, and
+       another app on this engine (AVALightWave) beside its own. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Chat.UI</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <ProjectReference Include="..\AVAModeler.Chat\AVAModeler.Chat.csproj" />
+    <ProjectReference Include="..\AVAModeler.Modeler.UI\AVAModeler.Modeler.UI.csproj" />
+  </ItemGroup>
+</Project>

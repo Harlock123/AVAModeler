@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.LogicalTree;
+using AVAModeler.Chat.UI;
 using AVAModeler.Chat;
 using AVAModeler.Chat.Tests;
 using AVAModeler.Modeler.UI;

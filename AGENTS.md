@@ -207,10 +207,13 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     Fit to Object, Size from Pixels, and Save and Load Setup, each change going straight to `ModelerSession.SetBackdrop`.
     `ModelerSession` keeps backdrops across New, gives an opened object the ones `BackdropMemory` has for its file, and
     writes them there when they change (`RememberBackdrops`); `MainWindow` gives it the real memory only outside tests.
+- `src/AVAModeler.Chat.UI/`: `ChatPanel.cs`, the AI Chat panel's controls (a library so another app on this engine,
+  AVALightWave, docks the same panel; `ChatWording` names the app in its lines, AVA Modeler's by default, and
+  `ChatSession.SystemPrompt`, `CoreTools` and `CoreToolsNote` let that app give its own prompt and core tools).
 - `src/AVAModeler/`: the application, one window hosting both workspaces. `Program.cs` sends `--mcp` to the MCP
   server before Avalonia starts; `LiveAgents.cs` is the app's side of live mode (it hands the live host both the
   Modeler's session and the window's `LayoutSession`, which exists before Layout is first shown, and gives the chat
-  its own `LiveHost`). `ChatPanel.cs` is the AI Chat panel's controls (the line saying which provider and model it
+  its own `LiveHost`). The AI Chat panel (`AVAModeler.Chat.UI`'s `ChatPanel`) has its controls (the line saying which provider and model it
   uses, Setup… with the provider, base URL, model and Refresh, Core tools only and Model sees pictures, all kept in
   `Preferences.Chat*`; Edit › Preferences has them too and `ModelerWorkspace.PreferencesApplied` hands them back);
   `MainWindow` docks it on the right of whichever workspace is on screen (F4). Its History (Keep chat history,

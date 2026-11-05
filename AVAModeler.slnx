@@ -9,6 +9,7 @@
     <Project Path="src/AVAModeler.Layout/AVAModeler.Layout.csproj" />
     <Project Path="src/AVAModeler.Mcp/AVAModeler.Mcp.csproj" />
     <Project Path="src/AVAModeler.Chat/AVAModeler.Chat.csproj" />
+    <Project Path="src/AVAModeler.Chat.UI/AVAModeler.Chat.UI.csproj" />
     <Project Path="src/AVAModeler.Modeler.UI/AVAModeler.Modeler.UI.csproj" />
     <Project Path="src/AVAModeler.Layout.UI/AVAModeler.Layout.UI.csproj" />
     <Project Path="src/AVAModeler/AVAModeler.csproj" />

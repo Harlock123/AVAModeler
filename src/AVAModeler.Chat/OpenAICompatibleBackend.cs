@@ -25,6 +25,15 @@ internal sealed class OpenAICompatibleBackend : IChatBackend
     /// <summary>Send only <see cref="ChatTools.Core"/> (small models choose better among fewer tools).</summary>
     public bool CoreToolsOnly { get; set; } = true;
 
+    /// <summary>The system prompt (<see cref="ChatPrompt.System"/> unless the app gives its own).</summary>
+    public string SystemPrompt { get; set; } = ChatPrompt.System;
+
+    /// <summary>The core tool set's names (<see cref="ChatTools.Core"/> unless the app gives its own).</summary>
+    public IReadOnlyList<string> CoreTools { get; set; } = ChatTools.Core;
+
+    /// <summary>The note for a model given only the core tools (<see cref="ChatPrompt.CoreToolsNote"/> unless the app gives its own).</summary>
+    public string CoreToolsNote { get; set; } = ChatPrompt.CoreToolsNote;
+
     /// <summary>Send pictures from tools to the model as images (it must be a vision model, on a server that takes them).</summary>
     public bool ModelSeesPictures { get; set; }
 
@@ -55,9 +64,9 @@ internal sealed class OpenAICompatibleBackend : IChatBackend
     /// <summary>The request body: the system prompt, the conversation, the tools, streamed.</summary>
     internal JsonObject Request(IReadOnlyList<McpTool> tools)
     {
-        var offered = CoreToolsOnly ? ChatTools.CoreOf(tools) : tools;
-        var system = ChatPrompt.System;
-        if (CoreToolsOnly) system += "\n\n" + ChatPrompt.CoreToolsNote;
+        var offered = CoreToolsOnly ? tools.Where(t => CoreTools.Contains(t.Name)).ToList() : tools;
+        var system = SystemPrompt;
+        if (CoreToolsOnly) system += "\n\n" + CoreToolsNote;
         if (!ModelSeesPictures) system += "\n\n" + ChatPrompt.NoPicturesNote;
         var messages = new JsonArray { new JsonObject { ["role"] = "system", ["content"] = system } };
         foreach (var m in _messages) messages.Add(m.DeepClone());

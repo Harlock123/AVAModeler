@@ -1,5 +1,6 @@
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using AVAModeler.Chat.UI;
 using AVAModeler.Chat;
 using AVAModeler.Chat.Tests;
 

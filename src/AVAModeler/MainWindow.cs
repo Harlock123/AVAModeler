@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
 using AVAModeler.Chat;
+using AVAModeler.Chat.UI;
 using AVAModeler.Core;
 using AVAModeler.Formats;
 using AVAModeler.Geometry;

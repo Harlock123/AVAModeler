@@ -11,6 +11,9 @@ namespace AVAModeler.Chat;
 /// </summary>
 internal sealed class AnthropicBackend : IChatBackend
 {
+    /// <summary>The system prompt (<see cref="ChatPrompt.System"/> unless the app gives its own).</summary>
+    public string SystemPrompt { get; set; } = ChatPrompt.System;
+
     private readonly List<(bool User, List<ContentBlockParam> Blocks)> _turns = [];
 
     /// <summary>The Claude API client, or null while there's no key.</summary>
@@ -82,7 +85,7 @@ internal sealed class AnthropicBackend : IChatBackend
     {
         Model = Model,
         MaxTokens = MaxTokens,
-        System = new List<TextBlockParam> { new() { Text = ChatPrompt.System, CacheControl = new CacheControlEphemeral() } },
+        System = new List<TextBlockParam> { new() { Text = SystemPrompt, CacheControl = new CacheControlEphemeral() } },
         Tools = ToolsFor(tools),
         Messages = _turns.Select(t => t.User ? (MessageParam)new UserMessageParam { Content = t.Blocks.ToList() } : new AssistantMessageParam { Content = t.Blocks.ToList() }).ToList(),
         CacheControl = new CacheControlEphemeral(),

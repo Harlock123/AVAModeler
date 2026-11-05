@@ -16,6 +16,7 @@
     <ProjectReference Include="..\AVAModeler.Layout.UI\AVAModeler.Layout.UI.csproj" />
     <ProjectReference Include="..\AVAModeler.Mcp\AVAModeler.Mcp.csproj" />
     <ProjectReference Include="..\AVAModeler.Chat\AVAModeler.Chat.csproj" />
+    <ProjectReference Include="..\AVAModeler.Chat.UI\AVAModeler.Chat.UI.csproj" />
   </ItemGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />

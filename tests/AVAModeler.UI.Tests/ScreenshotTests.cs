@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.LogicalTree;
+using AVAModeler.Chat.UI;
 using AVAModeler.Core;
 using AVAModeler.Geometry;
 using AVAModeler.Layout;

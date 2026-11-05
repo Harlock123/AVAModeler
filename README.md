@@ -776,8 +776,9 @@ Layout reuses them.
 | `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, its undo history, scene files and glTF scene export, what the views draw, the dope sheet and moving keys in time, rendering animations and joining them into movies with ffmpeg), shared by the Layout workspace and the MCP server |
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, Mesh Info and Backdrop panels, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items (with IK and path settings), timeline, graph editor, dope sheet, render and animation windows |
-| `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, and the `--attach` bridge |
+| `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, the `--attach` bridge, and server profiles (another app serving a chosen set of the tools) |
 | `AVAModeler.Chat` | The AI Chat's conversation and agent loop, with two providers: Claude on the Anthropic C# SDK (streaming, prompt caching), and any OpenAI-compatible Chat Completions server (HttpClient and System.Text.Json, streamed tool calls); the bridge to the MCP server's tools through an in-process MCP client, the API keys' stores, and saved chats (history and Markdown export). No UI |
+| `AVAModeler.Chat.UI` | The AI Chat panel's controls, shared with [AVALightWave](https://github.com/Harlock123/AVALightWave) |
 | `AVAModeler` | The application: one window hosting both workspaces, and the AI Chat panel |
 
 ## Known limits

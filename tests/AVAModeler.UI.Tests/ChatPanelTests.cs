@@ -3,6 +3,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
+using AVAModeler.Chat.UI;
 using AVAModeler.Chat;
 using AVAModeler.Chat.Tests;
 using AVAModeler.Layout.UI;
@@ -291,5 +292,21 @@ public class ChatPanelTests
         retry.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
         Finish(w.Chat.Running);
         Assert.Contains("Here now.", Texts(w.Chat));
+    }
+
+    [AvaloniaFact]
+    public void The_panel_words_itself_for_the_app_it_is_in()
+    {
+        var keys = new ApiKeyStore(null, null);
+        var panel = new ChatPanel(new LazyToolBridge(_ => throw new InvalidOperationException("no tools in this test")), keys, _ => { });
+        Assert.Equal(ChatWording.Modeler, panel.Wording);
+        Assert.Equal("Ask Claude to model or stage something… (Enter sends)", panel.Input.PlaceholderText);
+        Assert.Contains("make a chess pawn", panel.IntroText);
+        Assert.Contains("before starting AVA Modeler", panel.IntroText);
+        panel.Wording = new ChatWording("Scene App", "stage, light or animate something", "\"light it from the left\"", "\"add a spotlight\"", "Ctrl+Z undoes its scene steps.");
+        Assert.Equal("Ask Claude to stage, light or animate something… (Enter sends)", panel.Input.PlaceholderText);
+        Assert.Contains("light it from the left", panel.IntroText);
+        Assert.Contains("before starting Scene App", panel.IntroText);
+        Assert.Contains("before starting Scene App", panel.Session.NoKeyText);
     }
 }

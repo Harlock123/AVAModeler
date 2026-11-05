@@ -99,6 +99,22 @@ public sealed class ChatSession(IToolBridge tools)
     /// <summary>Offer the OpenAI-compatible model only <see cref="ChatTools.Core"/> (on by default: small models do better).</summary>
     public bool CoreToolsOnly { get => _server.CoreToolsOnly; set => _server.CoreToolsOnly = value; }
 
+    /// <summary>
+    /// What the model is told before the conversation: <see cref="ChatPrompt.System"/> (AVA Modeler's server
+    /// instructions and its in-app lines) unless an app gives its own, for both providers.
+    /// </summary>
+    public string SystemPrompt
+    {
+        get => _anthropic.SystemPrompt;
+        set { _anthropic.SystemPrompt = value; _server.SystemPrompt = value; }
+    }
+
+    /// <summary>The tools an OpenAI-compatible model gets with <see cref="CoreToolsOnly"/> (<see cref="ChatTools.Core"/> unless an app gives its own), and the note that says so.</summary>
+    public IReadOnlyList<string> CoreTools { get => _server.CoreTools; set => _server.CoreTools = value; }
+
+    /// <inheritdoc cref="CoreTools"/>
+    public string CoreToolsNote { get => _server.CoreToolsNote; set => _server.CoreToolsNote = value; }
+
     /// <summary>Send the OpenAI-compatible model the tools' pictures (a vision model); otherwise it's told one was made.</summary>
     public bool ModelSeesPictures { get => _server.ModelSeesPictures; set => _server.ModelSeesPictures = value; }
 

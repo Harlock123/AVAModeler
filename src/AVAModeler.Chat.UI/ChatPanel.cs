@@ -11,7 +11,7 @@ using Avalonia.Threading;
 using AVAModeler.Chat;
 using AVAModeler.Modeler.UI;
 
-namespace AVAModeler;
+namespace AVAModeler.Chat.UI;
 
 /// <summary>
 /// The AI Chat panel on the right of the window (F4, or Macros › AI Chat): the conversation with the model, each tool
@@ -23,8 +23,26 @@ namespace AVAModeler;
 /// clear. The conversation itself is <see cref="ChatSession"/>'s, and saving it <see cref="ChatHistory"/>'s; this is only
 /// their controls.
 /// </summary>
-internal sealed class ChatPanel : DockPanel
+public sealed class ChatPanel : DockPanel
 {
+    /// <summary>
+    /// The app the panel is in, as its lines name it: AVA Modeler's words unless an app on this engine (AVALightWave)
+    /// gives its own. Set it before the panel is shown.
+    /// </summary>
+    public ChatWording Wording
+    {
+        get => _wording;
+        set
+        {
+            _wording = value;
+            Session.NoKeyText = $"There's no Anthropic API key yet. Set the {ApiKeyStore.EnvironmentVariable} environment variable before starting {value.App}, or enter a key with the Key… button above. Your own API account is billed for what the chat uses.";
+            Input.PlaceholderText = value.Placeholder(SelectedProvider == ChatProvider.OpenAICompatible ? "the model" : "Claude");
+            RefreshIntro();
+        }
+    }
+
+    private ChatWording _wording = ChatWording.Modeler;
+
     private readonly ApiKeyStore _keys;
     private readonly ApiKeyStore _serverKeys;
     private readonly Preferences _prefs;
@@ -112,7 +130,7 @@ internal sealed class ChatPanel : DockPanel
     public TextBox Input { get; } = new()
     {
         AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 64, MaxHeight = 160, FontSize = 13,
-        PlaceholderText = "Ask Claude to model or stage something… (Enter sends)",
+        PlaceholderText = ChatWording.Modeler.Placeholder("Claude"),
     };
 
     /// <summary>Makes the API client for a key (tests give one on a fake API).</summary>
@@ -311,7 +329,7 @@ internal sealed class ChatPanel : DockPanel
         bool server = provider == ChatProvider.OpenAICompatible;
         _serverSettings.IsVisible = server;
         _model.IsVisible = !server;
-        Input.PlaceholderText = server ? "Ask the model to model or stage something… (Enter sends)" : "Ask Claude to model or stage something… (Enter sends)";
+        Input.PlaceholderText = Wording.Placeholder(server ? "the model" : "Claude");
         _using.Text = UsingLine();
         ToolTip.SetTip(_using, _using.Text);
         RefreshIntro();
@@ -366,19 +384,19 @@ internal sealed class ChatPanel : DockPanel
             _intro.Text = _prefs.ChatServerModel.Length == 0
                 ? $"Chat with a model on your own server ({server}) to build in the open window.\n\n" +
                   "No model is chosen yet: press Setup… above, check the base URL (Ollama's is http://localhost:11434/v1), and enter a model name or press Refresh to list the server's models. The model must support tool calls (qwen3, llama3.1, mistral-small…)."
-                : $"Chat with {_prefs.ChatServerModel} on {server} to build in the open window: \"make a chess pawn\", \"put a box on a table\". " +
-                  "You watch it work; Ctrl+Z undoes its modeling steps. " +
+                : $"Chat with {_prefs.ChatServerModel} on {server} to build in the open window: {Wording.ServerExamples}. " +
+                  $"You watch it work; {Wording.Undo} " +
                   (local ? "It runs on this computer: nothing leaves it, and there's no bill." : "Requests go only to that server.") +
                   " Small local models handle simple jobs best.";
             return;
         }
         var key = _keys.Get();
         _intro.Text = key == null
-            ? "Chat with Claude to build in the open window: \"make a chess pawn\", \"put it on a table with a spotlight and render it\".\n\n" +
-              $"There's no Anthropic API key yet. Set the {ApiKeyStore.EnvironmentVariable} environment variable before starting AVA Modeler, or press Key… above to enter one. " +
+            ? $"Chat with Claude to build in the open window: {Wording.Examples}.\n\n" +
+              $"There's no Anthropic API key yet. Set the {ApiKeyStore.EnvironmentVariable} environment variable before starting {Wording.App}, or press Key… above to enter one. " +
               "Your own Anthropic API account is billed for what the chat uses."
-            : "Chat with Claude to build in the open window: \"make a chess pawn\", \"put it on a table with a spotlight and render it\". " +
-              "You watch it work; Ctrl+Z undoes its modeling steps. Your Anthropic API account is billed for what it uses.";
+            : $"Chat with Claude to build in the open window: {Wording.Examples}. " +
+              $"You watch it work; {Wording.Undo} Your Anthropic API account is billed for what it uses.";
     }
 
     /// <summary>The intro's words (for tests).</summary>
@@ -534,7 +552,7 @@ internal sealed class ChatPanel : DockPanel
         if (path == null) return null;
         try
         {
-            ChatMarkdown.Save(chat, pictures, path);
+            ChatMarkdown.Save(chat, pictures, path, Wording.App);
             _status($"Exported the chat as {Path.GetFileName(path)}.");
             return path;
         }
@@ -780,4 +798,20 @@ internal sealed class ChatPanel : DockPanel
         await Dialogs.ShowModal(window, owner);
         RefreshIntro();
     }
+}
+
+/// <summary>
+/// How the chat panel words what it's for: the app's name, the input box's prompt, examples to try, and what Ctrl+Z
+/// undoes. <see cref="Modeler"/> is AVA Modeler's.
+/// </summary>
+public sealed record ChatWording(string App, string Verb, string Examples, string ServerExamples, string Undo)
+{
+    public static ChatWording Modeler { get; } = new(
+        "AVA Modeler", "model or stage something",
+        "\"make a chess pawn\", \"put it on a table with a spotlight and render it\"",
+        "\"make a chess pawn\", \"put a box on a table\"",
+        "Ctrl+Z undoes its modeling steps.");
+
+    /// <summary>The input box's prompt for a model ("Claude", "the model").</summary>
+    public string Placeholder(string who) => $"Ask {who} to {Verb}… (Enter sends)";
 }

@@ -245,13 +245,13 @@ public static class ChatMarkdown
     /// The chat as Markdown. Pictures are linked as <paramref name="imageFolder"/>/name when given (the files written
     /// beside the Markdown), else mentioned in words.
     /// </summary>
-    public static string Write(StoredChat chat, string? imageFolder = null)
+    public static string Write(StoredChat chat, string? imageFolder = null, string appName = "AVA Modeler")
     {
         var b = new StringBuilder();
         string who = chat.Provider == ChatProvider.Anthropic ? "Claude" : "The model";
         b.Append("# ").Append(Line(chat.Title.Length > 0 ? chat.Title : "AI Chat")).Append("\n\n");
         b.Append('_').Append(chat.Provider == ChatProvider.Anthropic ? $"{ChatModels.Label(chat.Model)} (Anthropic API)" : $"{chat.Model} on {chat.Server ?? "an OpenAI-compatible server"}")
-            .Append(", ").Append(chat.Created.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)).Append(" (AVA Modeler)_\n\n");
+            .Append(", ").Append(chat.Created.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)).Append(" (").Append(appName).Append(")_\n\n");
         foreach (var e in chat.Entries)
         {
             switch (e.Kind)
@@ -281,7 +281,7 @@ public static class ChatMarkdown
     /// Writes the chat as a Markdown file, its kept pictures copied into a folder beside it (<c>name-images</c>), and
     /// returns the files written.
     /// </summary>
-    public static IReadOnlyList<string> Save(StoredChat chat, Func<string, ToolImage?>? pictures, string path)
+    public static IReadOnlyList<string> Save(StoredChat chat, Func<string, ToolImage?>? pictures, string path, string appName = "AVA Modeler")
     {
         var written = new List<string>();
         var dir = Path.GetDirectoryName(Path.GetFullPath(path))!;
@@ -297,7 +297,7 @@ public static class ChatMarkdown
                     written.Add(target);
                     any = true;
                 }
-        File.WriteAllText(path, Write(chat, any ? folderName : null));
+        File.WriteAllText(path, Write(chat, any ? folderName : null, appName));
         written.Insert(0, path);
         return written;
     }

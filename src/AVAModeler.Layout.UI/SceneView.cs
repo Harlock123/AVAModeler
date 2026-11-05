@@ -10,8 +10,22 @@ using AVAModeler.Scene;
 
 namespace AVAModeler.Layout.UI;
 
-/// <summary>What Layout's view looks through: the scene's camera, a free perspective, or one of the three flat views.</summary>
-public enum LayoutViewMode { Camera, Perspective, Top, Front, Side }
+/// <summary>
+/// What Layout's view looks through: the scene's camera, a free perspective, one of the three flat views, or a light
+/// (the chosen light, else the first: classic Layout's Light view, for aiming spots).
+/// </summary>
+public enum LayoutViewMode { Camera, Perspective, Top, Front, Side, Light }
+
+/// <summary>
+/// What dragging the chosen item does, as classic Layout's mouse modes: <see cref="MoveOrRotate"/> (the default) moves it
+/// with the left button and turns it with the right; the others are one action each (the right button working the
+/// third axis: depth for Move, bank for Rotate, Z for Stretch).
+/// </summary>
+public enum ItemDrag { MoveOrRotate, Move, Rotate, Size, Stretch }
+
+/// <summary>The axes a drag may change (classic Layout's X, Y and Z buttons): X, Y, Z or heading, pitch, bank.</summary>
+[Flags]
+public enum DragAxes { None = 0, X = 1, Y = 2, Z = 4, All = X | Y | Z }
 
 /// <summary>
 /// Layout's view: the scene at the current frame through the chosen camera, with the camera's safe areas. Click an
@@ -30,12 +44,25 @@ public sealed class SceneView : Control
         [LayoutViewMode.Front] = new ViewCamera(ViewKind.Front) { PixelsPerUnit = 50 },
         [LayoutViewMode.Side] = new ViewCamera(ViewKind.Side) { PixelsPerUnit = 50 },
         [LayoutViewMode.Camera] = new ViewCamera(ViewKind.Perspective),
+        [LayoutViewMode.Light] = new ViewCamera(ViewKind.Perspective),
     };
     private LayoutViewMode _mode = LayoutViewMode.Camera;
     public bool Shaded { get; set; } = true;
     private Point _press, _last;
     private bool _dragItem, _rotateItem, _pan, _orbit, _moved;
-    private Vec3 _startPosition, _startRotation;
+    private Vec3 _startPosition, _startRotation, _startScale;
+
+    /// <summary>What dragging the chosen item does (<see cref="ItemDrag.MoveOrRotate"/> unless a host changes it).</summary>
+    public ItemDrag DragMode { get; set; } = ItemDrag.MoveOrRotate;
+
+    /// <summary>The axes a drag may change (all unless a host restricts them).</summary>
+    public DragAxes Axes { get; set; } = DragAxes.All;
+
+    /// <summary>
+    /// Which items a click may choose (classic Layout's Objects, Bones, Lights or Cameras edit mode); null, any. Locked
+    /// items (<see cref="SceneItem.Locked"/>) are never chosen or dragged with the mouse.
+    /// </summary>
+    public Func<SceneItem, bool>? CanPick { get; set; }
 
     public SceneView(LayoutSession session)
     {
@@ -68,16 +95,20 @@ public sealed class SceneView : Control
             c.Resize(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height));
             // Look from the scene camera: its position, heading, pitch and bank, and its field of view.
             if (_mode == LayoutViewMode.Camera && _session.Scene.CurrentCamera is { } cam) SceneDrawing.LookThrough(c, cam, _session.Frame);
+            if (_mode == LayoutViewMode.Light && LightShown is { } light) SceneDrawing.LookThrough(c, light, _session.Frame);
             return c;
         }
     }
+
+    /// <summary>The light the Light view looks through: the chosen one, else the scene's first.</summary>
+    public LightItem? LightShown => _session.Selected as LightItem ?? _session.Scene.Lights.FirstOrDefault();
 
     public void Fit()
     {
         var box = SceneDrawing.Bounds(_session.Scene.Evaluate(_session.Frame));
         foreach (var (mode, c) in _cameras)
         {
-            if (mode == LayoutViewMode.Camera) continue;
+            if (mode is LayoutViewMode.Camera or LayoutViewMode.Light) continue;
             c.Resize(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height));
             c.Fit(box);
         }
@@ -103,7 +134,12 @@ public sealed class SceneView : Control
                 System.Runtime.InteropServices.Marshal.Copy((int[])(object)_renderer.Pixels, y * w, fb.Address + y * fb.RowBytes, w);
         context.DrawImage(_bitmap, new Rect(0, 0, w, h));
         if (_mode == LayoutViewMode.Camera && _session.Scene.CurrentCamera is { } c) DrawFrameGuides(context, c, w, h);
-        var label = _mode == LayoutViewMode.Camera ? $"Camera: {_session.Scene.CurrentCamera?.Name ?? "(none)"}" : _mode.ToString();
+        var label = _mode switch
+        {
+            LayoutViewMode.Camera => $"Camera: {_session.Scene.CurrentCamera?.Name ?? "(none)"}",
+            LayoutViewMode.Light => $"Light: {LightShown?.Name ?? "(none)"}",
+            _ => _mode.ToString(),
+        };
         context.DrawText(new FormattedText($"{label} · frame {_session.Frame:0}", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
             new Typeface(FontFamily.Default), 12, Brushes.White), new Point(6, 4));
     }
@@ -136,14 +172,15 @@ public sealed class SceneView : Control
         _moved = false;
         _pan = props.IsMiddleButtonPressed || props.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Alt) && _mode != LayoutViewMode.Perspective;
         _orbit = !_pan && _mode == LayoutViewMode.Perspective && (e.KeyModifiers.HasFlag(KeyModifiers.Alt) || Pick(p) == null && _session.Selected == null);
-        if (!_pan && !_orbit && _session.Selected is { } item && (props.IsLeftButtonPressed || props.IsRightButtonPressed))
+        if (!_pan && !_orbit && _session.Selected is { Locked: false } item && (props.IsLeftButtonPressed || props.IsRightButtonPressed))
         {
             _dragItem = props.IsLeftButtonPressed;
             _rotateItem = props.IsRightButtonPressed;
             _startPosition = item.PositionAt(_session.Frame);
             _startRotation = item.RotationAt(_session.Frame);
+            _startScale = item.ScaleAt(_session.Frame);
             // The whole drag, press to release, is one undo step (none if it doesn't move).
-            _session.BeginEdit($"{LayoutSession.VectorVerb(_dragItem ? 0 : 3)} {item.Name}");
+            _session.BeginEdit($"{LayoutSession.VectorVerb(FirstChannel)} {item.Name}");
         }
         e.Pointer.Capture(this);
     }
@@ -156,19 +193,68 @@ public sealed class SceneView : Control
         if (Math.Abs(p.X - _press.X) + Math.Abs(p.Y - _press.Y) > 3) _moved = true;
         if (!_moved) return;
         var cam = Camera;
-        if (_pan && _mode != LayoutViewMode.Camera) cam.Pan(p.X - _last.X, p.Y - _last.Y);
+        if (_pan && _mode is not (LayoutViewMode.Camera or LayoutViewMode.Light)) cam.Pan(p.X - _last.X, p.Y - _last.Y);
         else if (_orbit) cam.Orbit((p.X - _last.X) * 0.4, (p.Y - _last.Y) * 0.4);
-        else if (_session.Selected is { } item && _dragItem)
-        {
-            // Moved in the view's plane, so far as the view shows it (in the parent's space, as LightWave did for unparented items).
-            var at = item.WorldPosition(_session.Frame);
-            var delta = cam.DragDelta(p.X - _press.X, p.Y - _press.Y, at);
-            _session.SetVector(item, 0, _startPosition + delta);
-        }
-        else if (_session.Selected is { } turn && _rotateItem)
-            _session.SetVector(turn, 3, _startRotation + new Vec3((p.X - _press.X) * 0.5, (p.Y - _press.Y) * 0.5, 0));
+        else if (_session.Selected is { } item && (_dragItem || _rotateItem)) DragItem(item, cam, p.X - _press.X, p.Y - _press.Y);
         _last = p;
         InvalidateVisual();
+    }
+
+    /// <summary>The first channel a drag changes: 0 position, 3 rotation, 6 scale.</summary>
+    private int FirstChannel => DragMode switch
+    {
+        ItemDrag.Move => 0,
+        ItemDrag.Rotate => 3,
+        ItemDrag.Size or ItemDrag.Stretch => 6,
+        _ => _dragItem ? 0 : 3,
+    };
+
+    private static Vec3 Masked(Vec3 start, Vec3 v, DragAxes axes) =>
+        new(axes.HasFlag(DragAxes.X) ? v.X : start.X, axes.HasFlag(DragAxes.Y) ? v.Y : start.Y, axes.HasFlag(DragAxes.Z) ? v.Z : start.Z);
+
+    /// <summary>A drag of the chosen item by (dx, dy) pixels since the press, by <see cref="DragMode"/> and <see cref="Axes"/>.</summary>
+    private void DragItem(SceneItem item, ViewCamera cam, double dx, double dy)
+    {
+        bool left = _dragItem;
+        switch (DragMode)
+        {
+            case ItemDrag.MoveOrRotate when left:
+            case ItemDrag.Move when left:
+            {
+                // Moved in the view's plane, so far as the view shows it (in the parent's space, as LightWave did for unparented items).
+                var at = item.WorldPosition(_session.Frame);
+                var delta = cam.DragDelta(dx, dy, at);
+                _session.SetVector(item, 0, Masked(_startPosition, _startPosition + delta, Axes));
+                break;
+            }
+            case ItemDrag.Move:
+            {
+                // The right button moves along the view's depth: up the screen is away from the eye.
+                var at = item.WorldPosition(_session.Frame);
+                double perPixel = cam.DragDelta(1, 0, at).Length;
+                var delta = cam.Basis().Forward * (-dy * perPixel);
+                _session.SetVector(item, 0, Masked(_startPosition, _startPosition + delta, Axes));
+                break;
+            }
+            case ItemDrag.MoveOrRotate:
+                _session.SetVector(item, 3, Masked(_startRotation, _startRotation + new Vec3(dx * 0.5, dy * 0.5, 0), Axes));
+                break;
+            case ItemDrag.Rotate:
+                _session.SetVector(item, 3, Masked(_startRotation, _startRotation + (left ? new Vec3(dx * 0.5, dy * 0.5, 0) : new Vec3(0, 0, dx * 0.5)), Axes));
+                break;
+            case ItemDrag.Size:
+            {
+                double f = Math.Exp(dx * 0.01);
+                _session.SetVector(item, 6, Masked(_startScale, _startScale * f, Axes));
+                break;
+            }
+            case ItemDrag.Stretch:
+            {
+                var f = left ? new Vec3(Math.Exp(dx * 0.01), Math.Exp(-dy * 0.01), 1) : new Vec3(1, 1, Math.Exp(dx * 0.01));
+                _session.SetVector(item, 6, Masked(_startScale, new Vec3(_startScale.X * f.X, _startScale.Y * f.Y, _startScale.Z * f.Z), Axes));
+                break;
+            }
+        }
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -198,12 +284,15 @@ public sealed class SceneView : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        if (_mode == LayoutViewMode.Camera) return;
+        if (_mode is LayoutViewMode.Camera or LayoutViewMode.Light) return;
         var p = e.GetPosition(this);
         Camera.Zoom(Math.Pow(1.15, e.Delta.Y), p.X, p.Y);
         InvalidateVisual();
         e.Handled = true;
     }
+
+    /// <summary>Whether a click may choose an item: not locked, and allowed by <see cref="CanPick"/>.</summary>
+    public bool Pickable(SceneItem item) => !item.Locked && (CanPick?.Invoke(item) ?? true);
 
     /// <summary>The item under a point: the nearest light, camera, null or bone within a few pixels, else the front-most object.</summary>
     public SceneItem? Pick(Point p)
@@ -214,7 +303,7 @@ public sealed class SceneView : Control
         double bestD = 12;
         foreach (var (item, m) in frame.World)
         {
-            if (item is ObjectItem) continue;
+            if (item is ObjectItem || !Pickable(item)) continue;
             var s = cam.Project(m.TransformPoint(Vec3.Zero));
             if (!s.Visible) continue;
             double d = Math.Sqrt((s.X - p.X) * (s.X - p.X) + (s.Y - p.Y) * (s.Y - p.Y));
@@ -225,6 +314,7 @@ public sealed class SceneView : Control
         double bestT = double.PositiveInfinity;
         foreach (var o in frame.Objects)
         {
+            if (!Pickable(o.Item)) continue;
             var mesh = o.WorldMesh;
             foreach (var t in Tessellation.Of(mesh))
                 if (ray.IntersectTriangle(mesh.Points[t.A], mesh.Points[t.B], mesh.Points[t.C]) is { } hit && hit.T < bestT)

@@ -36,7 +36,7 @@ public class FollowPathUITests
         var car = s.Add(new NullItem("Car"));
         Ui.Pump();
         var list = Named<ListBox>(layout, "PathPoints");
-        var entries = list.Items.Cast<LayoutWorkspace.ItemChoice>().ToList();
+        var entries = list.Items.Cast<ItemPropertiesPanel.ItemChoice>().ToList();
         // The item itself isn't offered; the camera, light and corners are.
         Assert.DoesNotContain(entries, e => e.Item == car);
         foreach (var e in entries.Where(e => points.Contains(e.Item))) list.SelectedItems!.Add(e);

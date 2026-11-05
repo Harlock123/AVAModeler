@@ -189,6 +189,10 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   - `SceneSettingsPanel.cs` is Scene › Scene Settings' contents (frames, ambient, backdrop, ambient occlusion and
     the environment), one undo step on OK; the camera's depth of field and motion blur and the lights' soft-shadow
     settings are in `LayoutWorkspace`'s item panel, with Focus on calling `LayoutSession.FocusOn`.
+  - `ItemPropertiesPanel.cs` is that item panel (the chosen item's settings, each change one undo step), with `Extras`
+    for a host's own controls; `SceneView.cs` is the view, whose `DragMode` (`ItemDrag`: the default MoveOrRotate,
+    or Move, Rotate, Size, Stretch), `Axes` and `CanPick` let a standalone Layout (AVALightWave) have classic Layout's
+    mouse modes, axis buttons and edit modes; it never picks or drags a `SceneItem.Locked` item.
   - `MeshInfoPanel.cs` is Mesh Info (W), docked beside the numeric panel and hidden until asked for: a thin view of
     `MeshCheck`, checking again (on the dispatcher, after a burst of changes) whenever the document changes while it's open.
   - `BackdropPanel.cs` is Backdrop (D), docked the same way: a view chooser, Browse, the numbers and check boxes,

@@ -294,7 +294,8 @@ Modeler and Layout shows the change at once.
   and path setting, Bake IK and Bake path. AI agents' scene changes are steps on the same history ("Agent: added a
   light"), so your Ctrl+Z takes them back too. New Scene and Load Scene clear it. The object's geometry has the
   Modeler's own undo.
-- **Cameras and lights**: the camera view with its picture shape and its action- and title-safe areas, turned by the
+- **Cameras and lights**: the light view (View › Light) looks through the chosen light, or the first, as classic Layout's
+  did for aiming spots (a spot's cone wide). The camera view with its picture shape and its action- and title-safe areas, turned by the
   camera's heading, pitch and bank (a banked camera's view tilts just as its ray-traced picture does); zoom factor
   and field of view, and, off until switched on, depth of field (focal distance and LightWave's lens f-stop, with a
   Focus on button that brings a chosen item into focus) and motion blur (the shutter as a fraction of a frame).

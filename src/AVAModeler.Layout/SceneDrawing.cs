@@ -93,6 +93,23 @@ public static class SceneDrawing
         view.Center = eye + view.Basis().Forward;
     }
 
+    /// <summary>
+    /// Looks through a light, as classic Layout's Light view did for aiming: from where it is, along its +Z (the way
+    /// distant and spot lights shine), a spot's cone wide (twice its cone angle, its soft edge included), else 60°.
+    /// </summary>
+    public static void LookThrough(ViewCamera view, LightItem light, double frame)
+    {
+        var world = light.WorldMatrix(frame);
+        var eye = world.TransformPoint(light.Pivot);
+        var hpb = Rotations.FromMatrix(world);
+        view.Heading = hpb.X;
+        view.Pitch = hpb.Y;
+        view.Bank = hpb.Z;
+        view.Distance = 1;
+        view.FieldOfView = light.Type == LightType.Spot ? Math.Clamp(2 * (light.ConeAngle + light.EdgeAngle), 5, 170) : 60;
+        view.Center = eye + view.Basis().Forward;
+    }
+
     /// <summary>Where an item is in the world at a frame: an object's middle (its placed mesh's bounds' centre), else its pivot.</summary>
     public static Vec3 WorldPoint(SceneFrame sf, SceneItem item)
     {

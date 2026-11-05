@@ -32,6 +32,9 @@ public sealed class MainWindow : Window
     /// <summary>AI agents' live access (MCP), open while the preference allows it.</summary>
     internal LiveAgents Agents { get; }
 
+    /// <summary>The hub: the live link with AVALightWave (Edit in Modeler, saves going back, Send to AVALightWave).</summary>
+    internal ModelerHub Hub { get; }
+
     /// <summary>The AI Chat panel (F4): Claude working in the open window, through the app's own MCP server in-process.</summary>
     internal ChatPanel Chat { get; }
 
@@ -68,6 +71,16 @@ public sealed class MainWindow : Window
         Agents = new LiveAgents(Session, _layoutSession);
         Modeler.AgentsChanged += SyncAgents;
         Modeler.ToggleChat += ToggleChat;
+        Hub = new ModelerHub(Session, path => Modeler.Open(path), () => { ShowModeler(); Activate(); });
+        if (loadPlugins) Hub.SettingsFolder = Preferences.Folder;
+        else
+        {
+            // A window made for tests never reaches a real AVALightWave or starts one: tests give pipes of their own.
+            Hub.LightWavePipe = "avamodeler-test-nowhere-" + Guid.NewGuid().ToString("N");
+            Hub.Launcher = new AVAModeler.Hub.AppLauncher(AVAModeler.Hub.HubProtocol.LightWave) { Start = _ => false };
+        }
+        Modeler.Saved += path => { if (Hub.Running) _ = Hub.NotifySaved(Session.Document, path); };
+        Modeler.SendToLightWave += async () => Session.SetStatus(await Hub.SendToLightWave());
         // Tests never see the person's own key: no environment variable, no key file.
         var keys = loadPlugins ? ApiKeyStore.ForApp(Preferences.Folder) : new ApiKeyStore(null, null);
         var serverKeys = loadPlugins ? ApiKeyStore.ForServer(Preferences.Folder) : new ApiKeyStore(null, null);
@@ -98,6 +111,7 @@ public sealed class MainWindow : Window
             Opened += async (_, _) => await Started(args);
             Closing += Closing_;
             SyncAgents();
+            SyncHub();
         }
         Closed += (_, _) =>
         {
@@ -105,7 +119,18 @@ public sealed class MainWindow : Window
             Chat.SaveHistory();
             _ = _chatTools.DisposeAsync().AsTask();
             _ = Agents.StopAsync();
+            _ = Hub.StopAsync();
         };
+    }
+
+    /// <summary>Joins or leaves the hub to match the preference.</summary>
+    internal void SyncHub()
+    {
+        if (Session.Preferences.HubEnabled && !Hub.Running)
+        {
+            if (Hub.Start() is { } problem) Session.SetStatus($"Not linked with AVALightWave: {problem}");
+        }
+        else if (!Session.Preferences.HubEnabled && Hub.Running) _ = Hub.StopAsync();
     }
 
     /// <summary>Opens or closes the door to AI agents to match the preference.</summary>
@@ -205,7 +230,12 @@ public sealed class MainWindow : Window
             Session.Document.Modified = true;
             UpdateTitle();
         }
-        else if (args.FirstOrDefault(a => File.Exists(a)) is { } path) await Modeler.Open(path);
+        else if (args.FirstOrDefault(a => File.Exists(a)) is { } path)
+        {
+            await Modeler.Open(path);
+            // Started by AVALightWave's Edit in Modeler: saving goes back to its scene object.
+            if (AVAModeler.Hub.AppLauncher.LinkArgument(args) is { } link) Hub.Adopt(Session.Document, link);
+        }
     }
 
     /// <summary>Saves a modified object to the auto-save file (never over the user's own file).</summary>

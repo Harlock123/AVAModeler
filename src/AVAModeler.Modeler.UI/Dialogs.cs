@@ -249,6 +249,9 @@ public sealed class PreferencesWindow : Window
             Content = "Allow AI agents to drive AVA Modeler (MCP, from this user's programs only)", IsChecked = p.AllowAgents, Foreground = Look.Text,
         };
         ToolTip.SetTip(agents, "An agent configured with \"AVAModeler --mcp --attach\" can then build in the open object: you see its work in the views, and Ctrl+Z undoes it.");
+        var hub = new CheckBox { Content = "Link with AVALightWave (the hub: this user's programs only)", IsChecked = p.HubEnabled, Foreground = Look.Text };
+        ToolTip.SetTip(hub, "AVALightWave's Edit in Modeler opens its objects here, and saving them updates its scene. Takes effect when AVA Modeler next starts.");
+        var lightWave = new TextBox { Text = p.LightWavePath ?? "", PlaceholderText = "AVALightWave's program (found beside AVA Modeler or on the PATH if empty)" };
         // The AI Chat's model: Claude, or a local or self-hosted server that speaks the OpenAI Chat Completions API.
         var chatProvider = new ComboBox { ItemsSource = ChatProviders.Select(c => c.Label).ToList(), SelectedIndex = Math.Max(0, ChatProviders.FindIndex(c => c.Id == p.ChatProvider)) };
         var chatUrl = new TextBox { Text = p.ChatServerUrl, PlaceholderText = "http://localhost:11434/v1" };
@@ -281,6 +284,8 @@ public sealed class PreferencesWindow : Window
             if (int.TryParse(level.SelectedItem as string, out int l)) p.SubdivisionLevel = l;
             if (Enum.TryParse<DisplayStyle>(style.SelectedItem as string, out var st)) p.PerspectiveStyle = st;
             p.AllowAgents = agents.IsChecked == true;
+            p.HubEnabled = hub.IsChecked == true;
+            p.LightWavePath = string.IsNullOrWhiteSpace(lightWave.Text) ? null : lightWave.Text.Trim();
             p.ChatProvider = ChatProviders[Math.Max(0, chatProvider.SelectedIndex)].Id;
             p.ChatServerUrl = string.IsNullOrWhiteSpace(chatUrl.Text) ? new Preferences().ChatServerUrl : chatUrl.Text.Trim();
             p.ChatServerModel = chatModel.Text?.Trim() ?? "";
@@ -311,6 +316,7 @@ public sealed class PreferencesWindow : Window
                             Label("Viewports"), renderer, Label("Perspective view"), style, Label("Undo levels"), undo,
                             Label("Auto-save every (minutes, 0 for never)"), autosave, Label("MetaNURBS smoothing level"), level,
                             Label("AI agents"), agents,
+                            Label("AVALightWave"), hub, lightWave,
                             Label("AI Chat model"), chatProvider, chatServer, chatHistory,
                             Label("Keys (e.g. T, Shift+X, Ctrl+Z)"), keys,
                         },

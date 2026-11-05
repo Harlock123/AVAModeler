@@ -31,6 +31,12 @@ public sealed class ModelerWorkspace : DockPanel
     /// <summary>Raised to switch to the Layout workspace.</summary>
     public event Action? ShowLayout;
 
+    /// <summary>Raised after the object is saved, with its file (the hub tells AVALightWave).</summary>
+    public event Action<string>? Saved;
+
+    /// <summary>Raised by File › Send to AVALightWave (the app's hub sends the object to the standalone Layout).</summary>
+    public event Action? SendToLightWave;
+
     /// <summary>Raised to show or hide the AI Chat panel (Macros › AI Chat, F4).</summary>
     public event Action? ToggleChat;
 
@@ -132,6 +138,7 @@ public sealed class ModelerWorkspace : DockPanel
             ["Export STL"] = () => _ = Export(".stl"),
             ["Export STL ASCII"] = () => _ = Export(".stl", new SaveOptions { AsciiStl = true }),
             ["Export Plugin Format"] = () => _ = ExportPlugin(),
+            ["Send to AVALightWave"] = () => { s.CommitTool(); SendToLightWave?.Invoke(); },
             // Closing the window asks about unsaved changes first.
             ["Quit"] = () => Owner?.Close(),
             ["Undo"] = () => { s.CancelTool(); D().UndoLast(); },
@@ -393,6 +400,7 @@ public sealed class ModelerWorkspace : DockPanel
             Session.Preferences.Save();
             RefreshRecent();
             Session.SetStatus($"Saved {Path.GetFileName(path)}.");
+            Saved?.Invoke(path);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -531,7 +539,8 @@ public sealed class ModelerWorkspace : DockPanel
             {
                 Group("_File", Item("_New", "New"), Item("_Open…", "Open"), _recent, "-", Item("_Save", "Save"), Item("Save _As…", "Save As"),
                     Item("Export _OBJ…", "Export OBJ"), Item("Export _GEO…", "Export GEO"),
-                    Item("Export gl_TF…", "Export glTF"), Item("Export S_TL…", "Export STL"), Item("Export STL (AS_CII)…", "Export STL ASCII"), Item("Export with a _Plugin…", "Export Plugin Format"), "-", Item("_Quit", "Quit")),
+                    Item("Export gl_TF…", "Export glTF"), Item("Export S_TL…", "Export STL"), Item("Export STL (AS_CII)…", "Export STL ASCII"), Item("Export with a _Plugin…", "Export Plugin Format"), "-",
+                    Item("Send to AVA_LightWave", "Send to AVALightWave"), "-", Item("_Quit", "Quit")),
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",
                     Item("Select _All", "Select All"), Item("_Deselect", "Deselect"), Item("_Invert", "Invert Selection"), Item("Select C_onnected", "Select Connected"),
                     Item("Select _Loop", "Select Loop"), Item("Select Ri_ng", "Select Ring"), Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),

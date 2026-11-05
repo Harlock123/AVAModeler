@@ -228,6 +228,11 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   `Preferences.ChatKeepHistory`, off by default; the list, Open, Export…, Delete, Clear History, and the read-only bar)
   works on `ChatPanel.History`, which `MainWindow` sets to `Preferences.ChatsFolder` only outside tests, saving after
   each request, on New Chat and on closing, and opening the last chat on start.
+  `ModelerHub.cs` is the app's end of the hub (`MainWindow.Hub`, joined at start while `Preferences.HubEnabled`):
+  `edit_object` opens the object (refused over unsaved work) and links the document; `ModelerWorkspace.Saved` sends
+  `object_saved`; File › Send to AVALightWave (`ModelerWorkspace.SendToLightWave`) sends `add_object`, or starts
+  AVALightWave with the file and `--hub-link`. A window made for tests never joins the hub or reaches a real
+  AVALightWave: tests give it pipes, a settings folder and a launcher of their own.
 - `samples/`: `StarPlugin` (an example plugin), Lua macro scripts (`rocket-blueprints.lua` sets up backdrops), texture
   images and the rocket blueprints (each drawn by a standard-library Python script beside them), and
   `mcp/carbon_atom.py` (a scene built entirely through the MCP server, with its saved object, scene and render).
@@ -311,6 +316,9 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
 - **The live listener is local and per user.** It listens on a named pipe opened with `PipeOptions.CurrentUserOnly`
   (a Unix socket on Linux and macOS), so no token is needed; it is off until the person allows agents. Don't add a
   network listener. Paths agents give stay inside the working folder (`Workspace`), and nothing is deleted.
+- **The hub is local and per user too.** Each app listens on its own pipe (`HubProtocol.PipeName`), opened with
+  `PipeOptions.CurrentUserOnly`; messages name files by full path and never carry geometry or anything else; a
+  missing app costs a short timeout, never a hang. Don't add a network listener. Tests use pipe names of their own.
 - **The chat never calls the real API or a real model server in tests, and never shows a key.**
   `AVAModeler.Chat.Tests` and the UI tests give the SDK a fake `HttpMessageHandler` (`FakeClaude`, scripted
   server-sent events) and a made-up key, and the OpenAI-compatible client another (`FakeModelServer`, scripted chunks,

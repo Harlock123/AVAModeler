@@ -369,6 +369,23 @@ Modeler and Layout shows the change at once.
   goal. The solver is cyclic coordinate descent in each bone's own heading, pitch and bank, starting every frame from
   the keyed pose, so it gives the same answer every time.
 
+### AVALightWave and the hub
+
+[AVALightWave](https://github.com/Harlock123/AVALightWave) is a standalone re-imagining of classic LightWave Layout
+built on this engine, as the original package had a modeler and a separate Layout joined by a hub. AVA Modeler is on
+the hub unless you turn it off (Edit › Preferences › Link with AVALightWave): a live link over a local pipe that only
+your own programs can open (no network).
+
+- **Edit in Modeler** in AVALightWave opens one of its scene's objects here (starting AVA Modeler if it isn't running).
+  It won't open over unsaved work: save or discard it, and try again.
+- **Saving** that object (Ctrl+S) updates it in AVALightWave's scene at once, keeping its motion; so does saving any
+  object AVALightWave's scene uses.
+- **File › Send to AVALightWave** puts the open object in AVALightWave's scene (a saved object by its file, an unsaved
+  one as a copy in the `hub` folder beside `preferences.json`); sent again, it updates the same scene object. If
+  AVALightWave isn't running it's started with the object (found beside AVA Modeler, in a folder beside it, on the PATH,
+  through `AVALIGHTWAVE_PATH`, or where Preferences says).
+- Either program works alone: when the other isn't there, nothing waits more than a moment.
+
 ![Layout](Images/AVAModeler-layout.png)
 
 ![The dope sheet with a bouncing ball's keys from frame 12 to 36 chosen (yellow), its channels shown; above, a toy car following a closed path (pink) through six nulls round the ground](Images/AVAModeler-dope-sheet.png)
@@ -421,7 +438,7 @@ On Windows, unzip and run `AVAModeler.exe`. On macOS, if Gatekeeper refuses to o
 | Edit | | Ctrl+Z undo, Ctrl+Shift+Z redo, X cut, C copy, Ctrl+V paste, Delete remove; in Layout, Ctrl+Z undoes the scene, Ctrl+Shift+Z or Ctrl+Y redoes |
 | Workspaces | | F1 Modeler, F2 Layout, F4 the AI Chat panel, F9 render a frame and F10 an animation (in Layout) |
 | Dope sheet (Layout) | Click a key, Shift-click to add, drag a box; drag keys to move them in time; click the frame numbers to go there | D shows it (or the graph editor again); with it focused, Delete, Ctrl+C, Ctrl+V (at the current frame), Ctrl+A, and ← → to nudge a frame |
-| Files | | Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Q quit (File › Quit) |
+| Files | File › Send to AVALightWave (the hub) | Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Q quit (File › Quit) |
 
 The default tool keys follow the classic layout: T Move, Y Rotate, H Size, Shift+H Stretch, Shift+X Box, Shift+O
 Ball, Shift+C Disc, P Make Polygon, F Flip, M Merge Points, E Extrude, L Lathe, V Mirror, B Bevel, Tab MetaNURBS, and
@@ -779,7 +796,8 @@ Layout reuses them.
 | `AVAModeler.Mcp` | The MCP server for AI agents: the Modeler and Layout tool handlers (shared by both modes), the headless host, the live host and its local-pipe listener, the `--attach` bridge, and server profiles (another app serving a chosen set of the tools) |
 | `AVAModeler.Chat` | The AI Chat's conversation and agent loop, with two providers: Claude on the Anthropic C# SDK (streaming, prompt caching), and any OpenAI-compatible Chat Completions server (HttpClient and System.Text.Json, streamed tool calls); the bridge to the MCP server's tools through an in-process MCP client, the API keys' stores, and saved chats (history and Markdown export). No UI |
 | `AVAModeler.Chat.UI` | The AI Chat panel's controls, shared with [AVALightWave](https://github.com/Harlock123/AVALightWave) |
-| `AVAModeler` | The application: one window hosting both workspaces, and the AI Chat panel |
+| `AVAModeler.Hub` | The hub: the live link with AVALightWave over a per-user local pipe (messages, listener, client, hand-over folder, finding the other program) |
+| `AVAModeler` | The application: one window hosting both workspaces, the AI Chat panel, and its end of the hub |
 
 ## Known limits
 

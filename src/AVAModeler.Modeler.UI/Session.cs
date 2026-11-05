@@ -43,6 +43,13 @@ public sealed class Preferences
     /// pipe only this user can open. Off unless turned on.
     /// </summary>
     public bool AllowAgents { get; set; }
+    /// <summary>
+    /// Whether AVA Modeler is on the hub, the live link with AVALightWave (the standalone Layout) over a local pipe only
+    /// this user can open: its Edit in Modeler opens objects here, and saves go back to its scene. On unless turned off.
+    /// </summary>
+    public bool HubEnabled { get; set; } = true;
+    /// <summary>Where AVALightWave is, for Send to AVALightWave to start it (else beside AVA Modeler, or on the PATH).</summary>
+    public string? LightWavePath { get; set; }
     public List<string> RecentFiles { get; set; } = [];
     /// <summary>Key overrides: command name → key gesture text (e.g. "Move": "T").</summary>
     public Dictionary<string, string> Keys { get; set; } = [];

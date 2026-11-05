@@ -113,7 +113,9 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     (`MotionPositionAt`, used by `LocalMatrix`; `PositionAt` stays the keys').
   - `SceneSnapshot.cs` (`Scene.Snapshot()`) puts a scene back as it was, items by reference (with every setting an
     edit can change, morphs' and displacements' included: extend it when you add one); `Scene.Copy` makes one
-    that shares nothing that changes, to render on another thread; `Scene.Batch` raises `Changed` once for many edits.
+    that shares nothing that changes, to render on another thread; `Scene.CopyItems` copies chosen items into a scene,
+    from it (cloning) or another (merging), an object with its bones and the links among the copies kept (both go
+    through `CopyOf` and `Relink` in `Scene.cs`: extend those when an item gets a new setting or a reference to another); `Scene.Batch` raises `Changed` once for many edits.
 - `src/AVAModeler.Layout/`: Layout's state without its controls, so the workspace and the MCP server share it.
   - `LayoutSession.cs`: the scene being worked on, its frame, chosen item and auto-key, the Modeler's object in the
     scene, loading and saving scenes (with an object loader passed in), the modified flag, and the scene's undo

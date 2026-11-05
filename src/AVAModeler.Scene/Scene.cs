@@ -201,74 +201,139 @@ public sealed class Scene
         var map = new Dictionary<SceneItem, SceneItem>();
         foreach (var item in _items)
         {
-            SceneItem c;
-            switch (item)
-            {
-                case ObjectItem o:
-                    Document? doc = null;
-                    if (o.Document is { } d && !docs.TryGetValue(d, out doc)) docs[d] = doc = copyDocument?.Invoke(d) ?? d;
-                    var obj = new ObjectItem(o.Name, doc, o.Layer)
-                    {
-                        SourcePath = o.SourcePath, CastShadows = o.CastShadows, ReceiveShadows = o.ReceiveShadows, BoneFalloffExponent = o.BoneFalloffExponent,
-                    };
-                    foreach (var m in o.Morphs) obj.AddMorph(new MorphTarget(m.Name, m.Target, m.Weight.Clone()));
-                    foreach (var x in o.Displacements)
-                    {
-                        var w = new WaveDisplacement
-                        {
-                            Shape = x.Shape, Direction = x.Direction, Along = x.Along, Center = x.Center,
-                            Wavelength = x.Wavelength, Speed = x.Speed, Phase = x.Phase,
-                        };
-                        w.Amplitude.CopyFrom(x.Amplitude);
-                        obj.AddDisplacement(w);
-                    }
-                    c = obj;
-                    break;
-                case LightItem l:
-                    var light = new LightItem(l.Name, l.Type)
-                    {
-                        Color = l.Color, Range = l.Range, ConeAngle = l.ConeAngle, EdgeAngle = l.EdgeAngle, Shadows = l.Shadows,
-                        AreaWidth = l.AreaWidth, AreaHeight = l.AreaHeight, Radius = l.Radius, ShadowSamples = l.ShadowSamples,
-                    };
-                    light.Intensity.CopyFrom(l.Intensity);
-                    c = light;
-                    break;
-                case CameraItem cam:
-                    var camera = new CameraItem(cam.Name)
-                    {
-                        Width = cam.Width, Height = cam.Height, PixelAspect = cam.PixelAspect, ActionSafe = cam.ActionSafe, TitleSafe = cam.TitleSafe,
-                        DepthOfField = cam.DepthOfField, MotionBlur = cam.MotionBlur,
-                    };
-                    camera.Zoom.CopyFrom(cam.Zoom);
-                    c = camera;
-                    break;
-                case Bone b:
-                    c = new Bone(b.Name, (ObjectItem)map[b.Owner])
-                    {
-                        RestPosition = b.RestPosition, RestRotation = b.RestRotation, RestLength = b.RestLength, Strength = b.Strength, Active = b.Active,
-                        FullTimeIK = b.FullTimeIK, IKAnchor = b.IKAnchor, IKLocked = b.IKLocked, IKLimits = b.IKLimits,
-                    };
-                    break;
-                default:
-                    c = new NullItem(item.Name);
-                    break;
-            }
-            c.Pivot = item.Pivot;
-            c.Visible = item.Visible;
-            c.Locked = item.Locked;
-            for (int i = 0; i < 9; i++) c.Channels[i].CopyFrom(item.Channels[i]);
-            c.PathPosition.CopyFrom(item.PathPosition);
+            var c = CopyOf(item, map, docs, copyDocument);
             s.Add(c);
             map[item] = c;
         }
-        foreach (var item in _items)
-        {
-            if (item.Parent is { } p) map[item].RestoreParent(map[p]);
-            if (item is Bone { IKGoal: { } goal } bone && map.TryGetValue(goal, out var g)) ((Bone)map[bone]).IKGoal = g;
-            if (item.Path is { } path) map[item].Path = path with { Points = path.Points.Where(map.ContainsKey).Select(p => map[p]).ToList() };
-        }
+        foreach (var item in _items) Relink(item, map, _ => null);
         if (_camera != null && map.TryGetValue(_camera, out var current)) s._camera = (CameraItem)current;
         return s;
+    }
+
+    /// <summary>
+    /// Copies items into this scene, from this scene (Clone Item) or another (Load from Scene), each with its channels
+    /// and own settings as <see cref="Copy"/> copies them; an object brings its bones with it. A copy's parent, IK goal
+    /// and path points are the copies of the originals' when those were copied too, else the originals themselves when
+    /// they're in this scene, else none (a path left with too few points is dropped). Documents are shared unless
+    /// <paramref name="copyDocument"/> copies them (each once); names are kept, for the caller to change. A bone copied
+    /// without its object goes on the same object, which must be in this scene. One <see cref="Changed"/> for them all.
+    /// Returns each original with its copy, in the order they were added.
+    /// </summary>
+    /// <exception cref="ArgumentException">A bone's object is neither copied nor in this scene.</exception>
+    public IReadOnlyDictionary<SceneItem, SceneItem> CopyItems(IEnumerable<SceneItem> items, Func<Document, Document>? copyDocument = null)
+    {
+        var chosen = new List<SceneItem>();
+        foreach (var item in items)
+        {
+            if (!chosen.Contains(item)) chosen.Add(item);
+            if (item is ObjectItem o)
+                foreach (var b in o.Bones)
+                    if (!chosen.Contains(b)) chosen.Add(b);
+        }
+        // Objects before bones, so a bone's object is there to put it on; otherwise in the order given.
+        var ordered = chosen.Where(i => i is not Bone).Concat(chosen.Where(i => i is Bone)).ToList();
+        foreach (var b in ordered.OfType<Bone>())
+            if (!chosen.Contains(b.Owner) && b.Owner.Scene != this)
+                throw new ArgumentException($"{b.Name}'s object, {b.Owner.Name}, isn't in this scene: copy it with its bones.");
+        var docs = new Dictionary<Document, Document>(ReferenceEqualityComparer.Instance);
+        var map = new Dictionary<SceneItem, SceneItem>();
+        Batch(() =>
+        {
+            foreach (var item in ordered)
+            {
+                var c = CopyOf(item, map, docs, copyDocument);
+                Add(c);
+                map[item] = c;
+            }
+            foreach (var item in ordered) Relink(item, map, x => x.Scene == this ? x : null);
+            Notify();
+        });
+        return map;
+    }
+
+    /// <summary>
+    /// A new item with an item's channels and own settings, not yet in a scene: a bone goes on its object's copy in
+    /// <paramref name="map"/> if there is one, else on its own object. Documents are copied once each through
+    /// <paramref name="docs"/> (shared if <paramref name="copyDocument"/> is null). Extend it when an item gets a new setting.
+    /// </summary>
+    private static SceneItem CopyOf(SceneItem item, Dictionary<SceneItem, SceneItem> map, Dictionary<Document, Document> docs, Func<Document, Document>? copyDocument)
+    {
+        SceneItem c;
+        switch (item)
+        {
+            case ObjectItem o:
+                Document? doc = null;
+                if (o.Document is { } d && !docs.TryGetValue(d, out doc)) docs[d] = doc = copyDocument?.Invoke(d) ?? d;
+                var obj = new ObjectItem(o.Name, doc, o.Layer)
+                {
+                    SourcePath = o.SourcePath, CastShadows = o.CastShadows, ReceiveShadows = o.ReceiveShadows, BoneFalloffExponent = o.BoneFalloffExponent,
+                };
+                foreach (var m in o.Morphs) obj.AddMorph(new MorphTarget(m.Name, m.Target, m.Weight.Clone()));
+                foreach (var x in o.Displacements)
+                {
+                    var w = new WaveDisplacement
+                    {
+                        Shape = x.Shape, Direction = x.Direction, Along = x.Along, Center = x.Center,
+                        Wavelength = x.Wavelength, Speed = x.Speed, Phase = x.Phase,
+                    };
+                    w.Amplitude.CopyFrom(x.Amplitude);
+                    obj.AddDisplacement(w);
+                }
+                c = obj;
+                break;
+            case LightItem l:
+                var light = new LightItem(l.Name, l.Type)
+                {
+                    Color = l.Color, Range = l.Range, ConeAngle = l.ConeAngle, EdgeAngle = l.EdgeAngle, Shadows = l.Shadows,
+                    AreaWidth = l.AreaWidth, AreaHeight = l.AreaHeight, Radius = l.Radius, ShadowSamples = l.ShadowSamples,
+                };
+                light.Intensity.CopyFrom(l.Intensity);
+                c = light;
+                break;
+            case CameraItem cam:
+                var camera = new CameraItem(cam.Name)
+                {
+                    Width = cam.Width, Height = cam.Height, PixelAspect = cam.PixelAspect, ActionSafe = cam.ActionSafe, TitleSafe = cam.TitleSafe,
+                    DepthOfField = cam.DepthOfField, MotionBlur = cam.MotionBlur,
+                };
+                camera.Zoom.CopyFrom(cam.Zoom);
+                c = camera;
+                break;
+            case Bone b:
+                c = new Bone(b.Name, map.TryGetValue(b.Owner, out var owner) ? (ObjectItem)owner : b.Owner)
+                {
+                    RestPosition = b.RestPosition, RestRotation = b.RestRotation, RestLength = b.RestLength, Strength = b.Strength, Active = b.Active,
+                    FullTimeIK = b.FullTimeIK, IKAnchor = b.IKAnchor, IKLocked = b.IKLocked, IKLimits = b.IKLimits,
+                };
+                break;
+            default:
+                c = new NullItem(item.Name);
+                break;
+        }
+        c.Pivot = item.Pivot;
+        c.Visible = item.Visible;
+        c.Locked = item.Locked;
+        for (int i = 0; i < 9; i++) c.Channels[i].CopyFrom(item.Channels[i]);
+        c.PathPosition.CopyFrom(item.PathPosition);
+        return c;
+    }
+
+    /// <summary>
+    /// Points a copy's parent, IK goal and path at the copies of what the original's pointed at (in <paramref name="map"/>),
+    /// or at what <paramref name="outside"/> gives for one that wasn't copied (null: none). Extend it when an item gets
+    /// a new reference to another.
+    /// </summary>
+    private static void Relink(SceneItem item, Dictionary<SceneItem, SceneItem> map, Func<SceneItem, SceneItem?> outside)
+    {
+        var copy = map[item];
+        SceneItem? To(SceneItem x) => map.TryGetValue(x, out var c) ? c : outside(x);
+        if (item.Parent is { } p) copy.RestoreParent(To(p) ?? (copy is Bone cb ? cb.Owner : null));
+        if (item is Bone { IKGoal: { } goal } && To(goal) is { } g) ((Bone)copy).IKGoal = g;
+        if (item.Path is { } path)
+        {
+            var points = path.Points.Select(To).Where(x => x != null).Cast<SceneItem>().ToList();
+            copy.Path = points.Count >= path.Fewest || points.Count == path.Points.Count ? path with { Points = points } : null;
+        }
     }
 
     /// <summary>The first item with a name, or null.</summary>

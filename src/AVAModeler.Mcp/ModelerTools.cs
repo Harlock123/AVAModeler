@@ -23,6 +23,9 @@ public sealed partial class ModelerTools(IModelerHost host)
 {
     private Workspace? _workspace;
 
+    /// <summary>The server these tools are served in (it decides, for one, whether there's a Modeler's object to stage).</summary>
+    public ServerProfile Profile { get; init; } = ServerProfile.Modeler;
+
     /// <summary>How long run_lua lets a macro run, at most.</summary>
     public const double MaxLuaSeconds = 300;
 

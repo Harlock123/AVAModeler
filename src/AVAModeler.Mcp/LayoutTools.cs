@@ -168,6 +168,8 @@ public sealed partial class ModelerTools
                 obj = s.AddObject(FreeName(s, name, Path.GetFileNameWithoutExtension(file)), doc, layer - 1);
                 obj.SourcePath = doc.FilePath;
             }
+            else if (!Profile.HasModelerObject)
+                throw new McpException($"{Profile.Title} has no Modeler object to stage: give file, an object file in the working folder (.lwo, .obj, .geo, .glb, .gltf or .stl).");
             else if (layer != null)
             {
                 CheckLayer(c.Document, layer);

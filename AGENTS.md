@@ -147,6 +147,14 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     (`RunAsync`) or with Layout's `LayoutSession` beside it (`RunSceneAsync`). `HeadlessHost` owns a document and a
     `LayoutSession`; `LiveHost` runs on the app's UI thread through `IUiThread`, against `ILiveModeler.Commands` and
     `ILiveModeler.Layout`, and waits while `ILiveModeler.Busy` says the person is busy.
+  - `ServerProfile.cs`: which server an app serves. `ServerProfile.Modeler` is AVA Modeler's own (every tool and
+    recipe, `ModelerServer.Instructions`); another app (AVALightWave, the standalone Layout) gives its own name,
+    instructions, a tool and prompt filter (`ToolGroups.Scene`, the tools that need only the scene), description
+    changes, tools and recipes of its own, its live pipe and `HasModelerObject = false` (add_object then needs a file).
+    `ModelerServer.Options`, `Definitions`, `Prompts`, `RunAsync`, `LiveListener`, `LiveBridge`, `McpCommandLine` and
+    the chat's `McpToolBridge` all take a profile, AVA Modeler's unless given. A new tool goes in `ToolGroups.Scene` or
+    `ToolGroups.Modeling` (a test checks each tool is in one); the `Recipes.Recipe` builder and `Recipes.Number`,
+    `Whole`, `Colour` and `LightRig` are public so another app's recipes are written the same way.
   - `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
     proxy to that pipe), `McpCommandLine.cs` (`--mcp`), `Workspace.cs` (the working folder's file rules),
     `Pictures.cs` (render_view and render), `CheckReport.cs` (check_mesh's JSON, with `how_to_fix`), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
@@ -330,6 +338,8 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   A few of those tests start the built app as a real `--mcp` process (the test project builds it).
 - Agents lay procedural textures with `set_procedural` (`Commands.SetProcedural`), macros with `proctex()`; both check
   every setting on a spare layer first, so a bad one changes nothing.
+- A new MCP tool also goes in `ToolGroups.Scene` (it needs only the scene, so AVALightWave serves it) or
+  `ToolGroups.Modeling` (in `ServerProfile.cs`); `ProfileTests` fails until it's in one.
 - A recipe (an MCP prompt) goes in `Recipes.cs`. Write each step's tool call on a line of its own after `→ `,
   with its arguments as JSON (the `Recipe` builder does this). `RecipeTests` fetches every prompt through a client and
   runs its calls through the server, which checks the arguments against each tool's schema, then checks the result:

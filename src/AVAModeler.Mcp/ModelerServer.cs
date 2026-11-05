@@ -63,36 +63,58 @@ public static class ModelerServer
         The server's prompts are saved recipes (a lathed vase, a table, a chess pawn, three-point lighting, a turntable render, a bouncing ball, the carbon atom, a morph, a waving flag, a printable part checked with check_mesh, a rounded box with a sunk panel made with Chamfer and Inset, a marble table on a checkerboard floor textured with procedurals, a product shot, an arm reaching for a ball by IK, and a car driving round a loop on a path): step-by-step plans with the exact tool calls, to follow or adapt.
         """;
 
-    /// <summary>The MCP tools, bound to a host.</summary>
-    public static IEnumerable<McpServerTool> Tools(IModelerHost host)
+    /// <summary>The MCP tools, bound to a host: every one, or those <paramref name="profile"/> serves (with its own tools after them).</summary>
+    public static IEnumerable<McpServerTool> Tools(IModelerHost host, ServerProfile? profile = null)
     {
-        var target = new ModelerTools(host);
+        profile ??= ServerProfile.Modeler;
+        var target = new ModelerTools(host) { Profile = profile };
         foreach (var method in typeof(ModelerTools).GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            if (method.GetCustomAttribute<McpServerToolAttribute>() != null)
-                yield return McpServerTool.Create(method, target);
+            if (method.GetCustomAttribute<McpServerToolAttribute>() is { } attribute && profile.IncludeTool(attribute.Name ?? method.Name))
+            {
+                var tool = McpServerTool.Create(method, target);
+                if (profile.Describe is { } describe) tool.ProtocolTool.Description = describe(tool.ProtocolTool.Name, tool.ProtocolTool.Description ?? "");
+                yield return tool;
+            }
+        if (profile.ExtraTools is { } extra)
+            foreach (var tool in extra(host)) yield return tool;
     }
 
-    /// <summary>The saved recipes (<see cref="Recipes"/>) as MCP prompts.</summary>
-    public static IEnumerable<McpServerPrompt> Prompts() =>
-        typeof(Recipes).GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Where(m => m.GetCustomAttribute<McpServerPromptAttribute>() != null)
+    /// <summary>The saved recipes (<see cref="Recipes"/>) as MCP prompts: every one, or those <paramref name="profile"/> serves (with its own after them).</summary>
+    public static IEnumerable<McpServerPrompt> Prompts(ServerProfile? profile = null)
+    {
+        profile ??= ServerProfile.Modeler;
+        var own = typeof(Recipes).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.GetCustomAttribute<McpServerPromptAttribute>() is { } a && profile.IncludePrompt(a.Name ?? m.Name))
             .Select(m => McpServerPrompt.Create(m, target: null));
+        return profile.ExtraPrompts is { } extra ? own.Concat(extra()) : own;
+    }
 
     /// <summary>The tools' MCP definitions (names, descriptions, input schemas), without a host to run them.</summary>
-    public static IList<Tool> Definitions() => [.. _definitions.Value];
+    public static IList<Tool> Definitions(ServerProfile? profile = null) =>
+        profile == null || ReferenceEquals(profile, ServerProfile.Modeler) ? [.. _definitions.Value] : [.. Tools(new NoHost(), profile).Select(t => t.ProtocolTool)];
 
     private static readonly Lazy<Tool[]> _definitions = new(() => Tools(new NoHost()).Select(t => t.ProtocolTool).ToArray());
 
-    public static Implementation Info => new()
+    /// <summary>The engine's version, as MCP's server info gives it.</summary>
+    public static string EngineVersion =>
+        typeof(ModelerServer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "1.0";
+
+    public static Implementation Info => InfoFor(ServerProfile.Modeler);
+
+    /// <summary>MCP's server info for a profile: its name, title and version.</summary>
+    public static Implementation InfoFor(ServerProfile profile) => new()
     {
-        Name = Name,
-        Title = "AVA Modeler",
-        Version = typeof(ModelerServer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "1.0",
+        Name = profile.Name,
+        Title = profile.Title,
+        Version = profile.Version ?? EngineVersion,
     };
 
-    public static McpServerOptions Options(IModelerHost host)
+    public static McpServerOptions Options(IModelerHost host) => Options(host, ServerProfile.Modeler);
+
+    /// <summary>The server's options for a profile: its info and instructions, its tools bound to the host, its prompts.</summary>
+    public static McpServerOptions Options(IModelerHost host, ServerProfile profile)
     {
-        var options = new McpServerOptions { ServerInfo = Info, ServerInstructions = Instructions, ToolCollection = [] };
+        var options = new McpServerOptions { ServerInfo = InfoFor(profile), ServerInstructions = profile.Instructions, ToolCollection = [] };
         options.Filters.Request.CallToolFilters.Add(next => async (request, cancel) =>
         {
             var tool = request.Params is { } p && options.ToolCollection.TryGetPrimitive(p.Name, out var t) ? t.ProtocolTool : null;
@@ -107,16 +129,20 @@ public static class ModelerServer
                 return Arguments.Error(tool != null ? $"{tool.Name}: {e.Message} Check the arguments against the tool's input schema." : e.Message);
             }
         });
-        foreach (var tool in Tools(host)) options.ToolCollection.Add(tool);
+        foreach (var tool in Tools(host, profile)) options.ToolCollection.Add(tool);
         options.PromptCollection = [];
-        foreach (var prompt in Prompts()) options.PromptCollection.Add(prompt);
+        foreach (var prompt in Prompts(profile)) options.PromptCollection.Add(prompt);
         return options;
     }
 
     /// <summary>Serves one MCP session over a transport until the client goes away or <paramref name="cancel"/> fires.</summary>
-    public static async Task RunAsync(ITransport transport, IModelerHost host, CancellationToken cancel = default)
+    public static Task RunAsync(ITransport transport, IModelerHost host, CancellationToken cancel = default) =>
+        RunAsync(transport, host, ServerProfile.Modeler, cancel);
+
+    /// <summary>Serves one MCP session of a profile's server over a transport.</summary>
+    public static async Task RunAsync(ITransport transport, IModelerHost host, ServerProfile profile, CancellationToken cancel = default)
     {
-        await using var server = McpServer.Create(transport, Options(host));
+        await using var server = McpServer.Create(transport, Options(host, profile));
         await server.RunAsync(cancel).ConfigureAwait(false);
     }
 

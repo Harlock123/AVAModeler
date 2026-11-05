@@ -208,7 +208,8 @@ public static class Recipes
         return recipe.Text("Make the key brighter or the fill weaker (set_item intensity) for more contrast.");
     }
 
-    private static void LightRig(Recipe recipe, string target, double d)
+    /// <summary>The three-point light rig (key, fill, rim) round a target, <paramref name="d"/> metres away, as recipe steps.</summary>
+    public static void LightRig(Recipe recipe, string target, double d)
     {
         recipe.Step("Remove Layout's default light (\"Light\"), if the scene still has it, so it doesn't flatten the others; skip this if there's none.", "remove_item", new { item = "Light" });
         recipe.Step("The key light: a warm spot in front, above and to the left, casting the shadows.", "add_light", new { type = "spot", name = "Key", position = V(-0.8 * d, 0.9 * d, -0.8 * d), color = new[] { 255, 244, 229 }, intensity = 1.1, cone_angle = 35, edge_angle = 10 });
@@ -550,8 +551,11 @@ public static class Recipes
 
     // ───────────────────────────── writing them ─────────────────────────────
 
-    /// <summary>A recipe's text being built: what it makes, then numbered steps, each with its tool call.</summary>
-    private sealed class Recipe(string intro)
+    /// <summary>
+    /// A recipe's text being built: what it makes, then numbered steps, each with its tool call (on its own line after
+    /// <see cref="CallMarker"/>, its arguments as JSON). Public so another app's recipes are written the same way.
+    /// </summary>
+    public sealed class Recipe(string intro)
     {
         private readonly StringBuilder _text = new(intro + "\n\nFollow these steps in order. A line starting with \"" + CallMarker.Trim() + "\" is one tool call, with its arguments as JSON. If a step fails, read the error, fix the cause and carry on.\n");
         private int _number;
@@ -577,7 +581,7 @@ public static class Recipes
     private static string Text(string? given, string fallback) => string.IsNullOrWhiteSpace(given) ? fallback : given.Trim();
 
     /// <summary>A number argument, as text (MCP prompt arguments are), within limits.</summary>
-    internal static double Number(string? given, double fallback, string what, double min, double max)
+    public static double Number(string? given, double fallback, string what, double min, double max)
     {
         if (string.IsNullOrWhiteSpace(given)) return fallback;
         if (!double.TryParse(given.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v))
@@ -586,7 +590,7 @@ public static class Recipes
         return v;
     }
 
-    internal static int Whole(string? given, int fallback, string what, int min, int max)
+    public static int Whole(string? given, int fallback, string what, int min, int max)
     {
         double v = Number(given, fallback, what, min, max);
         if (v != Math.Round(v)) throw new McpException($"{what} must be a whole number.");
@@ -609,7 +613,7 @@ public static class Recipes
     };
 
     /// <summary>A colour argument: "r, g, b" (0 to 255, brackets optional) or a name such as blue.</summary>
-    internal static int[] Colour(string? given, int[] fallback)
+    public static int[] Colour(string? given, int[] fallback)
     {
         if (string.IsNullOrWhiteSpace(given)) return fallback;
         if (Named.TryGetValue(given.Trim(), out var named)) return named;

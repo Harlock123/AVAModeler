@@ -23,13 +23,16 @@ public sealed class LiveListener : IAsyncDisposable
     private NamedPipeServerStream? _waiting;
     private readonly HashSet<NamedPipeServerStream> _connected = [];
     private int _count;
+    private readonly ServerProfile _profile;
 
     /// <param name="pipeName">The pipe's name (see <see cref="LiveProtocol.PipeName"/>).</param>
     /// <param name="hostFor">Makes the host for a connection, given the working folder its agent asked for.</param>
-    public LiveListener(string pipeName, Func<string, IModelerHost> hostFor)
+    /// <param name="profile">The server to serve (AVA Modeler's unless given).</param>
+    public LiveListener(string pipeName, Func<string, IModelerHost> hostFor, ServerProfile? profile = null)
     {
         _pipeName = pipeName;
         _hostFor = hostFor;
+        _profile = profile ?? ServerProfile.Modeler;
     }
 
     /// <summary>Raised (on a worker thread) when an agent connects or goes, with the number now connected.</summary>
@@ -44,7 +47,7 @@ public sealed class LiveListener : IAsyncDisposable
     public void Start()
     {
         if (_loop != null) return;
-        if (Answers(_pipeName)) throw new IOException("Another AVA Modeler is already taking AI agents on this desktop.");
+        if (Answers(_pipeName)) throw new IOException($"Another {_profile.Title} is already taking AI agents on this desktop.");
         var first = Next() ?? throw new ObjectDisposedException(nameof(LiveListener));
         _loop = Task.Run(() => AcceptLoop(first, _stop.Token));
     }
@@ -131,7 +134,7 @@ public sealed class LiveListener : IAsyncDisposable
                 await LiveProtocol.WriteLineAsync(pipe, new JsonObject { ["error"] = refusal }, cancel).ConfigureAwait(false);
                 return;
             }
-            await LiveProtocol.WriteLineAsync(pipe, new JsonObject { ["ok"] = true, ["server"] = ModelerServer.Name, ["version"] = LiveProtocol.Version }, cancel).ConfigureAwait(false);
+            await LiveProtocol.WriteLineAsync(pipe, new JsonObject { ["ok"] = true, ["server"] = _profile.Name, ["version"] = LiveProtocol.Version }, cancel).ConfigureAwait(false);
         }
         catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException)
         {
@@ -140,8 +143,8 @@ public sealed class LiveListener : IAsyncDisposable
         ConnectionsChanged?.Invoke(Interlocked.Increment(ref _count));
         try
         {
-            var transport = new StreamServerTransport(pipe, pipe, ModelerServer.Name);
-            await ModelerServer.RunAsync(transport, _hostFor(root), cancel).ConfigureAwait(false);
+            var transport = new StreamServerTransport(pipe, pipe, _profile.Name);
+            await ModelerServer.RunAsync(transport, _hostFor(root), _profile, cancel).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {

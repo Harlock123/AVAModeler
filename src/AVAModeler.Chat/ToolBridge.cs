@@ -45,16 +45,19 @@ public sealed class McpToolBridge : IToolBridge, IAsyncDisposable
     private McpToolBridge() { }
 
     /// <summary>Starts the server over <paramref name="host"/> and connects to it.</summary>
-    public static async Task<McpToolBridge> StartAsync(IModelerHost host, CancellationToken cancel = default)
+    public static Task<McpToolBridge> StartAsync(IModelerHost host, CancellationToken cancel = default) => StartAsync(host, ServerProfile.Modeler, cancel);
+
+    /// <summary>Starts a profile's server (its tools only: a standalone Layout's scene tools, say) over <paramref name="host"/> and connects to it.</summary>
+    public static async Task<McpToolBridge> StartAsync(IModelerHost host, ServerProfile profile, CancellationToken cancel = default)
     {
         var bridge = new McpToolBridge();
         var transport = new StreamServerTransport(bridge._up.Reader.AsStream(), bridge._down.Writer.AsStream(), "chat");
-        var server = McpServer.Create(transport, ModelerServer.Options(host));
+        var server = McpServer.Create(transport, ModelerServer.Options(host, profile));
         bridge._server = Task.Run(async () =>
         {
             await using (server) await server.RunAsync(bridge._stop.Token).ConfigureAwait(false);
         }, CancellationToken.None);
-        var options = new McpClientOptions { ClientInfo = new Implementation { Name = "AVAModeler Chat", Version = ModelerServer.Info.Version } };
+        var options = new McpClientOptions { ClientInfo = new Implementation { Name = profile.Name + " Chat", Version = ModelerServer.InfoFor(profile).Version } };
         bridge._client = await McpClient.CreateAsync(new StreamClientTransport(bridge._up.Writer.AsStream(), bridge._down.Reader.AsStream()), options, null, cancel).ConfigureAwait(false);
         return bridge;
     }

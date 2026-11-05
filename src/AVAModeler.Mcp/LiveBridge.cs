@@ -13,8 +13,10 @@ namespace AVAModeler.Mcp;
 /// connects on the first call rather than at start, and reconnects after the app restarts, so an agent can be set up
 /// before the app is open. With no app to reach, a call fails with a message saying how to turn live mode on.
 /// </summary>
-public sealed class LiveBridge(string pipeName, string root) : IAsyncDisposable
+public sealed class LiveBridge(string pipeName, string root, ServerProfile? profile = null) : IAsyncDisposable
 {
+    private readonly ServerProfile _profile = profile ?? ServerProfile.Modeler;
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private McpClient? _client;
 
@@ -31,13 +33,13 @@ public sealed class LiveBridge(string pipeName, string root) : IAsyncDisposable
     /// <summary>The server options: the tools' definitions and the recipes (prompts), answered here, and calls passed on.</summary>
     public McpServerOptions Options() => new()
     {
-        ServerInfo = ModelerServer.Info,
-        ServerInstructions = ModelerServer.Instructions + "\n\nThis is the live app: the person using AVA Modeler sees every change in its views, and their own edits share the same document and undo history.",
+        ServerInfo = ModelerServer.InfoFor(_profile),
+        ServerInstructions = _profile.Instructions + "\n\n" + _profile.LiveNote,
         Capabilities = new ServerCapabilities { Tools = new ToolsCapability(), Prompts = new PromptsCapability() },
-        PromptCollection = [.. ModelerServer.Prompts()],
+        PromptCollection = [.. ModelerServer.Prompts(_profile)],
         Handlers = new McpServerHandlers
         {
-            ListToolsHandler = (_, _) => ValueTask.FromResult(new ListToolsResult { Tools = ModelerServer.Definitions() }),
+            ListToolsHandler = (_, _) => ValueTask.FromResult(new ListToolsResult { Tools = ModelerServer.Definitions(_profile) }),
             CallToolHandler = (request, cancel) => CallAsync(request.Params ?? new CallToolRequestParams { Name = "" }, cancel),
         },
     };
@@ -52,7 +54,7 @@ public sealed class LiveBridge(string pipeName, string root) : IAsyncDisposable
         }
         catch (LiveConnectionException e)
         {
-            return Error(e.Message);
+            return Error(e.Message.Replace(NotRunning, _profile.NotRunning, StringComparison.Ordinal));
         }
         try
         {
@@ -65,7 +67,7 @@ public sealed class LiveBridge(string pipeName, string root) : IAsyncDisposable
         catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException or ClientTransportClosedException or McpException)
         {
             await DropAsync().ConfigureAwait(false);
-            return Error($"The connection to AVA Modeler was lost ({e.Message}). If the app is still open with AI agents allowed, call again to reconnect.");
+            return Error($"The connection to {_profile.Title} was lost ({e.Message}). If the app is still open with AI agents allowed, call again to reconnect.");
         }
     }
 

@@ -28,8 +28,16 @@ public static class McpCommandLine
     /// Runs the server until the client closes the stream. <paramref name="registry"/> makes the tool registry (given
     /// whether plugins may load). Returns the process's exit code.
     /// </summary>
-    public static async Task<int> RunAsync(IReadOnlyList<string> args, Func<bool, ToolRegistry> registry, Stream input, Stream output, TextWriter log, CancellationToken cancel = default)
+    public static Task<int> RunAsync(IReadOnlyList<string> args, Func<bool, ToolRegistry> registry, Stream input, Stream output, TextWriter log, CancellationToken cancel = default) =>
+        RunAsync(args, registry, input, output, log, ServerProfile.Modeler, cancel);
+
+    /// <summary>
+    /// Runs a profile's server (its tools, recipes and instructions, its live window's pipe) until the client closes the
+    /// stream, as <c>AVAModeler --mcp</c> does for AVA Modeler's own.
+    /// </summary>
+    public static async Task<int> RunAsync(IReadOnlyList<string> args, Func<bool, ToolRegistry> registry, Stream input, Stream output, TextWriter log, ServerProfile profile, CancellationToken cancel = default)
     {
+        string usage = profile.Usage ?? Usage;
         bool attach = false, plugins = true;
         string root = Environment.CurrentDirectory;
         for (int i = 0; i < args.Count; i++)
@@ -41,10 +49,10 @@ public static class McpCommandLine
                 case "--no-plugins": plugins = false; break;
                 case "--root" when i + 1 < args.Count: root = args[++i]; break;
                 case "--help" or "-h":
-                    await log.WriteLineAsync(Usage).ConfigureAwait(false);
+                    await log.WriteLineAsync(usage).ConfigureAwait(false);
                     return 0;
                 default:
-                    await log.WriteLineAsync($"Unknown option {args[i]}.\n\n{Usage}").ConfigureAwait(false);
+                    await log.WriteLineAsync($"Unknown option {args[i]}.\n\n{usage}").ConfigureAwait(false);
                     return 2;
             }
         }
@@ -54,18 +62,19 @@ public static class McpCommandLine
             await log.WriteLineAsync($"The working folder {root} doesn't exist.").ConfigureAwait(false);
             return 2;
         }
-        var transport = new StreamServerTransport(input, output, ModelerServer.Name);
+        var transport = new StreamServerTransport(input, output, profile.Name);
         if (attach)
         {
-            await log.WriteLineAsync($"AVA Modeler MCP bridge to the live app (pipe {LiveProtocol.PipeName}), working folder {root}.").ConfigureAwait(false);
-            await using var bridge = new LiveBridge(LiveProtocol.PipeName, root);
+            string pipe = profile.PipeName();
+            await log.WriteLineAsync($"{profile.Title} MCP bridge to the live app (pipe {pipe}), working folder {root}.").ConfigureAwait(false);
+            await using var bridge = new LiveBridge(pipe, root, profile);
             await using var server = McpServer.Create(transport, bridge.Options());
             await server.RunAsync(cancel).ConfigureAwait(false);
         }
         else
         {
-            await log.WriteLineAsync($"AVA Modeler MCP server (headless), working folder {root}.").ConfigureAwait(false);
-            await ModelerServer.RunAsync(transport, new HeadlessHost(root, registry(plugins)), cancel).ConfigureAwait(false);
+            await log.WriteLineAsync($"{profile.Title} MCP server (headless), working folder {root}.").ConfigureAwait(false);
+            await ModelerServer.RunAsync(transport, new HeadlessHost(root, registry(plugins)), profile, cancel).ConfigureAwait(false);
         }
         return 0;
     }

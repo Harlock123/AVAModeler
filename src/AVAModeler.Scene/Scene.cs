@@ -255,6 +255,7 @@ public sealed class Scene
             }
             c.Pivot = item.Pivot;
             c.Visible = item.Visible;
+            c.Locked = item.Locked;
             for (int i = 0; i < 9; i++) c.Channels[i].CopyFrom(item.Channels[i]);
             c.PathPosition.CopyFrom(item.PathPosition);
             s.Add(c);

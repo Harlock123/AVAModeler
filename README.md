@@ -617,7 +617,7 @@ The Layout tools:
 | `export_scene` | The scene as glTF 2.0 (`.glb`, or `.gltf`): hierarchy, cameras, lights and keyed motion sampled per frame, for other programs. The scene and its file are left as they are. |
 | `add_object` | The Modeler's object, live (later modeling shows in the scene), one of its layers, or an object file. |
 | `add_light`, `add_camera`, `add_null`, `add_bone`, `remove_item` | Distant, point, spot and area lights with colour, intensity, cone, range and shadows (an area light's `area_size` in metres, a point or spot light's `radius` for soft shadows, and their `shadow_samples`); cameras by zoom factor or field of view; nulls; bones that bend an object. Lights and cameras can be aimed at a point as they're added. |
-| `set_item` | An item's name, parent, pivot, visibility and its own settings (a light's, soft shadows included; a camera's, with depth of field (`focal_distance` in metres or `focus_on` an item, `f_stop` or `aperture` in metres, `dof_samples`) and motion blur (`shutter` as a fraction of a frame, `blur_samples`); an object's shadows; a bone's rest pose, strength and activity, with Rest Here and resetting its pose). |
+| `set_item` | An item's name, parent, pivot, visibility, lock and its own settings (a light's, soft shadows included; a camera's, with depth of field (`focal_distance` in metres or `focus_on` an item, `f_stop` or `aperture` in metres, `dof_samples`) and motion blur (`shutter` as a fraction of a frame, `blur_samples`); an object's shadows; a bone's rest pose, strength and activity, with Rest Here and resetting its pose). |
 | `add_morph`, `set_morph`, `remove_morph` | Morph targets: a copy of a Modeler layer with the object's points in the same order (a mismatch is refused, saying why), blended by a weight channel, `morph.<name>`. |
 | `add_displacement`, `set_displacement`, `remove_displacement` | Wave and ripple displacements: points move along an axis by a travelling sine wave, its amplitude a channel, `displacement.<number>.amplitude`. |
 | `skelegons_to_bones` | Layout's Skelegons → Bones: a bone for each 2-point polygon on a "Skelegon…" surface, chained where one's base is on another's tip. |
@@ -879,6 +879,9 @@ Layout reuses them.
   points than between them. While an item follows a path its position keys (and, aligned, its heading and pitch keys)
   are kept but not used. LightWave scenes have no place for path following: `.lws` gets the item's own keys and a
   warning (bake the path first); `.avascene` keeps it, and glTF export writes the motion it makes.
+- **An item's lock** (`set_item` `locked`, and a scene editor's lock) only keeps the mouse off it in the views: it isn't
+  picked or dragged there, but its numbers, keys and agents still change it. `.avascene` keeps it; `.lws` and glTF have no
+  place for it.
 - **The dope sheet** always fits the scene's frames across its width (there's no zooming in on a stretch of frames),
   and shows only keys inside them; channels never keyed (holding a constant) have no row or keys. Keys move by whole
   frames only. Scaling that brings keys of one channel onto the same frame keeps the later one. Copied keys paste onto

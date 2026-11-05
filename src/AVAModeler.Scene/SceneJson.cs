@@ -96,6 +96,7 @@ public static class SceneJson
                 Parent = item.Parent == null ? null : items.IndexOf(item.Parent),
                 Pivot = Arr(item.Pivot),
                 Visible = item.Visible,
+                Locked = item.Locked ? true : null,
                 Channels = item.Channels.Select(Env).ToList(),
             };
             if (item.Path is { } path)
@@ -222,6 +223,7 @@ public static class SceneJson
             }
             item.Pivot = Vec(d.Pivot);
             item.Visible = d.Visible;
+            item.Locked = d.Locked == true;
             for (int c = 0; c < Math.Min(9, d.Channels.Count); c++) SetEnv(item.Channels[c], d.Channels[c]);
             SetEnv(item.PathPosition, d.PathPosition);
             scene.Add(item);
@@ -682,6 +684,8 @@ public static class SceneJson
         public int? Parent { get; set; }
         public double[]? Pivot { get; set; }
         public bool Visible { get; set; } = true;
+        /// <summary>Written only when locked, so files of unlocked scenes are as they were.</summary>
+        public bool? Locked { get; set; }
         public List<EnvelopeDto> Channels { get; set; } = [];
         public PathDto? Path { get; set; }
         public EnvelopeDto? PathPosition { get; set; }

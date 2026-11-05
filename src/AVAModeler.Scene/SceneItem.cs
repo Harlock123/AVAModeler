@@ -22,6 +22,11 @@ public abstract class SceneItem
     public string Name;
     public Vec3 Pivot;
     public bool Visible = true;
+    /// <summary>
+    /// Locked against the mouse: a view doesn't pick or drag a locked item (a scene editor's lock). Its settings and keys
+    /// can still be changed by number, and by agents.
+    /// </summary>
+    public bool Locked;
     /// <summary>The path the item follows (null: it moves by its position keys). See <see cref="FollowPath"/>.</summary>
     public FollowPath? Path;
 

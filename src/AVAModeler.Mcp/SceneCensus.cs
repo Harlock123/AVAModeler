@@ -224,6 +224,7 @@ internal static class SceneCensus
             ["rotation"] = Vec(item.RotationAt(frame)),
             ["scale"] = Vec(item.ScaleAt(frame)),
         };
+        if (item.Locked) o["locked"] = true;
         if (item.Pivot != Vec3.Zero) o["pivot"] = Vec(item.Pivot);
         if (item.Parent != null || item is Bone || item.Pivot != Vec3.Zero) o["world_position"] = Vec(world.TransformPoint(item.Pivot));
         o["keyed"] = Strings(Channels(item).Where(c => !Keying.IsConstant(c.Envelope, s)).Select(c => c.Name));

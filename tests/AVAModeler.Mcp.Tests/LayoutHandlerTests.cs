@@ -212,6 +212,20 @@ public class LayoutHandlerTests
     }
 
     [Fact]
+    public async Task Set_item_locks_an_item_and_get_scene_says_so_only_when_locked()
+    {
+        using var b = await WithBox();
+        var before = await Parse(b.Tools.GetScene(cancel: Cancel));
+        Assert.All(before["items"]!.AsArray(), i => Assert.Null(i!["locked"]));
+        await b.Tools.SetItem("Camera", locked: true, cancel: Cancel);
+        Assert.True(b.Scene.CurrentCamera!.Locked);
+        var after = await Parse(b.Tools.GetScene(cancel: Cancel));
+        Assert.True((bool)after["items"]!.AsArray().Single(i => (string?)i!["name"] == "Camera")!["locked"]!);
+        await b.Tools.UndoScene(cancel: Cancel);
+        Assert.False(b.Scene.CurrentCamera!.Locked);
+    }
+
+    [Fact]
     public async Task A_call_that_fails_part_way_leaves_the_scene_as_it_was()
     {
         using var b = await WithBox();

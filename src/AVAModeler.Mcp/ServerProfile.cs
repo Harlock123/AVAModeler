@@ -85,6 +85,7 @@ public static class ToolGroups
         "render_scene_view", "render_animation", "make_movie",
         "set_morph", "remove_morph", "add_displacement", "set_displacement", "remove_displacement", "skelegons_to_bones", "set_ik", "bake_ik",
         "add_motion_modifier", "set_motion_modifier", "remove_motion_modifier",
+        "load_image", "remove_image", "set_compositing", "set_dissolve",
     };
 
     /// <summary>The modeling tools: every other one of <see cref="ModelerTools"/>'.</summary>

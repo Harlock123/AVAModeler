@@ -191,12 +191,50 @@ internal static class SceneCensus
                     ["lighting"] = s.Environment.Lighting, ["samples"] = s.Environment.Samples,
                 }
                 : null,
+            ["images"] = s.Images.Count == 0 ? null : Images(s, frame),
+            ["compositing"] = s.Compositing.On ? CompositingJson(s.Compositing) : null,
             ["file"] = l.ScenePath,
             ["modified"] = l.Modified,
             ["items"] = new JsonArray(s.Items.Select(i => (JsonNode)Item(l, i, sf, modelerDocument)).ToArray()),
             ["warnings"] = Strings(warnings),
             ["undo_scene"] = UndoState(l),
         };
+    }
+
+    /// <summary>
+    /// The scene's image list at a frame: each image's file, numbered from 1; a sequence's offset, looping, first and
+    /// last numbers on disk and the file it shows at the frame; and any problem.
+    /// </summary>
+    public static JsonArray Images(SceneModel s, double frame) => new(s.Images.Select((image, i) =>
+    {
+        var o = new JsonObject { ["number"] = i + 1, ["file"] = image.Path, ["sequence"] = image.Sequence };
+        if (image.Sequence)
+        {
+            o["offset"] = image.Offset;
+            o["loop"] = image.Loop;
+            if (ImageSequence.Range(image) is var (first, last)) o["frames_on_disk"] = new JsonArray(first, last);
+            o["shows"] = ImageSequence.Resolve(image, frame);
+        }
+        if (ImageSequence.Problem(image) is { } problem) o["problem"] = problem;
+        return (JsonNode)o;
+    }).ToArray());
+
+    /// <summary>The compositing settings: the background and foreground, the key (its colours 0 to 255) and the foreground's dissolve.</summary>
+    public static JsonObject CompositingJson(CompositingSettings c)
+    {
+        var o = new JsonObject
+        {
+            ["background"] = c.Background.Length > 0 ? c.Background : null,
+            ["foreground"] = c.Foreground.Length > 0 ? c.Foreground : null,
+        };
+        if (c.Foreground.Length > 0)
+        {
+            o["key"] = c.Key.ToString().ToLowerInvariant();
+            if (c.Key == ForegroundKey.Color) { o["key_low"] = Json.ColourJson(c.KeyLow); o["key_high"] = Json.ColourJson(c.KeyHigh); }
+            if (c.ForegroundAlpha.Length > 0) o["foreground_alpha"] = c.ForegroundAlpha;
+            if (c.ForegroundDissolve > 0) o["foreground_dissolve"] = Round(c.ForegroundDissolve);
+        }
+        return o;
     }
 
     /// <summary>What undo_scene and redo_scene would do now: the scene's shared history (the person's steps and agents').</summary>
@@ -284,6 +322,7 @@ internal static class SceneCensus
                 if (obj.Bones.Count > 0) o["bones"] = Strings(obj.Bones.Select(b => b.Name));
                 if (obj.Morphs.Count > 0) o["morphs"] = Morphs(obj, frame);
                 if (obj.Displacements.Count > 0) o["displacements"] = Displacements(obj, frame);
+                if (obj.DissolveAt(frame) != 0 || !Keying.IsConstant(obj.Dissolve, s)) o["dissolve"] = Round(obj.DissolveAt(frame));
                 if (!obj.CastShadows) o["cast_shadows"] = false;
                 if (!obj.ReceiveShadows) o["receive_shadows"] = false;
                 break;

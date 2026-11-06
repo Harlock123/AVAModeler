@@ -200,13 +200,19 @@ public sealed class LayoutSession
     /// its own even then: the drag so far becomes a step, and the rest of the drag another. A change that leaves the
     /// scene's <see cref="Scene.Scene.Version"/> as it was is no step. Replacing the scene inside it leaves no step
     /// either (a new scene starts a fresh history).
+    /// <para>With <paramref name="merge"/>, the change joins the last step instead of making a new one when that step
+    /// has the same <paramref name="label"/>, nothing else has happened since (no other step, undo or redo, and the scene
+    /// is exactly as that step left it) and the scene isn't as it was last saved: so a run of updates (an object synced
+    /// live from AVA Modeler every half-second) is one Ctrl+Z. Redo is cleared as for any step.</para>
     /// </summary>
-    public T Edit<T>(string label, Func<T> change, bool apart = false)
+    public T Edit<T>(string label, Func<T> change, bool apart = false, bool merge = false)
     {
         if (_editDepth > 0 || _pending != null && !apart) return change();
         var resume = _pending?.Label;
         if (resume != null) EndEdit();
         var scene = Scene;
+        // Not into a step that ends at the saved scene: undo should still come back to it.
+        bool join = merge && History.StateOf(scene) != _savedState && History.CanMerge(scene, label);
         var before = scene.Snapshot();
         T result;
         _editDepth++;
@@ -230,13 +236,13 @@ public sealed class LayoutSession
             throw;
         }
         _editDepth--;
-        if (ReferenceEquals(Scene, scene)) History.Record(before, label);
+        if (ReferenceEquals(Scene, scene)) History.Record(before, label, join);
         if (resume != null) BeginEdit(resume);
         return result;
     }
 
-    /// <inheritdoc cref="Edit{T}(string, Func{T}, bool)"/>
-    public void Edit(string label, Action change, bool apart = false) => Edit(label, () => { change(); return 0; }, apart);
+    /// <inheritdoc cref="Edit{T}(string, Func{T}, bool, bool)"/>
+    public void Edit(string label, Action change, bool apart = false, bool merge = false) => Edit(label, () => { change(); return 0; }, apart, merge);
 
     /// <summary>Whether a drag's edit is under way (<see cref="BeginEdit"/>).</summary>
     public bool Editing => _pending != null;

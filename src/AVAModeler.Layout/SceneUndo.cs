@@ -17,6 +17,8 @@ public sealed class SceneUndo
     private readonly List<Step> _undo = [], _redo = [];
     private int _state, _stateVersion = -1, _lastId;
     private Scene.Scene? _stateScene;
+    /// <summary>Whether the last thing that happened to the history was a step recorded (not an undo, redo or clear).</summary>
+    private bool _lastRecorded;
 
     /// <summary>How many steps are kept (the oldest go first).</summary>
     public int Limit { get; set; } = 100;
@@ -54,18 +56,49 @@ public sealed class SceneUndo
     /// Records a step that has just been made, given the snapshot taken before it. Nothing is recorded if the scene
     /// hasn't changed since. Redo is cleared.
     /// </summary>
-    public void Record(SceneSnapshot before, string label)
+    public void Record(SceneSnapshot before, string label) => Record(before, label, merge: false);
+
+    /// <summary>
+    /// Records a step that has just been made, given the snapshot taken before it, as <see cref="Record(SceneSnapshot, string)"/>
+    /// does; with <paramref name="merge"/>, it is folded into the last step instead when it can be (<see cref="CanMerge"/>),
+    /// so one undo takes back the whole run of them (a value arriving every half-second while someone models elsewhere).
+    /// Returns whether it was merged.
+    /// </summary>
+    public bool Record(SceneSnapshot before, string label, bool merge)
     {
         var scene = before.Scene;
-        if (scene.Version == before.Version) return;
+        if (scene.Version == before.Version) return false;
         int from = ReferenceEquals(scene, _stateScene) && before.Version == _stateVersion ? _state : ++_lastId;
+        if (merge && CanMergeFrom(scene, from, label))
+        {
+            // The last step now leads to where the scene is: it starts where it did, from its own snapshot.
+            int next = ++_lastId;
+            _undo[^1] = _undo[^1] with { To = next };
+            SetState(scene, next);
+            _lastRecorded = true;
+            Changed?.Invoke();
+            return true;
+        }
         int to = ++_lastId;
         SetState(scene, to);
         _undo.Add(new Step(before, label, from, to));
         if (_undo.Count > Math.Max(1, Limit)) _undo.RemoveRange(0, _undo.Count - Math.Max(1, Limit));
         _redo.Clear();
+        _lastRecorded = true;
         Changed?.Invoke();
+        return false;
     }
+
+    /// <summary>
+    /// Whether a step named <paramref name="label"/> made on <paramref name="scene"/> now would be merged into the last
+    /// one: that step has the same name, was the last thing recorded (no undo, redo or other step since), and the scene
+    /// is still exactly in the state it led to.
+    /// </summary>
+    public bool CanMerge(Scene.Scene scene, string label) => CanMergeFrom(scene, StateOf(scene), label);
+
+    private bool CanMergeFrom(Scene.Scene scene, int from, string label) =>
+        _lastRecorded && _redo.Count == 0 && _undo.Count > 0 && _undo[^1].Label == label && _undo[^1].To == from
+        && ReferenceEquals(_undo[^1].State.Scene, scene);
 
     /// <summary>
     /// After a step that failed was put back (<paramref name="before"/> restored), the scene is in the state it was in
@@ -99,6 +132,7 @@ public sealed class SceneUndo
         // The step to go back the other way: from where the scene is now, to where it was.
         to.Add(undo ? step with { State = here, To = now } : step with { State = here, From = now });
         SetState(scene, undo ? step.From : step.To);
+        _lastRecorded = false;
         Changed?.Invoke();
         return step.Label;
     }
@@ -106,6 +140,7 @@ public sealed class SceneUndo
     /// <summary>Forgets every step.</summary>
     public void Clear()
     {
+        _lastRecorded = false;
         if (_undo.Count == 0 && _redo.Count == 0) return;
         _undo.Clear();
         _redo.Clear();

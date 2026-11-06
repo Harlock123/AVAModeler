@@ -5,7 +5,7 @@ namespace AVAModeler.Layout;
 
 /// <summary>
 /// Every animatable channel an item has, by the names agents and Layout's dope sheet use: its nine motion channels,
-/// a light's intensity, a camera's zoom, an object's dissolve ("dissolve", 0 solid to 1 gone), morph weights ("morph.Smile") and displacement amplitudes
+/// a light's intensity (and its lens flare's, "flare.intensity", while the flare is on or keyed), a camera's zoom, an object's dissolve ("dissolve", 0 solid to 1 gone), morph weights ("morph.Smile") and displacement amplitudes
 /// ("displacement.1.amplitude", numbered from 1), and for an item that follows a path, where along it it is
 /// ("path.position"). The MCP server's census reads its channel names through this, so a
 /// new animatable setting is added here once.
@@ -21,7 +21,11 @@ public static class SceneChannels
     public static IEnumerable<(string Name, Envelope Envelope)> Of(SceneItem item)
     {
         for (int i = 0; i < 9; i++) yield return (MotionNames[i], item.Channels[i]);
-        if (item is LightItem l) yield return ("intensity", l.Intensity);
+        if (item is LightItem l)
+        {
+            yield return ("intensity", l.Intensity);
+            if (l.Flare.On || !l.FlareIntensity.IsConstant) yield return (FlareIntensity, l.FlareIntensity);
+        }
         if (item is CameraItem c) yield return ("zoom", c.Zoom);
         if (item is ObjectItem o)
         {
@@ -34,6 +38,9 @@ public static class SceneChannels
 
     /// <summary>An object's dissolve channel (0 solid, 1 gone).</summary>
     public const string Dissolve = "dissolve";
+
+    /// <summary>A light's lens flare intensity (1 is 100%), listed while its flare is on or the channel is animated.</summary>
+    public const string FlareIntensity = "flare.intensity";
 
     /// <summary>The channel of where an item following a path is along it (0 the start, 1 the end).</summary>
     public const string PathPosition = "path.position";

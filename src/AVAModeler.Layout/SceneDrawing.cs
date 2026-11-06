@@ -199,6 +199,7 @@ public static class SceneDrawing
                         yield return (new Vec3(0, c0, s0), new Vec3(0, c1, s1));
                     }
                 }
+                foreach (var line in EffectHints(l, s)) yield return line;
                 break;
             }
             default:
@@ -206,6 +207,35 @@ public static class SceneDrawing
                 yield return (new Vec3(0, -s, 0), new Vec3(0, s, 0));
                 yield return (new Vec3(0, 0, -s), new Vec3(0, 0, s));
                 break;
+        }
+    }
+
+    /// <summary>The length a volumetric spot's cone is drawn: its beam's distance, else its range, else 2 metres.</summary>
+    public static double BeamHintLength(LightItem l) => l.Volumetric.Distance > 0 ? l.Volumetric.Distance : l.Range > 0 ? l.Range : 2;
+
+    /// <summary>
+    /// Hints of a light's own effects: a lens flare's star (four diagonal spokes in its XY plane, longer than its cross),
+    /// and a volumetric spot's cone (four lines from the light to a ring at <see cref="BeamHintLength"/>).
+    /// </summary>
+    private static IEnumerable<(Vec3, Vec3)> EffectHints(LightItem l, double s)
+    {
+        if (l.Flare.On)
+        {
+            double d = s * 1.2;
+            yield return (new Vec3(-d, -d, 0), new Vec3(d, d, 0));
+            yield return (new Vec3(-d, d, 0), new Vec3(d, -d, 0));
+        }
+        if (l.Volumetric.On && l.Type == LightType.Spot)
+        {
+            double length = BeamHintLength(l), r = length * Math.Tan(Math.Min(l.ConeAngle, 89) * Math.PI / 180);
+            const int n = 24;
+            for (int i = 0; i < n; i++)
+            {
+                double a0 = 2 * Math.PI * i / n, a1 = 2 * Math.PI * (i + 1) / n;
+                var p0 = new Vec3(Math.Cos(a0) * r, Math.Sin(a0) * r, length);
+                yield return (p0, new Vec3(Math.Cos(a1) * r, Math.Sin(a1) * r, length));
+                if (i % 6 == 0) yield return (Vec3.Zero, p0);
+            }
         }
     }
 }

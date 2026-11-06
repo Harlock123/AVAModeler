@@ -315,6 +315,7 @@ public sealed class ViewportControl : Panel
         {
             _gesture = Gesture.Tool;
             BeginToolDrag(p, props.IsRightButtonPressed);
+            Session.ToolDragging = _gesture == Gesture.Tool;
         }
         else if (props.IsRightButtonPressed) _gesture = Camera.IsPerspective ? Gesture.Orbit : Gesture.Lasso;
         else if (props.IsLeftButtonPressed)
@@ -361,6 +362,7 @@ public sealed class ViewportControl : Panel
         var p = e.GetPosition(this);
         var g = _gesture;
         _gesture = Gesture.None;
+        Session.ToolDragging = false;
         e.Pointer.Capture(null);
         bool add = _mods.HasFlag(KeyModifiers.Shift), remove = _mods.HasFlag(KeyModifiers.Control);
         switch (g)

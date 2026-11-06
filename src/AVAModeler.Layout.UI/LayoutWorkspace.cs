@@ -30,6 +30,18 @@ public sealed class LayoutWorkspace : DockPanel
     private readonly Slider _timeline = new() { Minimum = 1, Maximum = 60, SmallChange = 1, LargeChange = 10, IsSnapToTickEnabled = true, TickFrequency = 1 };
     private readonly TextBlock _frameText = new() { Foreground = Look.Text, Width = 90, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _status = new() { Foreground = Look.ButtonOn, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0) };
+    private readonly TextBlock _hub = new() { Foreground = Look.Text, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), IsVisible = false };
+
+    /// <summary>A short line at the right of the status line a host sets (AVA Modeler: how the hub stands). Empty hides it.</summary>
+    public string HubText
+    {
+        get => _hub.Text ?? "";
+        set
+        {
+            _hub.Text = value;
+            _hub.IsVisible = !string.IsNullOrEmpty(value);
+        }
+    }
     private readonly KeyMarks _marks;
     private readonly DispatcherTimer _player = new();
     private readonly MenuItem _undo = new(), _redo = new();
@@ -82,7 +94,9 @@ public sealed class LayoutWorkspace : DockPanel
         timeline.Children.Add(transport);
         timeline.Children.Add(_frameText);
         timeline.Children.Add(new StackPanel { Children = { _timeline, _marks } });
-        var bottom = new StackPanel { Background = Look.PanelDark, Children = { timeline, Graph, DopeSheet, _status } };
+        SetDock(_hub, Dock.Right);
+        var statusLine = new DockPanel { Children = { _hub, _status } };
+        var bottom = new StackPanel { Background = Look.PanelDark, Children = { timeline, Graph, DopeSheet, statusLine } };
         SetDock(bottom, Dock.Bottom);
         Children.Add(bottom);
         Children.Add(View);

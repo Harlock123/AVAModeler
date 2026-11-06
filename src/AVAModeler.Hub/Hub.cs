@@ -12,9 +12,11 @@ namespace AVAModeler.Hub;
 /// files (their paths), never as data on the pipe.
 /// <para>The messages (<see cref="HubMessage"/>): <c>hello</c> (who's there); <c>edit_object</c> (AVALightWave to AVA
 /// Modeler: open this object to model it); <c>object_saved</c> (AVA Modeler to AVALightWave: this object was saved or
-/// synced, so update it in the scene); <c>add_object</c> (AVA Modeler to AVALightWave: put this object in the scene). A
-/// link id ties an object in AVALightWave's scene to the document AVA Modeler has open, so a save under a new name still
-/// finds its way back.</para>
+/// synced, so update it in the scene); <c>add_object</c> (AVA Modeler to AVALightWave: put this object in the scene);
+/// <c>object_changed</c> (AVA Modeler to AVALightWave, live sync: the linked object changed in AVA Modeler and isn't
+/// saved; a copy is at the path, rewritten in place each time, so show it in the scene as it is now). A link id ties an
+/// object in AVALightWave's scene to the document AVA Modeler has open, so a save under a new name still finds its way
+/// back.</para>
 /// </summary>
 public static class HubProtocol
 {
@@ -70,6 +72,13 @@ public static class HubProtocol
 public sealed record HubMessage(string Type, string From, string? Path = null, string? Link = null, string? Name = null)
 {
     public const string Hello = "hello", EditObject = "edit_object", ObjectSaved = "object_saved", AddObject = "add_object";
+
+    /// <summary>
+    /// Live sync (AVA Modeler to AVALightWave): the linked object (<see cref="Link"/>) changed and isn't saved; a copy is
+    /// at <see cref="Path"/> (an LWOB in AVA Modeler's hub folder, one file per link, replaced whole each time), with the
+    /// object's <see cref="Name"/>. Sent a moment after the changes stop, never more than one at a time.
+    /// </summary>
+    public const string ObjectChanged = "object_changed";
 
     public JsonObject ToJson()
     {
@@ -287,6 +296,38 @@ public static class HubFiles
 
     /// <summary>A new link id.</summary>
     public static string NewLink() => Guid.NewGuid().ToString("N");
+
+    /// <summary>
+    /// The file live sync keeps a linked object's copy in (<see cref="HubMessage.ObjectChanged"/>): one per link, named
+    /// after the link alone (made safe), so every sync replaces the same file.
+    /// </summary>
+    public static string LivePathFor(string folder, string link, string extension = ".lwo")
+    {
+        var safe = new string(link.Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_').ToArray());
+        if (safe.Length == 0) safe = "object";
+        if (safe.Length > 40) safe = safe[..40];
+        return Path.Combine(folder, $"live-{safe}{extension}");
+    }
+
+    /// <summary>
+    /// Writes a file so that a reader never sees half of it: <paramref name="write"/> writes a temporary file beside
+    /// <paramref name="path"/> (with the same extension, which picks the format), which is then renamed over it in one
+    /// step. If writing fails, the temporary file is removed and <paramref name="path"/> is left as it was.
+    /// </summary>
+    public static void WriteWhole(string path, Action<string> write)
+    {
+        var folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        var temp = Path.Combine(folder, $".{Path.GetFileNameWithoutExtension(path)}-{Guid.NewGuid():N}{Path.GetExtension(path)}");
+        try
+        {
+            write(temp);
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
+    }
 }
 
 /// <summary>

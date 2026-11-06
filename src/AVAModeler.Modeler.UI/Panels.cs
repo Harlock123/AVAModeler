@@ -413,6 +413,21 @@ public sealed class StatusBar : DockPanel
     private readonly TextBlock _counts = new() { Foreground = Look.Text, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0) };
     private readonly TextBlock _message = new() { Foreground = Look.ButtonOn, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Dictionary<SelectionMode, Button> _modes = [];
+    private readonly TextBlock _hub = new() { Foreground = Look.Text, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), IsVisible = false };
+
+    /// <summary>
+    /// A short line at the right (before the layer buttons) a host sets: AVA Modeler shows how the hub with AVALightWave
+    /// stands. Empty hides it.
+    /// </summary>
+    public string HubText
+    {
+        get => _hub.Text ?? "";
+        set
+        {
+            _hub.Text = value;
+            _hub.IsVisible = !string.IsNullOrEmpty(value);
+        }
+    }
 
     public StatusBar(ModelerSession session, Control layers)
     {
@@ -430,6 +445,8 @@ public sealed class StatusBar : DockPanel
         Children.Add(modes);
         SetDock(layers, Dock.Right);
         Children.Add(layers);
+        SetDock(_hub, Dock.Right);
+        Children.Add(_hub);
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { _counts, _message } };
         Children.Add(text);
         session.Changed += Refresh;

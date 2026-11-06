@@ -25,6 +25,8 @@ public sealed class ModelerWorkspace : DockPanel
     public BackdropPanel Backdrop { get; }
     public ToolTabs Tabs { get; }
     public Menu Menu { get; }
+    /// <summary>The status bar along the bottom (counts, messages, selection modes, layers, and a host's <see cref="StatusBar.HubText"/>).</summary>
+    public StatusBar StatusBar { get; }
     private readonly Dictionary<string, Action> _commands;
     private readonly MenuItem _recent = new() { Header = "Recent" };
 
@@ -68,7 +70,7 @@ public sealed class ModelerWorkspace : DockPanel
         header.Children.Add(new DockPanel { Children = { Tabs.TabStrip } });
         SetDock(header, Dock.Top);
         Children.Add(header);
-        var status = new StatusBar(session, new LayerBar(session));
+        var status = StatusBar = new StatusBar(session, new LayerBar(session));
         SetDock(status, Dock.Bottom);
         Children.Add(status);
         var left = new ScrollViewer { Content = Tabs.Column, Background = Look.Panel };

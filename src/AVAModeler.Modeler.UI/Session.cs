@@ -48,6 +48,12 @@ public sealed class Preferences
     /// this user can open: its Edit in Modeler opens objects here, and saves go back to its scene. On unless turned off.
     /// </summary>
     public bool HubEnabled { get; set; } = true;
+    /// <summary>
+    /// Live sync with AVALightWave: while the open object is linked to an object in its scene (Edit in Modeler, or Send
+    /// to AVALightWave), every change is sent there a moment after the editing pauses, unsaved (a copy in the hub
+    /// folder), so its scene shows the object as it is being modeled. On unless turned off; needs <see cref="HubEnabled"/>.
+    /// </summary>
+    public bool HubLiveSync { get; set; } = true;
     /// <summary>Where AVALightWave is, for Send to AVALightWave to start it (else beside AVA Modeler, or on the PATH).</summary>
     public string? LightWavePath { get; set; }
     public List<string> RecentFiles { get; set; } = [];
@@ -184,6 +190,12 @@ public sealed class ModelerSession
 
     /// <summary>Whether the armed tool has been dragged since it was armed or last began a step.</summary>
     public bool ToolUsed { get; set; }
+
+    /// <summary>
+    /// Whether a tool is being dragged in a view right now (the button held). Work that copies the whole object (live
+    /// sync with AVALightWave) waits until the drag ends.
+    /// </summary>
+    public bool ToolDragging { get; set; }
 
     /// <summary>The armed tool's work in the UV view: the flat copy of the UV map it works on, and the model as it was.</summary>
     private sealed class UVEdit(UVSpace space, UndoStack.Snapshot before, ToolContext context)

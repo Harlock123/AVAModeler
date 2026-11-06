@@ -80,6 +80,9 @@ public sealed class MainWindow : Window
             Hub.Launcher = new AVAModeler.Hub.AppLauncher(AVAModeler.Hub.HubProtocol.LightWave) { Start = _ => false };
         }
         Modeler.Saved += path => { if (Hub.Running) _ = Hub.NotifySaved(Session.Document, path); };
+        // How the hub stands, at the right of both workspaces' status lines.
+        Hub.StatusChanged += ShowHubStatus;
+        ShowHubStatus();
         Modeler.SendToLightWave += async () => Session.SetStatus(await Hub.SendToLightWave());
         // Tests never see the person's own key: no environment variable, no key file.
         var keys = loadPlugins ? ApiKeyStore.ForApp(Preferences.Folder) : new ApiKeyStore(null, null);
@@ -121,6 +124,12 @@ public sealed class MainWindow : Window
             _ = Agents.StopAsync();
             _ = Hub.StopAsync();
         };
+    }
+
+    private void ShowHubStatus()
+    {
+        Modeler.StatusBar.HubText = Hub.Status.Text;
+        if (_layout != null) _layout.HubText = Hub.Status.Text;
     }
 
     /// <summary>Joins or leaves the hub to match the preference.</summary>
@@ -193,6 +202,7 @@ public sealed class MainWindow : Window
             _layout = new LayoutWorkspace(_layoutSession, () => Session.Document);
             _layout.ShowModeler += ShowModeler;
             _layout.ToggleChat += ToggleChat;
+            _layout.HubText = Hub.Status.Text;
         }
         _layoutSession.OfferModelerObject(Session.Document);
         Content = _layout;

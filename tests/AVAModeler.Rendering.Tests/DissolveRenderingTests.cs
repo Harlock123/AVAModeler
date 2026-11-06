@@ -4,6 +4,7 @@ using static AVAModeler.Rendering.Tests.TextureRenderingTests;
 namespace AVAModeler.Rendering.Tests;
 
 /// <summary>A dissolved layer (a Layout object's dissolve) drawn with screen-door transparency, by both renderers alike.</summary>
+[Collection("OpenGL")]
 public class DissolveRenderingTests
 {
     /// <summary>A 4 × 4 square facing the viewer at the origin.</summary>

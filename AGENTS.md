@@ -77,6 +77,9 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     only the selection: `Tool.SelectsOnly` keeps the object unmodified) and Remove Degenerate; `SelectProblemsTool.FixFor`
     names the existing tool that fixes each kind (Fill Hole, Align, Merge Points, Remove Degenerate). Don't add a second
     tool for a fix one of those already makes.
+  - `LuaSandbox.cs`: the macro sandbox for any Lua (`Create`, `Run` with a caller's globals, print sink and time
+    limit; `ToArgs`, `List`, `Indices`, `Numbers`, `Strings`). `Macros.Run` is built on it; another app's Lua
+    (AVALightWave's scene macros) goes through it, never a bare MoonSharp `Script`.
   - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).
@@ -95,6 +98,29 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     `CameraItem`, each with `Checked()` (throws an `ArgumentException` saying what's wrong, used by the UI and the MCP
     tools alike). Change one by setting a new record (`with`). Soft lights are `LightItem`'s `Area` type
     (`AreaWidth`, `AreaHeight`) and `Radius`, with `ShadowSamples`.
+  - `LightEffects.cs`: `LensFlare`, `VolumetricLight` and `ShadowMapSettings`, records on `LightItem` (`Flare`,
+    `Volumetric`, `ShadowMap`; the `FlareIntensity` envelope; `UsesShadowMap`). `Rendering/RayTracer.Lights.cs` is the
+    partial of `RayTracer` and its `Tracer` for flares (`FlareCanvas`, `DrawFlares`), volumetric beams (`Volumetric`,
+    `Beam`, `Cone`) and `Visibility`; `Rendering/ShadowMaps.cs` is `DepthView`, `LightShadowMap` and `RenderCounters`
+    (work counts the tests read through `RenderSettings.Counters`). A new light effect gets its own branch in the
+    `Tracer`, built in `PrepareLightEffects`; count expensive work through `RenderCounters` so tests assert work, not time.
+    `Lws/LwsLightBits.cs` holds the flare bits for .lws.
+  - `Compositing.cs`: `SceneImage` (an image-list entry), `CompositingSettings` and `ForegroundKey`, `ImageSequence`
+    (numbered files by frame from a cached folder scan, `Resolve`, `Problem`) and `SceneImages` (list lookup,
+    `TextureFile` for sequence textures, `Picture`, and `Problems`, which feeds `Scene.Evaluate`'s warnings and
+    `LayoutSession.ImageProblems`). `Scene.Images` (set a new list; the setter copies it) and `Scene.Compositing` are in
+    `Copy` and `SceneSnapshot`. `ObjectItem.Dissolve` is the `dissolve` channel; the ray tracer mixes what's behind a
+    dissolved hit and leaves wholly dissolved objects out of the BVH.
+  - `Envelope.cs`: `SpanKind` (Tcb, Linear, Stepped, Bezier) on `EnvelopeKey.Span` with `InSlope` and `OutSlope` in
+    value per frame. `Kind` is the span that counts (the `Linear` flag on a TCB key means Linear; `WithSpan` keeps the
+    flag in step). A span belongs to the key it ends at: a Bezier span uses the previous key's `OutSlope` and its own
+    `InSlope`; a TCB span leaves a Bezier key at its `OutSlope` and a stepped key flat. `Slopes(i)` gives the curve's
+    slopes at a key; `ScaleTime` divides slopes.
+  - `MotionModifiers.cs`: `MotionModifier` records (`LagModifier`, `JitterModifier`, `CycleModifier`,
+    `OscillateModifier`), `MotionPose`, `Checked` and `Problem`, on `SceneItem.Modifiers` (immutable: set a new list).
+    `MotionSolver` applies them after the path and IK (`Unmodified`, `Scale`); `LocalMatrix` uses `MotionScaleAt`.
+  - `Lws/LwText.cs` is the line and envelope parser `LwsReader` and `Lws/MotionFile.cs` (.mot read, write and apply)
+    share.
   - `Rendering/EnvironmentMap.cs`: an environment picture by direction (lat-long, turned by its heading), its 64 × 32
     blurred copy and irradiance table for lighting, loading and caching (`.hdr` through `Hdr`, else `TextureImages`),
     and the built-in `builtin:sky` and `builtin:studio`. `Rendering/RayTracer.cs` does every effect: depth of field and
@@ -122,8 +148,14 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     (`Edit`, `BeginEdit`/`EndEdit`, `Undo`, `Redo`).
   - `SceneUndo.cs`: Layout's undo history (`LayoutSession.History`), `SceneSnapshot`s shared by the person and agents.
   - `SceneChannels.cs`: every animatable channel an item has, by name (`Of`, `Find`, `Keyed`): motion, a light's
-    intensity, a camera's zoom, morph weights, displacement amplitudes. The dope sheet and the MCP census both read it,
+    intensity and flare intensity, a camera's zoom, an object's dissolve, morph weights, displacement amplitudes. The dope sheet, the graph editor and the MCP census read it,
     so a new animatable setting is added there once.
+  - `CurveEditor.cs`: the graph editor without its control (shown curves from `SceneChannels`, chosen `KeyId`s, `Set`,
+    `SetSpan`, `SetBehavior`, drag and nudge, copy and paste, delete and scale through `KeyTiming`). `Keying.SetSpan` is
+    the one rule for changing a key's span (Bezier fills in the curve's slopes); `KeyTiming.Retime`'s `timeFactor`
+    divides slopes when scaling. `LightEffectsEditing.cs` holds the session's one-step setters for a lights panel
+    (`SetLensFlare`, `SetFlareIntensity`, `SetVolumetric`, `SetShadows`); `LayoutSession` has `SetModifiers`,
+    `LoadMotion`, `SaveMotion`, `SetImages`, `SetCompositing` and `SetDissolve`, each one undo step.
   - `DopeSheet.cs`: the dope sheet without its control (rows, `KeyId`s, choosing keys by click, Shift and box, copy and
     paste) and `KeyTiming` (resolving keys to envelopes, `Retime`, `Shift`, `Scale` and `Delete`, snapped to whole frames,
     each one undo step), which agents' `shift_keys` and `scale_keys` use too.
@@ -160,9 +192,12 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   - `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
     proxy to that pipe), `McpCommandLine.cs` (`--mcp`), `Workspace.cs` (the working folder's file rules),
     `Pictures.cs` (render_view and render), `CheckReport.cs` (check_mesh's JSON, with `how_to_fix`), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
+- `src/AVAModeler.Mcp/`'s newer tool files: `MotionModifierTools.cs` (add, set and remove_motion_modifier),
+  `LightEffectsTools.cs` (set_lens_flare, set_volumetric_light, set_shadow_map, and `LightEffectsCensus`) and
+  `CompositingTools.cs` (load_image, remove_image, set_compositing, set_dissolve), all in `ToolGroups.Scene`.
 - `src/AVAModeler.Hub/`: the hub, the live link with AVALightWave (the standalone Layout, which builds on this engine
   as a submodule), no UI. `HubProtocol` (each app's per-user pipe, `PipeName`; one JSON line asked, one answered),
-  `HubMessage` (`hello`, `edit_object`, `object_saved`, `add_object`; files by full path, a link id tying a scene object
+  `HubMessage` (`hello`, `edit_object`, `object_saved`, `add_object`, `object_changed` for live sync; files by full path, a link id tying a scene object
   to the document modeled), `HubListener` (an app's end; refuses a second copy), `HubClient` (sends, with a short
   timeout: `HubUnavailableException` when the other app isn't there), `HubFiles` (the owner-only `hub/` folder in the
   settings folder for objects handed over without a file) and `AppLauncher` (finds the other program: a setting,
@@ -231,7 +266,12 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   works on `ChatPanel.History`, which `MainWindow` sets to `Preferences.ChatsFolder` only outside tests, saving after
   each request, on New Chat and on closing, and opening the last chat on start.
   `ModelerHub.cs` is the app's end of the hub (`MainWindow.Hub`, joined at start while `Preferences.HubEnabled`):
-  `edit_object` opens the object (refused over unsaved work) and links the document; `ModelerWorkspace.Saved` sends
+  `edit_object` opens the object (refused over unsaved work) and links the document; live sync (`object_changed`) is a
+  debounce on `Document.Changed` (`LiveSyncDelay`), held back while `ModelerSession.ToolDragging`, then a
+  `Document.Copy` on the UI thread and the save and send on a worker (`HubFiles.LivePathFor`, `HubFiles.WriteWhole`),
+  one send in flight with one more after, a geometry and surface fingerprint so selection-only changes send nothing, and
+  no retry while AVALightWave is away; `Status` and `StatusChanged` come from a connection-only presence check every
+  `PresenceInterval` plus each send, shown on `StatusBar.HubText` and `LayoutWorkspace.HubText`; `ModelerWorkspace.Saved` sends
   `object_saved`; File › Send to AVALightWave (`ModelerWorkspace.SendToLightWave`) sends `add_object`, or starts
   AVALightWave with the file and `--hub-link`. A window made for tests never joins the hub or reaches a real
   AVALightWave: tests give it pipes, a settings folder and a launcher of their own.
@@ -281,7 +321,9 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   branch). A new effect setting goes in its record (or the light or camera), `Scene.Copy`, `SceneSnapshot`,
   `SceneJson` (written only when not the default), `.lws` where LightWave has a place for it, `SceneCensus` and the
   MCP tools' descriptions with its units and default, and the README's known limits say where it isn't kept.
-- **OpenGL tests may skip.** `OffscreenGl` makes a windowless EGL context where Mesa offers one. Without it, the
+- **OpenGL tests may skip, and run one at a time.** `OffscreenGl` (public, in AVAModeler.Rendering, so other apps' tests
+  use it too) makes and closes its contexts one at a time under a process-wide lock and terminates the shared EGL
+  display only after the last one; the test classes that use it share `[Collection("OpenGL")]`. `OffscreenGl` makes a windowless EGL context where Mesa offers one. Without it, the
   OpenGL comparison tests skip rather than fail.
 - **Agents use the command layer, never the mouse.** MCP handlers reach the document only through
   `IModelerHost.RunAsync` and `Commands` (tools by name, `Macros`), and the scene only through
@@ -294,7 +336,11 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   keep morph targets by reference, so a tool that changes a target puts a new mesh in (`add_morph` and `set_morph`
   copy the layer) and never edits one in place. Errors go
   back as `McpException`s whose messages say what to do instead.
-- **Motion beyond keys goes through `Scene.Motion`.** Anything that moves an item other than its own keys (path
+- **A key's new member** goes in `EnvelopeKey` with a default that leaves evaluation unchanged, in SceneJson's `KeyDto`
+  (written only when not the default), in `.lws` where LightWave has a place for it, and in `SceneCensus.Keys`.
+- **Motion beyond keys goes through `Scene.Motion`** (motion modifiers included: a new modifier kind needs a record with
+  `Checked`, `Apply` and `Relinked` if it refers to another item, the `ModifierDto` in SceneJson, the census's
+  `Modifier()` and the MCP builder; with no modifiers `MotionSolver` takes its old path unchanged). Anything that moves an item other than its own keys (path
   following, full-time IK) is worked out by `MotionSolver` and reached through `SceneItem.LocalMatrix`, so views, the ray tracer,
   deformation, exports and the MCP census all see it; never write solved values into envelopes except as an explicit
   bake. An item that refers to another (a bone's `IKGoal`, a path's points) has the reference remapped in `Scene.Copy`, kept in
@@ -318,6 +364,14 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
 - **The live listener is local and per user.** It listens on a named pipe opened with `PipeOptions.CurrentUserOnly`
   (a Unix socket on Linux and macOS), so no token is needed; it is off until the person allows agents. Don't add a
   network listener. Paths agents give stay inside the working folder (`Workspace`), and nothing is deleted.
+- **Merged undo steps.** `LayoutSession.Edit(..., merge: true)` (`SceneUndo.Record(before, label, merge)`, `CanMerge`)
+  folds a step into the one before when it has the same label, the last thing that happened to the history was that
+  step being recorded, the scene is exactly as that step left it, and it isn't the saved state: for repeated updates
+  such as AVALightWave applying `object_changed`. Use it for nothing a person would want to undo piece by piece.
+- **SceneView's OpenGL hook.** `SceneView.DrawsScene` false leaves the scene to a surface beneath it (`CurrentView()`
+  gives what it would draw, `Redrawn` says when); it still draws its guides and label and takes the mouse. `GlSurface`
+  has `CameraSource`, `Ready` and `Initialised`; where OpenGL can't start, Avalonia never calls `OnOpenGlInit` (no
+  `Failed`), so a host checks `Ready` and goes back to software.
 - **The hub is local and per user too.** Each app listens on its own pipe (`HubProtocol.PipeName`), opened with
   `PipeOptions.CurrentUserOnly`; messages name files by full path and never carry geometry or anything else; a
   missing app costs a short timeout, never a hang. Don't add a network listener. Tests use pipe names of their own.
@@ -339,6 +393,11 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   needs chat history gives the panel a `ChatHistory` in one; a test window's panel has none). `Preferences.Save()`
   writes only to the file the preferences were loaded from (`Location`): ones made with `new`, as test windows' are,
   save nowhere, so a test that opens or saves a file can't add it to the person's recent files.
+- **The screen door has twins.** `Dither.Keeps` (C#, in ViewScene.cs) and the GLSL `dissolved()` in `GlRenderer`
+  share `Dither.Bayer` (`Dither.Glsl`); pixels count from the top left and the shader flips `gl_FragCoord.y` with
+  `viewHeight`. Change the dither in one place.
+- **Never block the UI thread on the pipe or the disk** (live sync, presence checks): copy on the UI thread, work on a
+  worker.
 - **Backdrops are a display setting, not the object.** They're never written into object or scene files (LWOB round
   trips stay byte-identical) and never undo steps; `Document.Copy` carries them, so pictures drawn off the UI thread
   show them. Both renderers draw them from the same `BackdropQuad` (the software one with `FillTextured`, OpenGL

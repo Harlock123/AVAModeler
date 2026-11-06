@@ -68,6 +68,26 @@ public sealed class GlSurface : OpenGlControlBase
     /// <summary>Whether OpenGL started and the renderer is drawing.</summary>
     public bool Ready => _renderer != null;
 
+    private Avalonia.Rendering.IPresentationSource? _presentation;
+
+    /// <summary>
+    /// The scaling Avalonia sizes this control's framebuffer with: its presentation source's. The top level's can
+    /// differ (at 2× on Wayland it read 1, and the picture filled only the bottom-left quarter of each view).
+    /// </summary>
+    public double FramebufferScaling => _presentation?.RenderScaling ?? TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _presentation = e.PresentationSource;
+        base.OnAttachedToVisualTree(e);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _presentation = null;
+    }
+
     protected override void OnOpenGlInit(GlInterface gl)
     {
         try
@@ -96,7 +116,7 @@ public sealed class GlSurface : OpenGlControlBase
         try
         {
             var camera = CameraSource?.Invoke() ?? Camera;
-            double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+            double scale = FramebufferScaling;
             camera.Resize(Math.Max(1, (int)(Bounds.Width * scale)), Math.Max(1, (int)(Bounds.Height * scale)));
             // The camera works in device pixels here; the overlay and input work in layout units, so scale them.
             camera.PixelsPerUnit *= scale;

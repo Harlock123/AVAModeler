@@ -118,21 +118,67 @@ public sealed class SceneView : Control
     /// <summary>The last picture drawn (for screenshots and tests).</summary>
     public SoftwareRenderer Renderer => _renderer;
 
+    private bool _drawsScene = true;
+
+    /// <summary>
+    /// Whether the view draws the scene itself, in software (the default). A host that draws it with OpenGL underneath
+    /// (a <c>GlSurface</c> stacked below, drawing <see cref="CurrentView"/>) sets it false: the view then draws no
+    /// picture and leaves its background transparent, but still draws the camera's frame guides and the label on top,
+    /// and handles the mouse as ever. <see cref="Redrawn"/> says when the picture underneath should be drawn again.
+    /// </summary>
+    public bool DrawsScene
+    {
+        get => _drawsScene;
+        set
+        {
+            if (_drawsScene == value) return;
+            _drawsScene = value;
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>How many times the view has drawn the scene itself (in software).</summary>
+    public int ScenesDrawn { get; private set; }
+
+    /// <summary>
+    /// Raised each time the view is drawn (its scene, frame, mode or camera may have changed), after it: a host drawing
+    /// the scene underneath asks for a frame of its own then.
+    /// </summary>
+    public event Action? Redrawn;
+
+    /// <summary>
+    /// What the view would draw now: the scene at the current frame (<see cref="LayoutSession.BuildScene"/>, with the
+    /// chosen item boxed, every item's drawing and the grid) and the camera this frame (<see cref="Camera"/>, sized to the view).
+    /// </summary>
+    public (ViewScene Scene, ViewCamera Camera) CurrentView()
+    {
+        var cam = Camera;
+        return (_session.BuildScene(_session.Scene.Evaluate(_session.Frame), Shaded), cam);
+    }
+
     public override void Render(DrawingContext context)
     {
         int w = Math.Max(1, (int)Bounds.Width), h = Math.Max(1, (int)Bounds.Height);
-        var cam = Camera;
-        var frame = _session.Scene.Evaluate(_session.Frame);
-        _renderer.Render(_session.BuildScene(frame, Shaded), cam);
-        if (_bitmap == null || _bitmap.PixelSize.Width != w || _bitmap.PixelSize.Height != h)
+        if (_drawsScene)
         {
-            _bitmap?.Dispose();
-            _bitmap = new WriteableBitmap(new PixelSize(w, h), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque);
+            var (scene, cam) = CurrentView();
+            _renderer.Render(scene, cam);
+            if (_bitmap == null || _bitmap.PixelSize.Width != w || _bitmap.PixelSize.Height != h)
+            {
+                _bitmap?.Dispose();
+                _bitmap = new WriteableBitmap(new PixelSize(w, h), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque);
+            }
+            using (var fb = _bitmap.Lock())
+                for (int y = 0; y < h; y++)
+                    System.Runtime.InteropServices.Marshal.Copy((int[])(object)_renderer.Pixels, y * w, fb.Address + y * fb.RowBytes, w);
+            context.DrawImage(_bitmap, new Rect(0, 0, w, h));
+            ScenesDrawn++;
         }
-        using (var fb = _bitmap.Lock())
-            for (int y = 0; y < h; y++)
-                System.Runtime.InteropServices.Marshal.Copy((int[])(object)_renderer.Pixels, y * w, fb.Address + y * fb.RowBytes, w);
-        context.DrawImage(_bitmap, new Rect(0, 0, w, h));
+        else
+        {
+            // Nothing drawn, but the whole view still takes the mouse (a transparent fill is hit; no fill isn't).
+            context.FillRectangle(Brushes.Transparent, new Rect(0, 0, w, h));
+        }
         if (_mode == LayoutViewMode.Camera && _session.Scene.CurrentCamera is { } c) DrawFrameGuides(context, c, w, h);
         var label = _mode switch
         {
@@ -142,6 +188,7 @@ public sealed class SceneView : Control
         };
         context.DrawText(new FormattedText($"{label} · frame {_session.Frame:0}", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
             new Typeface(FontFamily.Default), 12, Brushes.White), new Point(6, 4));
+        Redrawn?.Invoke();
     }
 
     /// <summary>The camera's picture shape, and its action- and title-safe areas, as classic Layout showed them.</summary>

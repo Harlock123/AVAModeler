@@ -44,14 +44,29 @@ public sealed class SoftwareSurface : Control
     }
 }
 
-/// <summary>Draws a view with OpenGL. If the context can't be had, <see cref="Failed"/> is raised and the view falls back to software.</summary>
+/// <summary>
+/// Draws a view with OpenGL. If the context can't be had, <see cref="Failed"/> is raised and the view falls back to software.
+/// <para>Another host (AVALightWave stacking it under Layout's <c>SceneView</c>) can give <see cref="CameraSource"/> in place of
+/// <see cref="Camera"/>, for a view whose camera changes (Layout's view modes), and asks for a frame with
+/// <c>RequestNextFrameRendering</c> when its picture changes. Where OpenGL can't start at all (no GPU sharing, as in the
+/// headless tests), Avalonia never calls <see cref="OnOpenGlInit"/>: nothing is drawn, <see cref="Ready"/> stays false
+/// and <see cref="Failed"/> isn't raised, so a host checks <see cref="Ready"/> after the first frames (see
+/// <see cref="Initialised"/>) and falls back to software.</para>
+/// </summary>
 public sealed class GlSurface : OpenGlControlBase
 {
     private GlRenderer? _renderer;
     public required Func<ViewScene> Scene { get; init; }
-    public required ViewCamera Camera { get; init; }
+    /// <summary>The camera to draw through (or give <see cref="CameraSource"/>).</summary>
+    public ViewCamera Camera { get; init; } = null!;
+    /// <summary>Gives the camera to draw through each frame, for a view whose camera changes; used in place of <see cref="Camera"/> when set.</summary>
+    public Func<ViewCamera>? CameraSource { get; init; }
     public event Action<string>? Failed;
+    /// <summary>Raised (on the UI thread) once OpenGL has started and the renderer is ready.</summary>
+    public event Action? Initialised;
     public string? Description { get; private set; }
+    /// <summary>Whether OpenGL started and the renderer is drawing.</summary>
+    public bool Ready => _renderer != null;
 
     protected override void OnOpenGlInit(GlInterface gl)
     {
@@ -61,6 +76,7 @@ public sealed class GlSurface : OpenGlControlBase
             bool es = gl.ContextInfo.Version.Type == GlProfileType.OpenGLES;
             _renderer = new GlRenderer(api, es);
             Description = $"{_renderer.Name} ({gl.Renderer})";
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => Initialised?.Invoke());
         }
         catch (Exception e)
         {
@@ -79,12 +95,13 @@ public sealed class GlSurface : OpenGlControlBase
         if (_renderer == null) return;
         try
         {
+            var camera = CameraSource?.Invoke() ?? Camera;
             double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
-            Camera.Resize(Math.Max(1, (int)(Bounds.Width * scale)), Math.Max(1, (int)(Bounds.Height * scale)));
+            camera.Resize(Math.Max(1, (int)(Bounds.Width * scale)), Math.Max(1, (int)(Bounds.Height * scale)));
             // The camera works in device pixels here; the overlay and input work in layout units, so scale them.
-            Camera.PixelsPerUnit *= scale;
-            try { _renderer.Render(Scene(), Camera); }
-            finally { Camera.PixelsPerUnit /= scale; Camera.Resize(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height)); }
+            camera.PixelsPerUnit *= scale;
+            try { _renderer.Render(Scene(), camera); }
+            finally { camera.PixelsPerUnit /= scale; camera.Resize(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height)); }
         }
         catch (Exception e)
         {

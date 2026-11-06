@@ -3,6 +3,7 @@ using AVAModeler.Rendering;
 
 namespace AVAModeler.Rendering.Tests;
 
+[Collection("OpenGL")]
 public class ProceduralRenderingTests
 {
     private static (int R, int G, int B) Rgb8(uint c) => TextureRenderingTests.Rgb8(c);

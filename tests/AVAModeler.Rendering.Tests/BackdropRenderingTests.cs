@@ -5,6 +5,7 @@ using static AVAModeler.Rendering.Tests.TextureRenderingTests;
 namespace AVAModeler.Rendering.Tests;
 
 /// <summary>Reference images behind the flat views, as both renderers draw them.</summary>
+[Collection("OpenGL")]
 public class BackdropRenderingTests
 {
     /// <summary>Four flat quarters, 8 pixels each: red, green across the top; blue, white below.</summary>

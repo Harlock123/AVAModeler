@@ -3,6 +3,7 @@ using AVAModeler.Rendering;
 
 namespace AVAModeler.Rendering.Tests;
 
+[Collection("OpenGL")]
 public class TextureRenderingTests
 {
     /// <summary>A 2 × 2 image: red, green along the top; blue, white below.</summary>

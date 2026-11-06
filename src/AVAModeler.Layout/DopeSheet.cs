@@ -18,8 +18,8 @@ public sealed record DopeRow(SceneItem Item, string? Channel)
 /// <summary>
 /// Moving keys in time: shifting a set of keys by whole frames and scaling them about a frame, snapped to whole frames,
 /// with keys they land on replaced. Layout's dope sheet and agents' shift_keys and scale_keys share it. Each change is
-/// one undo step through <see cref="LayoutSession.Edit"/>, and the keys keep their values, tension, continuity, bias
-/// and linear flag.
+/// one undo step through <see cref="LayoutSession.Edit"/>, and the keys keep their values, tension, continuity, bias,
+/// linear flag and span; scaling divides their slopes (value per frame) by the factor so Bezier spans keep their shape.
 /// </summary>
 public static class KeyTiming
 {
@@ -53,13 +53,16 @@ public static class KeyTiming
     /// <summary>
     /// Moves some of an envelope's keys to new frames (<paramref name="map"/> from each old frame to its new one,
     /// snapped): keys not moved that are where a moved key lands are replaced, and when two moved keys land on one frame
-    /// the one that started later wins. Returns how many keys were replaced or merged.
+    /// the one that started later wins. Returns how many keys were replaced or merged. With
+    /// <paramref name="timeFactor"/> (a scale's factor), the moved keys' slopes, in value per frame, are divided by it.
     /// </summary>
-    public static int Retime(Envelope e, IReadOnlyCollection<double> frames, Func<double, double> map)
+    public static int Retime(Envelope e, IReadOnlyCollection<double> frames, Func<double, double> map, double timeFactor = 1)
     {
         var moving = e.Keys.Where(k => frames.Any(f => Math.Abs(f - k.Frame) < Same)).ToList();
         if (moving.Count == 0) return 0;
-        var moved = moving.OrderBy(k => k.Frame).Select(k => k with { Frame = Snap(map(k.Frame)) }).ToList();
+        var moved = moving.OrderBy(k => k.Frame).Select(k => timeFactor == 1 || k.InSlope == 0 && k.OutSlope == 0
+            ? k with { Frame = Snap(map(k.Frame)) }
+            : k with { Frame = Snap(map(k.Frame)), InSlope = k.InSlope / timeFactor, OutSlope = k.OutSlope / timeFactor }).ToList();
         if (moving.Zip(moved).All(p => Math.Abs(p.First.Frame - p.Second.Frame) < Same)) return 0;
         var staying = e.Keys.Except(moving).ToList();
         var result = new Envelope { PreBehavior = e.PreBehavior, PostBehavior = e.PostBehavior };
@@ -97,10 +100,10 @@ public static class KeyTiming
     {
         if (!(factor > 0) || !double.IsFinite(factor)) throw new ArgumentException("The scale must be more than 0 (1 leaves the keys where they are, 2 spaces them twice as far apart).");
         if (!double.IsFinite(pivot)) throw new ArgumentException("The pivot must be a frame.");
-        return Apply(session, keys, f => pivot + (f - pivot) * factor, label);
+        return Apply(session, keys, f => pivot + (f - pivot) * factor, label, factor);
     }
 
-    private static (int Moved, int Replaced) Apply(LayoutSession session, IEnumerable<KeyId> keys, Func<double, double> map, string label)
+    private static (int Moved, int Replaced) Apply(LayoutSession session, IEnumerable<KeyId> keys, Func<double, double> map, string label, double timeFactor = 1)
     {
         var resolved = Resolve(session.Scene, keys);
         int moved = resolved.Sum(r => r.Value.Count(f => Math.Abs(Snap(map(f)) - f) > Same));
@@ -108,7 +111,7 @@ public static class KeyTiming
         if (moved == 0) return (0, 0);
         session.Edit(label, () => session.Scene.Batch(() =>
         {
-            foreach (var (env, frames) in resolved) replaced += Retime(env, frames, map);
+            foreach (var (env, frames) in resolved) replaced += Retime(env, frames, map, timeFactor);
         }));
         return (moved, replaced);
     }

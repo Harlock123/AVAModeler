@@ -422,7 +422,10 @@ internal static class SceneCensus
             if (k.Tension != 0) key["tension"] = Round(k.Tension);
             if (k.Continuity != 0) key["continuity"] = Round(k.Continuity);
             if (k.Bias != 0) key["bias"] = Round(k.Bias);
-            if (k.Linear) key["linear"] = true;
+            if (k.Kind == SpanKind.Linear) key["linear"] = true;
+            if (k.Kind != SpanKind.Tcb) key["span"] = k.Kind.ToString().ToLowerInvariant();
+            if (k.InSlope != 0) key["in_slope"] = Round(k.InSlope);
+            if (k.OutSlope != 0) key["out_slope"] = Round(k.OutSlope);
             return (JsonNode)key;
         }).ToArray());
         o["pre"] = Behavior(e.PreBehavior);

@@ -8,7 +8,8 @@ namespace AVAModeler.Layout;
 /// never been keyed holds a constant: one key outside the scene's frames (new items keep it at frame 0). Keying such a
 /// channel at a frame replaces that constant, so an animation starts at the first frame keyed rather than being pulled
 /// about by a key at frame 0 nobody chose. Any other key is only replaced at its own frame, keeping its tension,
-/// continuity, bias and linear flag unless new ones are given.
+/// continuity, bias, linear flag, span and slopes unless new ones are given. Changing a key's span to Bezier
+/// (<see cref="SetSpan"/>) fills in the slopes the curve has there, so the curve keeps its shape until they're changed.
 /// </summary>
 public static class Keying
 {
@@ -41,7 +42,7 @@ public static class Keying
     /// <summary>
     /// Puts a key in a channel: replaces the constant of a channel never keyed before, else any key at the same frame.
     /// With <paramref name="keepShape"/>, a key already at that frame keeps its tension, continuity, bias and linear
-    /// flag, and only its value changes.
+    /// flag, span and slopes, and only its value changes.
     /// </summary>
     public static void Key(Envelope e, Scene.Scene scene, EnvelopeKey key, bool keepShape)
     {
@@ -54,6 +55,34 @@ public static class Keying
         int i = e.IndexOf(key.Frame);
         if (i >= 0 && keepShape) e.SetKey(i, e.Keys[i] with { Value = key.Value });
         else e.AddKey(key);
+    }
+
+    /// <summary>
+    /// Sets how the span ending at key <paramref name="index"/> is drawn, and its slopes (value per frame) where given.
+    /// Turning a key into a Bezier key fills in the slopes the curve has at it now (and the previous key's out-slope,
+    /// which the Bezier span starts with), so the curve keeps its shape until the slopes are changed; a key already
+    /// Bezier keeps its slopes. Other kinds keep the key's slopes (its out-slope still starts a Bezier span after it).
+    /// Returns the key's index.
+    /// </summary>
+    public static int SetSpan(Envelope e, int index, SpanKind kind, double? inSlope = null, double? outSlope = null)
+    {
+        if (index < 0 || index >= e.Keys.Count) throw new ArgumentOutOfRangeException(nameof(index));
+        foreach (var (v, what) in new[] { (inSlope, "The in-slope"), (outSlope, "The out-slope") })
+            if (v is { } x && !double.IsFinite(x)) throw new ArgumentException($"{what} must be a number (value per frame).");
+        var key = e.Keys[index];
+        if (kind == SpanKind.Bezier && key.Kind != SpanKind.Bezier)
+        {
+            var (curIn, curOut) = e.Slopes(index);
+            if (index > 0)
+            {
+                var prev = e.Keys[index - 1];
+                double prevOut = e.Slopes(index - 1).Out;
+                if (prev.OutSlope != prevOut) e.SetKey(index - 1, prev with { OutSlope = prevOut });
+            }
+            key = key with { InSlope = curIn, OutSlope = curOut };
+        }
+        key = key.WithSpan(kind) with { InSlope = inSlope ?? key.InSlope, OutSlope = outSlope ?? key.OutSlope };
+        return e.SetKey(index, key);
     }
 
     /// <summary>A channel's key frames for a message, such as "1, 30 and 60".</summary>

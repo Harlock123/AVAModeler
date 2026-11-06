@@ -421,7 +421,11 @@ public static class SceneJson
     {
         Keys = e.Keys.Select(k => new KeyDto
         {
-            Frame = k.Frame, Value = k.Value, Tension = k.Tension, Continuity = k.Continuity, Bias = k.Bias, Linear = k.Linear,
+            Frame = k.Frame, Value = k.Value, Tension = k.Tension, Continuity = k.Continuity, Bias = k.Bias, Linear = k.Kind == SpanKind.Linear,
+            // Written only when not the defaults, so files without stepped or Bezier keys read as before.
+            Span = k.Kind is SpanKind.Stepped or SpanKind.Bezier ? k.Kind : null,
+            InSlope = k.InSlope != 0 ? k.InSlope : null,
+            OutSlope = k.OutSlope != 0 ? k.OutSlope : null,
         }).ToList(),
         Pre = e.PreBehavior,
         Post = e.PostBehavior,
@@ -431,7 +435,11 @@ public static class SceneJson
     {
         if (d == null) return;
         var e = new Envelope { PreBehavior = d.Pre, PostBehavior = d.Post };
-        foreach (var k in d.Keys) e.AddKey(new EnvelopeKey(k.Frame, k.Value, k.Tension, k.Continuity, k.Bias, k.Linear));
+        foreach (var k in d.Keys)
+        {
+            var key = new EnvelopeKey(k.Frame, k.Value, k.Tension, k.Continuity, k.Bias, k.Linear, InSlope: k.InSlope ?? 0, OutSlope: k.OutSlope ?? 0);
+            e.AddKey(k.Span is { } span ? key.WithSpan(span) : key);
+        }
         target.CopyFrom(e);
     }
 
@@ -646,6 +654,9 @@ public static class SceneJson
         public double Continuity { get; set; }
         public double Bias { get; set; }
         public bool Linear { get; set; }
+        public SpanKind? Span { get; set; }
+        public double? InSlope { get; set; }
+        public double? OutSlope { get; set; }
     }
 
     private sealed class MorphDto

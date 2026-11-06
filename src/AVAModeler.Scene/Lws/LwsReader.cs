@@ -544,10 +544,18 @@ public static class LwsReader
                     }
                     double At(int i) => i < t.Length ? t[i] : 0;
                     int shape = (int)At(2);
-                    if (shape is 1 or 2 or 5) Warn("Hermite and Bézier keys are read as TCB keys with no tension, continuity or bias.");
-                    if (shape == 4) Warn("Stepped keys are read as linear keys.");
-                    bool tcb = shape == 0;
-                    e.AddKey(new EnvelopeKey(t[1], t[0], tcb ? At(3) : 0, tcb ? At(4) : 0, tcb ? At(5) : 0, shape is 3 or 4));
+                    if (shape == 5) Warn("2D Bézier keys are read as TCB keys with no tension, continuity or bias.");
+                    // p1 to p3 are tension, continuity and bias; p4 and p5 the incoming and outgoing tangents, which
+                    // AVA Modeler reads as slopes in value per second (Finish turns them into value per frame).
+                    bool tcb = shape is 0 or 1 or 2;
+                    var k = new EnvelopeKey(t[1], t[0], tcb ? At(3) : 0, tcb ? At(4) : 0, tcb ? At(5) : 0, shape == 3,
+                        InSlope: shape != 5 ? At(6) : 0, OutSlope: shape != 5 ? At(7) : 0);
+                    e.AddKey(shape switch
+                    {
+                        1 or 2 => k.WithSpan(SpanKind.Bezier),
+                        4 => k.WithSpan(SpanKind.Stepped),
+                        _ => k,
+                    });
                 }
                 else if (key == "Behaviors")
                 {

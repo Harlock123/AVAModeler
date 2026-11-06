@@ -47,7 +47,7 @@ public sealed partial class ModelerTools
         DoScene("read the scene", (c, l) => SceneCensus.Scene(l, c.Document, SceneCensus.Frame(l, frame)), cancel, changes: false);
 
     [McpServerTool(Name = "get_keys", ReadOnly = true, Idempotent = true)]
-    [Description("Lists an item's keys, channel by channel: each key's frame, value, and tension, continuity and bias (Kochanek–Bartels TCB, -1 to 1; left out when 0) and linear flag, plus what the channel does before its first key and after its last (pre and post). A channel never keyed shows its constant value. Channels: position.x/y/z (metres), heading, pitch, bank (degrees), scale.x/y/z, a light's intensity or a camera's zoom, an object's morph weights (morph.<name>) and displacement amplitudes (displacement.<number>.amplitude), and path.position for an item following a path.")]
+    [Description("Lists an item's keys, channel by channel: each key's frame, value, and tension, continuity and bias (Kochanek–Bartels TCB, -1 to 1; left out when 0) and linear flag, its span when it isn't the default TCB (span: linear, stepped or bezier: how the stretch into the key is drawn; see set_key) and its in_slope and out_slope (units per frame) when not 0, plus what the channel does before its first key and after its last (pre and post). A channel never keyed shows its constant value. Channels: position.x/y/z (metres), heading, pitch, bank (degrees), scale.x/y/z, a light's intensity or a camera's zoom, an object's morph weights (morph.<name>) and displacement amplitudes (displacement.<number>.amplitude), and path.position for an item following a path.")]
     public Task<string> GetKeys(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("Just this channel (default: all of them).")] string? channel = null,
@@ -521,7 +521,7 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "set_key", Destructive = true)]
-    [Description("Makes or changes one key on one channel: position.x, position.y, position.z (metres), heading, pitch, bank (degrees), scale.x, scale.y, scale.z, a light's intensity or a camera's zoom, or an object's morph weight (morph.<name>, e.g. morph.Smile: 0 is the base shape, 1 the target, and values between blend; beyond 1 exaggerates) or displacement amplitude (displacement.<number>.amplitude, metres; numbered from 1 as get_scene lists them), or path.position for an item following a path (0 the start, 1 the end; set_follow_path). The curve through keys is Kochanek–Bartels: tension (1 slows into and out of the key, -1 overshoots), continuity (sharp corners when away from 0) and bias (-1 leans the curve toward the previous key, 1 toward the next), each -1 to 1, default 0; linear makes the stretch leading into this key a straight line. A channel never keyed before has its constant replaced by its first key. A key already at that frame is replaced (keeping its tension, continuity and bias unless given).")]
+    [Description("Makes or changes one key on one channel: position.x, position.y, position.z (metres), heading, pitch, bank (degrees), scale.x, scale.y, scale.z, a light's intensity or a camera's zoom, or an object's morph weight (morph.<name>, e.g. morph.Smile: 0 is the base shape, 1 the target, and values between blend; beyond 1 exaggerates) or displacement amplitude (displacement.<number>.amplitude, metres; numbered from 1 as get_scene lists them), or path.position for an item following a path (0 the start, 1 the end; set_follow_path). The curve through keys is Kochanek–Bartels: tension (1 slows into and out of the key, -1 overshoots), continuity (sharp corners when away from 0) and bias (-1 leans the curve toward the previous key, 1 toward the next), each -1 to 1, default 0; linear makes the stretch leading into this key a straight line. span sets how the stretch leading into this key (from the key before) is drawn: tcb (the smooth curve above, the default), linear (a straight line; the same as linear true), stepped (holds the previous key's value until this frame, then jumps) or bezier (a smooth curve with explicit slopes: it leaves the previous key at that key's out_slope and arrives here at this key's in_slope). Slopes are in the channel's units per frame (metres per frame, degrees per frame…); 0 is flat. Making a key bezier without slopes fills in the slopes the curve has there now (and the previous key's out_slope), so the curve keeps its shape until you give new ones; a bezier key's out_slope also starts a smooth curve after it. A channel never keyed before has its constant replaced by its first key. A key already at that frame is replaced (keeping its tension, continuity, bias, span and slopes unless given).")]
     public Task<string> SetKey(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("The channel, e.g. \"position.y\", \"heading\", \"morph.Smile\" or \"displacement.1.amplitude\".")] string channel,
@@ -531,6 +531,9 @@ public sealed partial class ModelerTools
         [Description("-1 to 1 (default 0, or the existing key's).")] double? continuity = null,
         [Description("-1 to 1 (default 0, or the existing key's).")] double? bias = null,
         [Description("Straight line from the previous key into this one.")] bool? linear = null,
+        [Description("How the stretch into this key from the previous one is drawn: \"tcb\" (default for a new key), \"linear\", \"stepped\" (hold, then jump) or \"bezier\" (explicit slopes). Default: the existing key's.")] string? span = null,
+        [Description("For bezier: the slope arriving at this key, in the channel's units per frame (e.g. metres per frame; 0 is flat). Default: the existing key's, or the curve's slope there when the key becomes bezier.")] double? in_slope = null,
+        [Description("The slope leaving this key, in units per frame; starts the next stretch when that one is bezier, or when this key is bezier. Default: the existing key's, or the curve's slope there when the key becomes bezier.")] double? out_slope = null,
         CancellationToken cancel = default) =>
         DoScene("set a key", (c, l) =>
         {
@@ -542,9 +545,25 @@ public sealed partial class ModelerTools
             foreach (var (v, what) in new[] { (tension, "tension"), (continuity, "continuity"), (bias, "bias") })
                 if (v is { } x && (!double.IsFinite(x) || x < -1 || x > 1)) throw new ArgumentException($"{what} must be from -1 to 1.");
             if (name == "zoom" && !(value > 0)) throw new ArgumentException("A camera's zoom must be more than 0.");
+            foreach (var (v, what) in new[] { (in_slope, "in_slope"), (out_slope, "out_slope") })
+                if (v is { } x && !double.IsFinite(x)) throw new ArgumentException($"{what} must be a number: the slope in the channel's units per frame (0 is flat).");
+            SpanKind? kind = span == null ? null : span.Trim().ToLowerInvariant() switch
+            {
+                "tcb" => SpanKind.Tcb,
+                "linear" => SpanKind.Linear,
+                "stepped" or "step" => SpanKind.Stepped,
+                "bezier" or "hermite" => SpanKind.Bezier,
+                _ => throw new ArgumentException($"span \"{span}\" isn't one of tcb, linear, stepped or bezier."),
+            };
+            if (kind is { } sk && linear is { } lin && lin != (sk == SpanKind.Linear))
+                throw new ArgumentException($"linear {(lin ? "true" : "false")} contradicts span \"{span}\": give one of them.");
             int i = Keying.IsConstant(env, s) ? -1 : env.IndexOf(f);
             var old = i >= 0 ? env.Keys[i] : new EnvelopeKey(f, value);
-            Keying.Key(env, s, new EnvelopeKey(f, value, tension ?? old.Tension, continuity ?? old.Continuity, bias ?? old.Bias, linear ?? old.Linear), keepShape: false);
+            var key = old with { Frame = f, Value = value, Tension = tension ?? old.Tension, Continuity = continuity ?? old.Continuity, Bias = bias ?? old.Bias };
+            if (linear is { } ln && kind == null) key = ln ? key.WithSpan(SpanKind.Linear) : key.Kind == SpanKind.Linear ? key.WithSpan(SpanKind.Tcb) : key;
+            Keying.Key(env, s, key, keepShape: false);
+            if (kind != null || in_slope != null || out_slope != null)
+                Keying.SetSpan(env, env.IndexOf(f), kind ?? env.Keys[env.IndexOf(f)].Kind, in_slope, out_slope);
             s.Notify();
             var result = Keys(name, env, s);
             result["item"] = it.Name;

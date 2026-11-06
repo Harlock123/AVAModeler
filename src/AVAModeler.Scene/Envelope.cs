@@ -18,15 +18,55 @@ public enum EndBehavior
 }
 
 /// <summary>
+/// How the stretch of curve that ends at a key (from the key before it) is drawn. The span belongs to the key it
+/// ends at, as LightWave's own span types do.
+/// </summary>
+public enum SpanKind
+{
+    /// <summary>Kochanek–Bartels: a smooth curve shaped by the keys' tension, continuity and bias (the default).</summary>
+    Tcb,
+    /// <summary>A straight line from the previous key (the same as <see cref="EnvelopeKey.Linear"/>).</summary>
+    Linear,
+    /// <summary>Holds the previous key's value until this key's frame, then jumps to this key's value.</summary>
+    Stepped,
+    /// <summary>
+    /// A cubic Hermite curve through explicit slopes: the previous key's <see cref="EnvelopeKey.OutSlope"/> leaving it and
+    /// this key's <see cref="EnvelopeKey.InSlope"/> arriving here, both in value per frame. It is the same curve as a
+    /// one-dimensional Bézier with its handles a third of the way along the span (LightWave's Hermite and 1D Bézier
+    /// spans), so one kind covers both.
+    /// </summary>
+    Bezier,
+}
+
+/// <summary>
 /// A key: a value at a frame, and the Kochanek–Bartels tension, continuity and bias that shape the curve through it
 /// (each from -1 to 1; 0 is a plain Catmull–Rom-like curve, tension 1 flattens the curve at the key). When
 /// <see cref="Linear"/> is set, the segment that ends at this key is a straight line, as with LightWave's linear flag.
+/// <para>
+/// <see cref="Span"/> says how the segment ending at this key is drawn (<see cref="Kind"/> is the one that counts:
+/// the <see cref="Linear"/> flag on a <see cref="SpanKind.Tcb"/> key makes it linear, as old code and files set it;
+/// <see cref="WithSpan"/> keeps the two in step). <see cref="InSlope"/> and <see cref="OutSlope"/> are the curve's
+/// slopes arriving at and leaving the key, in value per frame: a <see cref="SpanKind.Bezier"/> span uses the previous
+/// key's out-slope and its own in-slope, and the TCB span after a Bezier key leaves it at its out-slope. Both are 0 by
+/// default, and a key with the defaults evaluates exactly as keys did before spans existed.
+/// </para>
 /// </summary>
-public readonly record struct EnvelopeKey(double Frame, double Value, double Tension = 0, double Continuity = 0, double Bias = 0, bool Linear = false);
+public readonly record struct EnvelopeKey(double Frame, double Value, double Tension = 0, double Continuity = 0, double Bias = 0, bool Linear = false,
+    SpanKind Span = SpanKind.Tcb, double InSlope = 0, double OutSlope = 0)
+{
+    /// <summary>How the segment ending at this key is drawn: <see cref="Span"/>, or Linear for a TCB key with the linear flag.</summary>
+    public SpanKind Kind => Span == SpanKind.Tcb && Linear ? SpanKind.Linear : Span;
+
+    /// <summary>This key with another span kind, the linear flag set for <see cref="SpanKind.Linear"/> and cleared otherwise.</summary>
+    public EnvelopeKey WithSpan(SpanKind kind) => this with { Span = kind, Linear = kind == SpanKind.Linear };
+
+    /// <summary>Whether the span and slopes are the defaults (a TCB key with no slopes).</summary>
+    public bool HasDefaultSpan => Kind == SpanKind.Tcb && InSlope == 0 && OutSlope == 0;
+}
 
 /// <summary>
-/// An animation channel: keys interpolated by LightWave's classic TCB (Kochanek–Bartels) spline, with behaviours
-/// before the first key and after the last. Keys are kept in frame order and no two share a frame. With one key the
+/// An animation channel: keys interpolated by LightWave's classic TCB (Kochanek–Bartels) spline, or span by span as
+/// linear, stepped or Bezier (<see cref="SpanKind"/>), with behaviours before the first key and after the last. Keys are kept in frame order and no two share a frame. With one key the
 /// envelope is constant; with none it is 0.
 /// </summary>
 public sealed class Envelope
@@ -161,10 +201,19 @@ public sealed class Envelope
         return e;
     }
 
-    /// <summary>Multiplies every key's frame by a factor (for converting between seconds and frames).</summary>
+    /// <summary>
+    /// Multiplies every key's frame by a factor (for converting between seconds and frames). Slopes, in value per
+    /// frame, are divided by it, so Bezier spans keep their shape.
+    /// </summary>
     public void ScaleTime(double factor)
     {
-        for (int i = 0; i < _keys.Count; i++) _keys[i] = _keys[i] with { Frame = _keys[i].Frame * factor };
+        for (int i = 0; i < _keys.Count; i++)
+        {
+            var k = _keys[i];
+            _keys[i] = k.InSlope == 0 && k.OutSlope == 0
+                ? k with { Frame = k.Frame * factor }
+                : k with { Frame = k.Frame * factor, InSlope = k.InSlope / factor, OutSlope = k.OutSlope / factor };
+        }
         Touch();
     }
 
@@ -205,9 +254,16 @@ public sealed class Envelope
         if (t <= k0.Frame) return k0.Value + offset;
         if (t >= k1.Frame) return k1.Value + offset;
         double u = (t - k0.Frame) / (k1.Frame - k0.Frame);
-        if (k1.Linear) return k0.Value + u * (k1.Value - k0.Value) + offset;
+        var kind = k1.Kind;
+        if (kind == SpanKind.Linear) return k0.Value + u * (k1.Value - k0.Value) + offset;
+        if (kind == SpanKind.Stepped) return k0.Value + offset;
         double u2 = u * u, u3 = u2 * u;
         double h1 = 2 * u3 - 3 * u2 + 1, h2 = -2 * u3 + 3 * u2, h3 = u3 - 2 * u2 + u, h4 = u3 - u2;
+        if (kind == SpanKind.Bezier)
+        {
+            double len = k1.Frame - k0.Frame;
+            return h1 * k0.Value + h2 * k1.Value + h3 * (k0.OutSlope * len) + h4 * (k1.InSlope * len) + offset;
+        }
         return h1 * k0.Value + h2 * k1.Value + h3 * Outgoing(i) + h4 * Incoming(i) + offset;
     }
 
@@ -225,16 +281,26 @@ public sealed class Envelope
     }
 
     // The tangents follow LightWave's own envelope code: Kochanek–Bartels tangents scaled for uneven key spacing
-    // by the ratio of this segment's length to the length of the two segments around the key.
+    // by the ratio of this segment's length to the length of the two segments around the key. A TCB span's tangent
+    // leaving a key depends on how the span before that key is drawn, as in LightWave: after a Bezier span it is the
+    // key's out-slope (so a Bezier key's handle carries on smoothly), after a stepped span it is flat (the curve leaves
+    // the jump level), and after a linear or TCB span it is the Kochanek–Bartels tangent (a linear key's with its
+    // tension, continuity and bias ignored). The tangent arriving at a TCB key is always its own Kochanek–Bartels one,
+    // from its neighbours' values whatever their spans.
 
-    /// <summary>The tangent leaving key i, for the segment from key i to key i + 1 (in value per segment).</summary>
+    /// <summary>The tangent leaving key i, for the TCB segment from key i to key i + 1 (in value per segment).</summary>
     private double Outgoing(int i)
     {
         var k0 = _keys[i];
         var k1 = _keys[i + 1];
+        switch (k0.Kind)
+        {
+            case SpanKind.Bezier: return k0.OutSlope * (k1.Frame - k0.Frame);
+            case SpanKind.Stepped: return 0;
+        }
         double d = k1.Value - k0.Value;
         double a = 1, b = 1;
-        if (!k0.Linear)
+        if (!k0.Linear && k0.Span != SpanKind.Linear)
         {
             a = (1 - k0.Tension) * (1 + k0.Continuity) * (1 + k0.Bias);
             b = (1 - k0.Tension) * (1 - k0.Continuity) * (1 - k0.Bias);
@@ -252,7 +318,7 @@ public sealed class Envelope
         var k1 = _keys[i + 1];
         double d = k1.Value - k0.Value;
         double a = 1, b = 1;
-        if (!k1.Linear)
+        if (!k1.Linear && k1.Span != SpanKind.Linear)
         {
             a = (1 - k1.Tension) * (1 - k1.Continuity) * (1 + k1.Bias);
             b = (1 - k1.Tension) * (1 + k1.Continuity) * (1 - k1.Bias);
@@ -263,18 +329,38 @@ public sealed class Envelope
         return t * (b * (next.Value - k1.Value) + a * d);
     }
 
-    private double StartSlope()
+    /// <summary>
+    /// The curve's slopes at key <paramref name="index"/>, in value per frame: arriving from the span before it and
+    /// leaving along the span after it (0 where there is no span; a stepped span is flat at both ends). Turning a key
+    /// into a Bezier key with these slopes (and the previous key's out-slope set to its <c>Out</c>) keeps the curve.
+    /// </summary>
+    public (double In, double Out) Slopes(int index)
     {
-        double span = _keys[1].Frame - _keys[0].Frame;
-        return _keys[1].Linear ? (_keys[1].Value - _keys[0].Value) / span : Outgoing(0) / span;
+        if (index < 0 || index >= _keys.Count) throw new ArgumentOutOfRangeException(nameof(index));
+        double inSlope = index > 0 ? SpanSlopes(index - 1).End : 0;
+        double outSlope = index < _keys.Count - 1 ? SpanSlopes(index).Start : 0;
+        return (inSlope, outSlope);
     }
 
-    private double EndSlope()
+    /// <summary>The slopes (value per frame) at the start and end of the span from key i to key i + 1.</summary>
+    private (double Start, double End) SpanSlopes(int i)
     {
-        int i = _keys.Count - 2;
-        double span = _keys[i + 1].Frame - _keys[i].Frame;
-        return _keys[i + 1].Linear ? (_keys[i + 1].Value - _keys[i].Value) / span : Incoming(i) / span;
+        var k0 = _keys[i];
+        var k1 = _keys[i + 1];
+        double span = k1.Frame - k0.Frame;
+        return k1.Kind switch
+        {
+            SpanKind.Linear => ((k1.Value - k0.Value) / span, (k1.Value - k0.Value) / span),
+            SpanKind.Stepped => (0, 0),
+            SpanKind.Bezier => (k0.OutSlope, k1.InSlope),
+            _ => (Outgoing(i) / span, Incoming(i) / span),
+        };
     }
+
+    // The same arithmetic as before spans existed for TCB and linear ends, so a Linear end behaviour is unchanged.
+    private double StartSlope() => SpanSlopes(0).Start;
+
+    private double EndSlope() => SpanSlopes(_keys.Count - 2).End;
 
     /// <summary>Evenly spaced samples of the curve from one frame to another, for drawing it in a graph editor.</summary>
     public (double Frame, double Value)[] Sample(double from, double to, int count)

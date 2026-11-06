@@ -57,7 +57,7 @@ public static class Macros
     /// </summary>
     public static void Run(string code, Commands commands, TimeSpan? timeLimit = null)
     {
-        var lua = new Script(CoreModules.Preset_SoftSandbox);
+        var lua = LuaSandbox.Create(commands.Print);
         var g = lua.Globals;
         g["tool"] = (Action<string, Table?>)((name, args) => commands.Run(name, args == null ? null : ToArgs(args)));
         g["tools"] = (Func<Table>)(() => List(lua, commands.Registry.Names.Order()));
@@ -141,35 +141,7 @@ public static class Macros
             return problem;
         });
         g["nobackdrop"] = (Func<string?, int>)(view => commands.ClearBackdrop(view == null ? null : BackdropViewOf(view)));
-        lua.Options.DebugPrint = commands.Print;
-        try
-        {
-            if (timeLimit is { } limit) RunLimited(lua, code, limit);
-            else lua.DoString(code);
-        }
-        catch (InterpreterException e)
-        {
-            throw new MacroException(e.DecoratedMessage ?? e.Message, e);
-        }
-        catch (Exception e) when (e is ArgumentException or InvalidOperationException or FormatException or IndexOutOfRangeException or ArgumentOutOfRangeException)
-        {
-            throw new MacroException(e.Message, e);
-        }
-    }
-
-    /// <summary>Runs the code as a coroutine that yields every so many instructions, so the clock can be checked between.</summary>
-    private static void RunLimited(Script lua, string code, TimeSpan limit)
-    {
-        var co = lua.CreateCoroutine(lua.LoadString(code)).Coroutine;
-        co.AutoYieldCounter = 1000;
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        co.Resume();
-        while (co.State == CoroutineState.ForceSuspended)
-        {
-            if (clock.Elapsed > limit)
-                throw new MacroException($"The macro was stopped after running for {limit.TotalSeconds:0.#} seconds.", new TimeoutException());
-            co.Resume();
-        }
+        LuaSandbox.Run(lua, code, timeLimit);
     }
 
     /// <summary>A texture layer's settings from a macro's options table (names as in the Macro Reference, any case).</summary>
@@ -328,38 +300,15 @@ public static class Macros
         return t;
     }
 
-    private static Table List(Script lua, IEnumerable<object> items)
-    {
-        var t = new Table(lua);
-        foreach (var i in items) t.Append(DynValue.FromObject(lua, i));
-        return t;
-    }
+    private static Table List(Script lua, IEnumerable<object> items) => LuaSandbox.List(lua, items);
 
-    private static Table List(Script lua, IEnumerable<int> items) => List(lua, items.Cast<object>());
+    private static Table List(Script lua, IEnumerable<int> items) => LuaSandbox.List(lua, items);
 
-    private static Table List(Script lua, IEnumerable<string> items) => List(lua, items.Cast<object>());
+    private static Table List(Script lua, IEnumerable<string> items) => LuaSandbox.List(lua, items);
 
-    /// <summary>A Lua list of 1-based numbers as 0-based indices.</summary>
-    private static IEnumerable<int> Indices(Table t) => t.Values.Select(v => (int)v.Number - 1).ToList();
+    private static IEnumerable<int> Indices(Table t) => LuaSandbox.Indices(t);
 
-    /// <summary>A Lua table of parameters as plain values: numbers, strings, booleans, and {x, y, z} as a vector.</summary>
-    private static Dictionary<string, object?> ToArgs(Table args)
-    {
-        var d = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in args.Pairs)
-        {
-            object? v = pair.Value.Type switch
-            {
-                DataType.Number => pair.Value.Number,
-                DataType.String => pair.Value.String,
-                DataType.Boolean => pair.Value.Boolean,
-                DataType.Table => pair.Value.Table.Values.Select(x => x.Number).ToArray(),
-                _ => null,
-            };
-            d[pair.Key.String ?? pair.Key.ToPrintString()] = v;
-        }
-        return d;
-    }
+    private static Dictionary<string, object?> ToArgs(Table args) => LuaSandbox.ToArgs(args);
 }
 
 /// <summary>A macro failed; the message says where and why.</summary>

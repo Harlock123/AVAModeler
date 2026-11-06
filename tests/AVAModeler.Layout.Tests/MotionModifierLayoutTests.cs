@@ -7,7 +7,7 @@ using AVAModeler.Scene;
 
 namespace AVAModeler.Layout.Tests;
 
-/// <summary>Motion modifiers in Layout's session: each change one undo step, bad ones none; glTF export sees modifiers.</summary>
+/// <summary>Motion modifiers and motion files in Layout's session: each change one undo step, bad ones none; glTF export sees modifiers.</summary>
 public class MotionModifierLayoutTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "avamodeler-motion-" + Guid.NewGuid().ToString("N")[..8]);
@@ -64,6 +64,29 @@ public class MotionModifierLayoutTests : IDisposable
         Assert.Empty(f.Modifiers);
         s.Undo();
         Assert.Same(leader, Assert.Single(f.Modifiers).Reference);
+    }
+
+    [Fact]
+    public void Loading_a_motion_is_one_undo_step_and_a_bad_file_changes_nothing()
+    {
+        var (s, leader, f) = Pair();
+        string path = Path.Combine(_dir, "leader.mot");
+        Assert.Empty(s.SaveMotion(leader, path, version: 1));
+        Assert.StartsWith("LWMO\n1\n", File.ReadAllText(path));
+        var m = s.LoadMotion(f, path);
+        Assert.Equal(1, m.Version);
+        Assert.Equal("Load Motion onto Follower", s.History.UndoLabel);
+        Assert.Equal(leader.PositionAt(7), f.PositionAt(7));
+        int depth = s.History.Count;
+        string bad = Path.Combine(_dir, "bad.mot");
+        File.WriteAllText(bad, "LWSC\n3\n");
+        Assert.Throws<InvalidDataException>(() => s.LoadMotion(f, bad));
+        Assert.Equal(depth, s.History.Count);
+        s.Undo();
+        Assert.Equal(0, f.PositionAt(7).X);
+        // Saving notes what a motion file can't hold.
+        s.SetModifiers(f, [new OscillateModifier()]);
+        Assert.Contains(s.SaveMotion(f, Path.Combine(_dir, "f.mot")), w => w.Contains("oscillate"));
     }
 
     [Fact]

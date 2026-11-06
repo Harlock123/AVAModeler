@@ -194,20 +194,28 @@ public static class LwsWriter
             WriteEnvelope(e);
         }
 
-        private void WriteEnvelope(Envelope e)
+        private void WriteEnvelope(Envelope e) => V3Envelope(Text, e, scene.FramesPerSecond);
+    }
+
+    /// <summary>
+    /// A version 3 envelope block (<c>{ Envelope</c>, the key count, <c>Key</c> lines with times in seconds at
+    /// <paramref name="framesPerSecond"/>, <c>Behaviors</c>, <c>}</c>), as scenes and motion files hold them.
+    /// </summary>
+    internal static void V3Envelope(StringBuilder text, Envelope e, double framesPerSecond)
+    {
+        static string N(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+        void L(string line) => text.Append(line).Append('\n');
+        L("{ Envelope");
+        L($"  {e.Keys.Count}");
+        // Span types: 0 TCB, 1 Hermite (AVA Modeler's Bezier), 3 linear, 4 stepped. p4 and p5 are the incoming and
+        // outgoing tangents, written as slopes in value per second since .lws times are seconds.
+        double fps = framesPerSecond;
+        foreach (var k in e.Keys)
         {
-            L("{ Envelope");
-            L($"  {e.Keys.Count}");
-            // Span types: 0 TCB, 1 Hermite (AVA Modeler's Bezier), 3 linear, 4 stepped. p4 and p5 are the incoming and
-            // outgoing tangents, written as slopes in value per second since .lws times are seconds.
-            double fps = scene.FramesPerSecond;
-            foreach (var k in e.Keys)
-            {
-                int shape = k.Kind switch { SpanKind.Linear => 3, SpanKind.Stepped => 4, SpanKind.Bezier => 1, _ => 0 };
-                L($"  Key {N(k.Value)} {N(k.Frame / fps)} {shape} {N(k.Tension)} {N(k.Continuity)} {N(k.Bias)} {N(k.InSlope * fps)} {N(k.OutSlope * fps)} 0");
-            }
-            L($"  Behaviors {(int)e.PreBehavior} {(int)e.PostBehavior}");
-            L("}");
+            int shape = k.Kind switch { SpanKind.Linear => 3, SpanKind.Stepped => 4, SpanKind.Bezier => 1, _ => 0 };
+            L($"  Key {N(k.Value)} {N(k.Frame / fps)} {shape} {N(k.Tension)} {N(k.Continuity)} {N(k.Bias)} {N(k.InSlope * fps)} {N(k.OutSlope * fps)} 0");
         }
+        L($"  Behaviors {(int)e.PreBehavior} {(int)e.PostBehavior}");
+        L("}");
     }
 }

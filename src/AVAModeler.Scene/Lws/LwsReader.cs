@@ -40,8 +40,8 @@ public static class LwsReader
 
     private sealed class Parser(string text, Func<string, Document?> load, string? sceneDir, string? contentDir)
     {
-        private readonly string[] _lines = text.Split('\n').Select(l => l.Trim()).ToArray();
-        private int _pos;
+        private LwText _in = null!;
+        private int _pos => _in.Position;
         private int _version;
         public readonly Scene Scene = new();
         public readonly List<string> Warnings = [];
@@ -68,45 +68,12 @@ public static class LwsReader
             if (_warned.Add(message)) Warnings.Add(message);
         }
 
-        private string? Next()
-        {
-            while (_pos < _lines.Length)
-            {
-                var l = _lines[_pos++];
-                if (l.Length > 0) return l;
-            }
-            return null;
-        }
-
-        private string? Peek()
-        {
-            for (int i = _pos; i < _lines.Length; i++)
-                if (_lines[i].Length > 0) return _lines[i];
-            return null;
-        }
-
-        private static (string Key, string Tail) Split(string line)
-        {
-            int i = line.IndexOfAny([' ', '\t']);
-            return i < 0 ? (line, "") : (line[..i], line[(i + 1)..].Trim());
-        }
-
-        private static string[] Tokens(string s) => s.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-
-        private static bool TryNumber(string s, out double v) => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
-
-        private double[] Numbers(string rest, int count, string key)
-        {
-            var t = Tokens(rest);
-            var r = new double[count];
-            for (int i = 0; i < count; i++)
-                if (i >= t.Length || !TryNumber(t[i], out r[i]))
-                {
-                    Warn($"Line {_pos}: {key} needs {count} number(s).");
-                    break;
-                }
-            return r;
-        }
+        private string? Next() => _in.Next();
+        private string? Peek() => _in.Peek();
+        private static (string Key, string Tail) Split(string line) => LwText.Split(line);
+        private static string[] Tokens(string s) => LwText.Tokens(s);
+        private static bool TryNumber(string s, out double v) => LwText.TryNumber(s, out v);
+        private double[] Numbers(string rest, int count, string key) => _in.Numbers(rest, count, key);
 
         private double Number(string rest, string key) => Numbers(rest, 1, key)[0];
         private int Int(string rest, string key) => (int)Math.Round(Number(rest, key));
@@ -132,6 +99,7 @@ public static class LwsReader
 
         public void Run()
         {
+            _in = new LwText(text, Warn);
             if (Next() != "LWSC") throw new InvalidDataException("Not a LightWave scene: it doesn't start with LWSC.");
             var v = Next();
             if (v == null || !int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out _version))
@@ -475,113 +443,24 @@ public static class LwsReader
         /// <summary>A version 1 envelope: channel count, key count, then per key a line of values and a line of "frame linear tension continuity bias".</summary>
         private Envelope[] V1Envelopes(string key)
         {
-            var head = ReadNumbers(2);
-            if (head == null)
-            {
-                Warn($"Line {_pos}: {key} envelope is cut short.");
-                return [];
-            }
-            int channels = (int)head[0], keys = (int)head[1];
-            var envelopes = Enumerable.Range(0, Math.Max(0, channels)).Select(_ => new Envelope()).ToArray();
-            for (int k = 0; k < keys; k++)
-            {
-                var values = ReadNumbers(channels);
-                var spline = ReadNumbers(5);
-                if (values == null || spline == null)
-                {
-                    Warn($"Line {_pos}: {key} envelope is cut short.");
-                    break;
-                }
-                for (int c = 0; c < channels; c++)
-                    envelopes[c].AddKey(new EnvelopeKey(spline[0], values[c], spline[2], spline[3], spline[4], spline[1] != 0));
-            }
+            var envelopes = _in.V1Envelopes(out bool cut);
+            if (envelopes == null || cut) Warn($"Line {_pos}: {key} envelope is cut short.");
+            if (envelopes == null) return [];
             _lastEnvelopes = envelopes;
             return envelopes;
         }
 
-        /// <summary>Reads numbers from as many lines as it takes; null if a line holds something else first.</summary>
-        private double[]? ReadNumbers(int count)
-        {
-            var r = new List<double>(count);
-            while (r.Count < count)
-            {
-                var l = Peek();
-                if (l == null) return null;
-                var t = Tokens(l);
-                if (t.Length == 0 || !TryNumber(t[0], out _)) return null;
-                Next();
-                foreach (var s in t)
-                    if (r.Count < count && TryNumber(s, out double v)) r.Add(v);
-            }
-            return [.. r];
-        }
-
-        /// <summary>A version 3 envelope block: <c>{ Envelope</c>, the key count, <c>Key</c> lines, <c>Behaviors</c>, <c>}</c>.</summary>
+        /// <summary>A version 3 envelope block, its times in seconds (converted to frames at the end).</summary>
         private Envelope V3Envelope()
         {
-            var e = new Envelope();
+            var e = _in.V3Envelope();
             _readInSeconds.Add(e);
-            var open = Next();
-            if (open == null || !open.StartsWith('{'))
-            {
-                Warn($"Line {_pos}: expected an envelope block.");
-                return e;
-            }
-            int depth = 1;
-            while (depth > 0 && Next() is { } l)
-            {
-                if (l.StartsWith('{')) { depth++; continue; }
-                if (l.StartsWith('}')) { depth--; continue; }
-                if (depth > 1) continue;
-                var (key, rest) = Split(l);
-                if (key == "Key")
-                {
-                    var t = Tokens(rest).Select(s => TryNumber(s, out double v) ? v : 0).ToArray();
-                    if (t.Length < 2)
-                    {
-                        Warn($"Line {_pos}: a key needs a value and a time.");
-                        continue;
-                    }
-                    double At(int i) => i < t.Length ? t[i] : 0;
-                    int shape = (int)At(2);
-                    if (shape == 5) Warn("2D Bézier keys are read as TCB keys with no tension, continuity or bias.");
-                    // p1 to p3 are tension, continuity and bias; p4 and p5 the incoming and outgoing tangents, which
-                    // AVA Modeler reads as slopes in value per second (Finish turns them into value per frame).
-                    bool tcb = shape is 0 or 1 or 2;
-                    var k = new EnvelopeKey(t[1], t[0], tcb ? At(3) : 0, tcb ? At(4) : 0, tcb ? At(5) : 0, shape == 3,
-                        InSlope: shape != 5 ? At(6) : 0, OutSlope: shape != 5 ? At(7) : 0);
-                    e.AddKey(shape switch
-                    {
-                        1 or 2 => k.WithSpan(SpanKind.Bezier),
-                        4 => k.WithSpan(SpanKind.Stepped),
-                        _ => k,
-                    });
-                }
-                else if (key == "Behaviors")
-                {
-                    var b = Numbers(rest, 2, key);
-                    e.PreBehavior = Behavior((int)b[0]);
-                    e.PostBehavior = Behavior((int)b[1]);
-                }
-            }
             return e;
         }
 
-        private static EndBehavior Behavior(int code) => code is >= 0 and <= 5 ? (EndBehavior)code : EndBehavior.Constant;
-
         private void Finish()
         {
-            foreach (var e in _inSeconds)
-            {
-                e.ScaleTime(Scene.FramesPerSecond);
-                // Seconds rarely convert back to exact frames; snap what is a whole frame to within rounding.
-                for (int k = 0; k < e.Keys.Count; k++)
-                {
-                    var key = e.Keys[k];
-                    double whole = Math.Round(key.Frame);
-                    if (whole != key.Frame && Math.Abs(whole - key.Frame) < 1e-6) e.SetKey(k, key with { Frame = whole });
-                }
-            }
+            foreach (var e in _inSeconds) LwText.SecondsToFrames(e, Scene.FramesPerSecond);
 
             foreach (var (item, kind, value, line) in _parents)
             {

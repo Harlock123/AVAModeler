@@ -416,7 +416,7 @@ public sealed class LayoutSession
         SetStatus($"Keyed {end.Name}'s IK chain at frame {Frame:0}.");
     }
 
-    // ───────────────────────────── motion modifiers ─────────────────────────────
+    // ───────────────────────────── motion modifiers and motion files ─────────────────────────────
 
     /// <summary>
     /// Gives an item these motion modifiers (lag, jitter, cycle, oscillate; in the order they apply), replacing any it
@@ -433,6 +433,34 @@ public sealed class LayoutSession
             if (MotionModifier.Problem(item, m) is { } problem) throw new ArgumentException(modifiers.Count > 1 ? $"Modifier {i + 1} ({m.Kind}): {problem}" : problem);
         }
         Edit(modifiers.Count == 0 ? $"Remove {item.Name}'s Motion Modifiers" : $"Set {item.Name}'s Motion Modifiers", () => item.Modifiers = modifiers);
+    }
+
+    /// <summary>
+    /// Loads a LightWave motion file (.mot, version 1 or 3; <see cref="MotionFile"/>) onto an item, replacing its nine
+    /// motion channels, as one undo step (Layout's Load Motion). A version 3 file's times in seconds are read at the
+    /// scene's frame rate. Throws <see cref="InvalidDataException"/> (changing nothing) if the file isn't a motion.
+    /// Returns what was read, with its warnings.
+    /// </summary>
+    public MotionLoadResult LoadMotion(SceneItem item, string path)
+    {
+        if (item.Scene != Scene) throw new ArgumentException($"{item.Name} isn't in the scene.");
+        var motion = MotionFile.ReadFile(path, Scene.FramesPerSecond);
+        Edit($"Load Motion onto {item.Name}", () => MotionFile.Apply(item, motion.Channels));
+        SetStatus($"Loaded {Path.GetFileName(path)} onto {item.Name}{(motion.Warnings.Count > 0 ? $" ({motion.Warnings.Count} warning(s))" : "")}.");
+        return motion;
+    }
+
+    /// <summary>
+    /// Saves an item's nine motion channels as a LightWave motion file (Layout's Save Motion), version 3 unless asked
+    /// for 1 (LightWave 4 and 5); see <see cref="MotionFile"/>. Not an undo step: the scene doesn't change. Returns the
+    /// warnings (what the file couldn't hold).
+    /// </summary>
+    public IReadOnlyList<string> SaveMotion(SceneItem item, string path, int version = MotionFile.DefaultVersion)
+    {
+        var warnings = new List<string>();
+        MotionFile.WriteFile(item, path, Scene.FramesPerSecond, version, warnings);
+        SetStatus($"Saved {item.Name}'s motion as {Path.GetFileName(path)}.");
+        return warnings;
     }
 
     /// <summary>Adds an item as one undo step ("Add Light") and chooses it.</summary>

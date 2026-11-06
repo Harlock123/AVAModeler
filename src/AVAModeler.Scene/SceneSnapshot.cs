@@ -4,8 +4,8 @@ namespace AVAModeler.Scene;
 
 /// <summary>
 /// A scene as it was at one moment (<see cref="Scene.Snapshot"/>), to put back with <see cref="Restore"/>: its
-/// settings (the render effects' among them) and current camera, which items it held and in what order, and each item's name, parent, pivot,
-/// visibility, lock, path following (with its path.position channel), motion modifiers, channels and own settings (a light's, a camera's, an object's, a bone's, its IK goal, flags and limits included). Items are kept by reference,
+/// settings (the render effects', the image list and compositing among them) and current camera, which items it held and in what order, and each item's name, parent, pivot,
+/// visibility, lock, path following (with its path.position channel), motion modifiers, channels and own settings (a light's, a camera's, an object's (its dissolve envelope among them), a bone's, its IK goal, flags and limits included). Items are kept by reference,
 /// so restoring brings back the very items that were removed since, takes away those added since, and leaves anything
 /// that holds an item (a selection) pointing at the right one. An object's morph targets and displacements are kept by
 /// reference too, with their settings: a morph's name, target and weight envelope, a displacement's shape, axes,
@@ -22,6 +22,8 @@ public sealed class SceneSnapshot
     private readonly FogType _fog;
     private readonly AmbientOcclusion _occlusion;
     private readonly EnvironmentSettings _environment;
+    private readonly CompositingSettings _compositing;
+    private readonly IReadOnlyList<SceneImage> _images;
     private readonly CameraItem? _camera;
     private readonly List<SceneItem> _items;
     private readonly List<ItemState> _states;
@@ -35,6 +37,7 @@ public sealed class SceneSnapshot
             (scene.AmbientColor, scene.AmbientIntensity, scene.BackgroundColor, scene.GradientBackground, scene.GradientTop, scene.GradientBottom);
         (_fog, _fogMin, _fogMax, _fogColor) = (scene.Fog, scene.FogMinDistance, scene.FogMaxDistance, scene.FogColor);
         (_occlusion, _environment) = (scene.Occlusion, scene.Environment);
+        (_compositing, _images) = (scene.Compositing, scene.Images);
         _camera = scene.CameraField;
         _items = [.. scene.ItemList];
         _states = _items.Select(i => new ItemState(i)).ToList();
@@ -60,6 +63,7 @@ public sealed class SceneSnapshot
             (_ambient, _ambientIntensity, _background, _gradient, _top, _bottom);
         (Scene.Fog, Scene.FogMinDistance, Scene.FogMaxDistance, Scene.FogColor) = (_fog, _fogMin, _fogMax, _fogColor);
         (Scene.Occlusion, Scene.Environment) = (_occlusion, _environment);
+        (Scene.Compositing, Scene.Images) = (_compositing, _images);
         Scene.Notify();
     });
 
@@ -138,6 +142,7 @@ public sealed class SceneSnapshot
             List<MorphTarget> morphs = [.. o.MorphList];
             List<WaveDisplacement> displacements = [.. o.DisplacementList];
             var morphStates = morphs.Select(Morph).ToArray();
+            var dissolve = new EnvelopeState(o.Dissolve);
             var displacementStates = displacements.Select(Displacement).ToArray();
             return () =>
             {
@@ -145,6 +150,7 @@ public sealed class SceneSnapshot
                 Replace(o.BoneList, bones);
                 Replace(o.MorphList, morphs);
                 Replace(o.DisplacementList, displacements);
+                dissolve.Restore();
                 foreach (var m in morphStates) m();
                 foreach (var d in displacementStates) d();
             };

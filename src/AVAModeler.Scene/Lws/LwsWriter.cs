@@ -13,7 +13,10 @@ namespace AVAModeler.Scene;
 /// and the environment have no place in the format either (the .avascene keeps them). A bone's IK goal is written as
 /// <c>GoalItem</c> (with <c>GoalStrength 1</c> and <c>FullTimeIK</c>) and its joint limits as <c>HLimits</c>,
 /// <c>PLimits</c> and <c>BLimits</c>; its IK anchor and locked channels aren't written (a warning says so). Path following
-/// and motion modifiers have no place either: the keys are written, with a warning.
+/// and motion modifiers have no place either: the keys are written, with a warning. An
+/// object's dissolve is <c>ObjectDissolve</c> (a value or an envelope, when it isn't 0 throughout); compositing is
+/// <c>BGImage</c>, <c>FGImage</c>, <c>FGAlphaImage</c>, <c>ForegroundKey</c>, <c>LowClipColor</c>,
+/// <c>HighClipColor</c> and <c>FGDissolve</c>, sequences marked with <c>(sequence)</c> after the path.
 /// </summary>
 public static class LwsWriter
 {
@@ -56,6 +59,8 @@ public static class LwsWriter
                 Common(item);
                 if (item is ObjectItem obj)
                 {
+                    // Written only when not solid throughout, so other scenes' files are as they were.
+                    if (!(obj.Dissolve.IsConstant && obj.Dissolve.Evaluate(0) == 0)) Value("ObjectDissolve", obj.Dissolve);
                     L($"ShadowOptions {(obj.CastShadows ? 2 : 0) | (obj.ReceiveShadows ? 4 : 0)}");
                     L($"BoneFalloffType {(int)Math.Round(Math.Log2(Math.Max(1, obj.BoneFalloffExponent)))}");
                     foreach (var b in obj.Bones) WriteBone(b);
@@ -116,6 +121,41 @@ public static class LwsWriter
             L($"FogMinDistance {N(scene.FogMinDistance)}");
             L($"FogMaxDistance {N(scene.FogMaxDistance)}");
             L($"FogColor {V(scene.FogColor)}");
+            WriteCompositing();
+        }
+
+        /// <summary>
+        /// The compositing images (a sequence marked "(sequence)" after its path, as LightWave did), the key and the
+        /// foreground's dissolve; written only when there are any. The image list's other entries, and sequences'
+        /// offsets and looping, have no place in the format.
+        /// </summary>
+        private void WriteCompositing()
+        {
+            var c = scene.Compositing;
+            string Image(string path)
+            {
+                var entry = SceneImages.Find(scene, path);
+                if (entry is { Offset: not 0 } or { Loop: true })
+                    warnings.Add($"The image sequence {Path.GetFileName(path)}'s offset and looping have no place in a LightWave scene: the .avascene keeps them.");
+                return entry is { Sequence: true } ? $"{path} (sequence)" : path;
+            }
+            if (c.Background.Length > 0) L($"BGImage {Image(c.Background)}");
+            if (c.Foreground.Length > 0)
+            {
+                L($"FGImage {Image(c.Foreground)}");
+                if (c.Key == ForegroundKey.Alpha) L($"FGAlphaImage {Image(c.ForegroundAlpha.Length > 0 ? c.ForegroundAlpha : c.Foreground)}");
+                if (c.Key == ForegroundKey.Color)
+                {
+                    L("ForegroundKey 1");
+                    L($"LowClipColor {V(c.KeyLow)}");
+                    L($"HighClipColor {V(c.KeyHigh)}");
+                }
+                if (c.ForegroundDissolve > 0) L($"FGDissolve {N(c.ForegroundDissolve)}");
+            }
+            int unused = scene.Images.Count(i => !SceneImages.Same(i.Path, c.Background) && !SceneImages.Same(i.Path, c.Foreground)
+                && !SceneImages.Same(i.Path, c.ForegroundAlpha));
+            if (unused > 0)
+                warnings.Add($"{unused} of the scene's images {(unused == 1 ? "isn't" : "aren't")} used by compositing, and a LightWave scene has no image list for {(unused == 1 ? "it" : "them")}: the .avascene keeps the list.");
         }
 
         private void WriteObject(ObjectItem o)

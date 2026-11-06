@@ -25,6 +25,8 @@ public sealed class SoftwareRenderer : IRenderer
     public uint[] Pixels { get; private set; } = [];
     private float[] _depth = [];
     private ViewCamera _cam = new(ViewKind.Front);
+    /// <summary>The dissolve of the layer whose faces and wire are being drawn (0 for everything else): pixels <see cref="Dither"/> leaves out aren't drawn.</summary>
+    private double _dissolve;
 
     public void Dispose() { }
 
@@ -53,11 +55,15 @@ public sealed class SoftwareRenderer : IRenderer
             DrawWire(layer.Mesh, Palette.BackgroundWire, depthTest: shaded);
         foreach (var layer in scene.Layers.Where(l => !l.Background))
         {
+            // A wholly dissolved layer isn't drawn; a partly dissolved one's faces and wire are dithered.
+            if (layer.Dissolve >= 1) continue;
             var mesh = layer.Mesh;
+            _dissolve = layer.Dissolve > 0 ? layer.Dissolve : 0;
             if (shaded) Shade(layer, scene);
             bool wire = !shaded || scene.Style == DisplayStyle.ShadedWireframe || layer.Subdivided != null;
             if (wire) DrawWire(mesh, layer.Subdivided != null ? Palette.Cage : Palette.Wire, depthTest: shaded && layer.Subdivided == null);
             if (layer.Subdivided != null && !shaded) DrawWire(layer.Subdivided, Palette.Wire, false);
+            _dissolve = 0;
             DrawSelection(layer);
             DrawSinglePoints(mesh);
             if (scene.ShowPoints) DrawPoints(mesh, layer.SelectedPoints, all: true);
@@ -197,6 +203,7 @@ public sealed class SoftwareRenderer : IRenderer
                 double depth = persp ? 1 / (w0 * za + w1 * zb + w2 * zc) : w0 * a.Depth + w1 * b.Depth + w2 * c.Depth;
                 float d = (float)depth;
                 if (d >= _depth[row + x]) continue;
+                if (_dissolve > 0 && !Dither.Keeps(x, y, _dissolve)) continue;
                 _depth[row + x] = d;
                 Pixels[row + x] = flat ? flatColor : Pack(ca * w0 + cb * w1 + cc * w2);
             }
@@ -235,6 +242,7 @@ public sealed class SoftwareRenderer : IRenderer
                 if (writeDepth)
                 {
                     if (d >= _depth[row + x]) continue;
+                    if (_dissolve > 0 && !Dither.Keeps(x, y, _dissolve)) continue;
                     _depth[row + x] = d;
                 }
                 // Perspective-correct weights: linear in 1/depth across the screen.
@@ -410,6 +418,7 @@ public sealed class SoftwareRenderer : IRenderer
     {
         if (steep) (x, y) = (y, x);
         if (x < 0 || y < 0 || x >= Width || y >= Height || cover <= 0.004) return;
+        if (_dissolve > 0 && !Dither.Keeps(x, y, _dissolve)) return;
         int i = y * Width + x;
         // Lines sit a hair in front of the faces they edge.
         if (depthTest && depth > _depth[i] * 1.002f + 1e-4f) return;

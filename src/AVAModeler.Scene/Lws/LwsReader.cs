@@ -24,6 +24,13 @@ public sealed record SceneLoadResult(Scene Scene, IReadOnlyList<string> Warnings
 /// it, as in LightWave), and <c>HLimits</c>, <c>PLimits</c> and <c>BLimits</c> its joint limits (min and max degrees;
 /// 0 0 is none). IK on objects, nulls, lights and cameras isn't read.
 /// </para>
+/// <para>
+/// An object's dissolve is <c>ObjDissolve</c> (LightWave 5) or <c>ObjectDissolve</c> (6 on), a value or
+/// <c>(envelope)</c>. Compositing: <c>BGImage</c>, <c>FGImage</c> and <c>FGAlphaImage</c> (a path, with
+/// <c>(sequence)</c> after it for a numbered sequence; each goes in the scene's image list), <c>ForegroundKey</c> with
+/// <c>LowClipColor</c> and <c>HighClipColor</c> (the colour key), and <c>FGDissolve</c>. An alpha image makes the key
+/// the alpha key.
+/// </para>
 /// </summary>
 public static class LwsReader
 {
@@ -192,6 +199,18 @@ public static class LwsReader
                     _current.Pivot = VectorOf(rest, key);
                     break;
 
+                case "ObjDissolve" or "ObjectDissolve" when _current is ObjectItem o:
+                    Assign(o.Dissolve, ValueOrEnvelope(rest, key));
+                    break;
+
+                case "BGImage": _compositing = _compositing with { Background = Image(rest) }; break;
+                case "FGImage": _compositing = _compositing with { Foreground = Image(rest) }; break;
+                case "FGAlphaImage": _compositing = _compositing with { ForegroundAlpha = Image(rest) }; break;
+                case "ForegroundKey": _foregroundKey = Int(rest, key) != 0; break;
+                case "LowClipColor": _compositing = _compositing with { KeyLow = Clip(ColorOf(rest, key)) }; break;
+                case "HighClipColor": _compositing = _compositing with { KeyHigh = Clip(ColorOf(rest, key)) }; break;
+                case "FGDissolve" or "ForegroundDissolve": _compositing = _compositing with { ForegroundDissolve = Math.Clamp(First(ValueOrEnvelope(rest, key)), 0, 1) }; break;
+
                 case "ShadowOptions" when _current is ObjectItem o:
                 {
                     int bits = Int(rest, key);
@@ -324,6 +343,50 @@ public static class LwsReader
                     if (rest == "(envelope)") ReadEnvelope(key);
                     break;
             }
+        }
+
+        private CompositingSettings _compositing = new();
+        private bool _foregroundKey;
+
+        private static Vec3 Clip(Vec3 c) => new(Math.Clamp(c.X, 0, 1), Math.Clamp(c.Y, 0, 1), Math.Clamp(c.Z, 0, 1));
+
+        /// <summary>
+        /// A compositing image's line: its path, with "(sequence)" after it for a numbered sequence (as LightWave marked
+        /// them). The image goes in the scene's list (once) and its full path is returned. A sequence named by its
+        /// prefix alone ("Images/fire (sequence)") becomes the first numbered file found beside it.
+        /// </summary>
+        private string Image(string rest)
+        {
+            string raw = WithoutId(rest).Trim();
+            bool sequence = raw.EndsWith("(sequence)", StringComparison.OrdinalIgnoreCase);
+            if (sequence) raw = raw[..^"(sequence)".Length].Trim();
+            raw = raw.Trim('"');
+            if (raw.Length == 0) return "";
+            string path = ResolvePath(raw);
+            if (sequence && ImageSequence.Pattern(path) == null && FirstNumbered(path) is { } first) path = first;
+            if (sequence && ImageSequence.Pattern(path) == null)
+            {
+                Warn($"Line {_pos}: the image sequence {raw} has no numbered files beside it; it is read as a still.");
+                sequence = false;
+            }
+            if (SceneImages.Find(Scene, path) is { } had) return had.Path;
+            Scene.Images = [.. Scene.Images, new SceneImage { Path = path, Sequence = sequence }];
+            return path;
+        }
+
+        /// <summary>The first file beside a prefix ("…/fire") whose name is the prefix, digits and an extension.</summary>
+        private static string? FirstNumbered(string prefix)
+        {
+            try
+            {
+                string? folder = Path.GetDirectoryName(Path.GetFullPath(prefix));
+                string name = Path.GetFileName(prefix);
+                if (folder == null || !Directory.Exists(folder)) return null;
+                return Directory.EnumerateFiles(folder, name + "*")
+                    .Where(f => Path.GetFileNameWithoutExtension(f) is var stem && stem.Length > name.Length && stem[name.Length..].All(char.IsAsciiDigit))
+                    .Order(StringComparer.Ordinal).FirstOrDefault();
+            }
+            catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException) { return null; }
         }
 
         private CameraItem NewCamera()
@@ -514,6 +577,27 @@ public static class LwsReader
                 light.Range = type > 0 ? range : type == null && legacy > 0 ? 1 / legacy : 0;
 
             if (_currentCamera is int i && At(_cameras, i) is { } cam) Scene.CurrentCamera = cam;
+
+            if (_compositing.Foreground.Length > 0)
+            {
+                // An alpha image keys by alpha (one that is the foreground itself: by its own alpha); else ForegroundKey keys by colour.
+                if (_compositing.ForegroundAlpha.Length > 0)
+                    _compositing = _compositing with
+                    {
+                        Key = ForegroundKey.Alpha,
+                        ForegroundAlpha = SceneImages.Same(_compositing.ForegroundAlpha, _compositing.Foreground) ? "" : _compositing.ForegroundAlpha,
+                    };
+                else if (_foregroundKey) _compositing = _compositing with { Key = ForegroundKey.Color };
+            }
+            else _compositing = _compositing with { ForegroundAlpha = "" };
+            try
+            {
+                Scene.Compositing = _compositing.Checked();
+            }
+            catch (ArgumentException e)
+            {
+                Warn($"The compositing settings couldn't be used ({e.Message}); they're left off.");
+            }
         }
 
         private static T? At<T>(IReadOnlyList<T> list, int i) where T : class => i >= 0 && i < list.Count ? list[i] : null;

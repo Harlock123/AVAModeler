@@ -14,6 +14,7 @@ public sealed unsafe class GlRenderer : IRenderer
     private readonly bool _es;
     private uint _lineProgram, _faceProgram, _textureProgram, _vao, _vbo;
     private bool _ready;
+    private int _height;
     /// <summary>The GL textures made for images, and those used this frame (the rest are let go after it).</summary>
     private readonly Dictionary<TextureImage, uint> _textures = [];
     private readonly HashSet<TextureImage> _used = [];
@@ -41,10 +42,28 @@ public sealed unsafe class GlRenderer : IRenderer
         }
         """;
 
-    private const string LineFragment = """
+    /// <summary>
+    /// Screen-door transparency in GLSL, as <see cref="Dither.Keeps"/> works it out: a dissolved layer's fragment is
+    /// discarded where the 8 × 8 Bayer threshold at its pixel (counted from the top left) is the dissolve or less.
+    /// </summary>
+    private static readonly string DitherGlsl = $$"""
+        uniform float dissolve;
+        uniform int viewHeight;
+        const int bayer[64] = int[64]({{Dither.Glsl}});
+        bool dissolved() {
+            if (dissolve <= 0.0) return false;
+            int x = int(gl_FragCoord.x);
+            int y = viewHeight - 1 - int(gl_FragCoord.y);
+            float t = (float(bayer[(y & 7) * 8 + (x & 7)]) + 0.5) / 64.0;
+            return t <= dissolve;
+        }
+
+        """;
+
+    private static readonly string LineFragment = DitherGlsl + """
         in vec4 vColor;
         out vec4 fragColor;
-        void main() { fragColor = vColor; }
+        void main() { if (dissolved()) discard; fragColor = vColor; }
         """;
 
     private const string FaceVertex = """
@@ -62,11 +81,11 @@ public sealed unsafe class GlRenderer : IRenderer
         """;
 
     // The colour arrives lit already (as the software renderer lights it), so the two renderers agree.
-    private const string FaceFragment = """
+    private static readonly string FaceFragment = DitherGlsl + """
         in vec4 vColor;
         in vec3 vNormal;
         out vec4 fragColor;
-        void main() { fragColor = vColor; }
+        void main() { if (dissolved()) discard; fragColor = vColor; }
         """;
 
     private const string TextureVertex = """
@@ -98,7 +117,7 @@ public sealed unsafe class GlRenderer : IRenderer
     // Texturing.Fragment and TextureImage.Sample in GLSL: the same tiling, the same alpha-weighted bilinear blend,
     // the same layering and lighting, so a textured face looks as the software renderer draws it. Procedural layers
     // repeat Noise and ProceduralTexture's sums, with Perlin's permutation table in a 256 × 1 texture.
-    private const string TextureFragment = """
+    private static readonly string TextureFragment = DitherGlsl + """
         in vec4 vLight;
         in vec4 vUv01;
         in vec4 vUv23;
@@ -290,6 +309,7 @@ public sealed unsafe class GlRenderer : IRenderer
         }
 
         void main() {
+            if (dissolved()) discard;
             vec3 col = baseColor;
             if (layerCount > 0) col = layer(col, 0, image0, vUv01.xy, vOn.x);
             if (layerCount > 1) col = layer(col, 1, image1, vUv01.zw, vOn.y);
@@ -358,6 +378,7 @@ public sealed unsafe class GlRenderer : IRenderer
     public void Render(ViewScene scene, ViewCamera camera)
     {
         Init();
+        _height = camera.Height;
         _gl.Viewport(0, 0, (uint)camera.Width, (uint)camera.Height);
         uint bg = camera.IsPerspective ? Palette.PerspectiveBackground : Palette.Background;
         _gl.ClearColor(((bg >> 16) & 0xFF) / 255f, ((bg >> 8) & 0xFF) / 255f, (bg & 0xFF) / 255f, 1);
@@ -400,26 +421,36 @@ public sealed unsafe class GlRenderer : IRenderer
             _gl.PolygonOffset(1, 1);
             var faces = new List<float>();
             var textured = new List<(TexturedSurface, List<float>)>();
-            foreach (var layer in scene.Layers.Where(l => !l.Background)) FaceTriangles(layer, scene, camera, faces, textured);
+            foreach (var layer in scene.Layers.Where(l => !l.Background && !(l.Dissolve > 0))) FaceTriangles(layer, scene, camera, faces, textured);
             DrawFaces(faces, mvp);
             foreach (var (ts, data) in textured) DrawTextured(ts, data, mvp);
+            // Dissolved layers, each with its own screen door; a wholly dissolved one isn't drawn.
+            foreach (var layer in scene.Layers.Where(l => !l.Background && l.Dissolve > 0 && l.Dissolve < 1))
+            {
+                var own = new List<float>();
+                var ownTextured = new List<(TexturedSurface, List<float>)>();
+                FaceTriangles(layer, scene, camera, own, ownTextured);
+                DrawFaces(own, mvp, (float)layer.Dissolve);
+                foreach (var (ts, data) in ownTextured) DrawTextured(ts, data, mvp, (float)layer.Dissolve);
+            }
             _gl.Disable(EnableCap.PolygonOffsetFill);
         }
 
         lines.Clear();
-        foreach (var layer in scene.Layers.Where(l => !l.Background))
-        {
-            bool wire = !shaded || scene.Style == DisplayStyle.ShadedWireframe || layer.Subdivided != null;
-            if (wire) WireLines(layer.Mesh, layer.Subdivided != null ? Palette.Cage : Palette.Wire, lines);
-            if (layer.Subdivided != null && !shaded) WireLines(layer.Subdivided, Palette.Wire, lines);
-        }
+        foreach (var layer in scene.Layers.Where(l => !l.Background && !(l.Dissolve > 0))) LayerWire(layer, shaded, scene, lines);
         DrawLines(lines, mvp, PrimitiveType.Lines, 1);
+        foreach (var layer in scene.Layers.Where(l => !l.Background && l.Dissolve > 0 && l.Dissolve < 1))
+        {
+            lines.Clear();
+            LayerWire(layer, shaded, scene, lines);
+            DrawLines(lines, mvp, PrimitiveType.Lines, 1, (float)layer.Dissolve);
+        }
 
         // The selection and overlays on top of everything.
         _gl.Disable(EnableCap.DepthTest);
         lines.Clear();
         var points = new List<float>();
-        foreach (var layer in scene.Layers.Where(l => !l.Background))
+        foreach (var layer in scene.Layers.Where(l => !l.Background && !(l.Dissolve >= 1)))
         {
             var mesh = layer.Mesh;
             if (layer.SelectedPolygons != null)
@@ -438,6 +469,21 @@ public sealed unsafe class GlRenderer : IRenderer
         DrawLines(lines, mvp, PrimitiveType.Lines, 1);
         DrawLines(points, mvp, PrimitiveType.Points, 5);
         ReleaseUnusedTextures();
+    }
+
+    /// <summary>A layer's wire: its edges, or its cage and smoothed surface.</summary>
+    private static void LayerWire(ViewLayer layer, bool shaded, ViewScene scene, List<float> lines)
+    {
+        bool wire = !shaded || scene.Style == DisplayStyle.ShadedWireframe || layer.Subdivided != null;
+        if (wire) WireLines(layer.Mesh, layer.Subdivided != null ? Palette.Cage : Palette.Wire, lines);
+        if (layer.Subdivided != null && !shaded) WireLines(layer.Subdivided, Palette.Wire, lines);
+    }
+
+    /// <summary>Sets a program's screen door: the dissolve (0 for none) and the view's height, which the shader counts pixels down from.</summary>
+    private void SetDissolve(uint program, float dissolve)
+    {
+        _gl.Uniform1(_gl.GetUniformLocation(program, "dissolve"), dissolve);
+        _gl.Uniform1(_gl.GetUniformLocation(program, "viewHeight"), _height);
     }
 
     private static void AddVertex(List<float> v, Vec3 p, uint c)
@@ -607,10 +653,11 @@ public sealed unsafe class GlRenderer : IRenderer
         }
     }
 
-    private void DrawTextured(TexturedSurface ts, List<float> data, float[] mvp)
+    private void DrawTextured(TexturedSurface ts, List<float> data, float[] mvp, float dissolve = 0)
     {
         if (data.Count == 0) return;
         _gl.UseProgram(_textureProgram);
+        SetDissolve(_textureProgram, dissolve);
         for (int i = 0; i < Texturing.MaxLayers; i++)
         {
             _gl.ActiveTexture(TextureUnit.Texture0 + i);
@@ -667,7 +714,7 @@ public sealed unsafe class GlRenderer : IRenderer
             _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(span.Length * sizeof(float)), p, BufferUsageARB.StreamDraw);
     }
 
-    private void DrawLines(List<float> data, float[] mvp, PrimitiveType type, float pointSize)
+    private void DrawLines(List<float> data, float[] mvp, PrimitiveType type, float pointSize, float dissolve = 0)
     {
         if (data.Count == 0) return;
         Upload(data);
@@ -678,12 +725,13 @@ public sealed unsafe class GlRenderer : IRenderer
         _gl.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, stride, (void*)(3 * sizeof(float)));
         _gl.DisableVertexAttribArray(2);
         _gl.UseProgram(_lineProgram);
+        SetDissolve(_lineProgram, dissolve);
         SetMatrix(_lineProgram, "mvp", mvp);
         _gl.Uniform1(_gl.GetUniformLocation(_lineProgram, "pointSize"), pointSize);
         _gl.DrawArrays(type, 0, (uint)(data.Count / 7));
     }
 
-    private void DrawFaces(List<float> data, float[] mvp)
+    private void DrawFaces(List<float> data, float[] mvp, float dissolve = 0)
     {
         if (data.Count == 0) return;
         Upload(data);
@@ -695,6 +743,7 @@ public sealed unsafe class GlRenderer : IRenderer
         _gl.EnableVertexAttribArray(2);
         _gl.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, stride, (void*)(7 * sizeof(float)));
         _gl.UseProgram(_faceProgram);
+        SetDissolve(_faceProgram, dissolve);
         SetMatrix(_faceProgram, "mvp", mvp);
         _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)(data.Count / 10));
     }

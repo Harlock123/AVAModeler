@@ -40,6 +40,20 @@ public sealed class Scene
     public AmbientOcclusion Occlusion = new();
     /// <summary>The environment picture round the scene (none by default).</summary>
     public EnvironmentSettings Environment = new();
+    /// <summary>The background and foreground images laid behind and over the render (none by default).</summary>
+    public CompositingSettings Compositing = new();
+
+    private IReadOnlyList<SceneImage> _images = [];
+
+    /// <summary>
+    /// The scene's image list (Layout's Images panel): stills and numbered sequences that compositing and image textures
+    /// use. Setting it copies the list, so the one set can't change underneath the scene (or its snapshots).
+    /// </summary>
+    public IReadOnlyList<SceneImage> Images
+    {
+        get => _images;
+        set => _images = [.. value];
+    }
 
     public IReadOnlyList<SceneItem> Items => _items;
     public IEnumerable<ObjectItem> Objects => _items.OfType<ObjectItem>();
@@ -200,7 +214,7 @@ public sealed class Scene
             AmbientColor = AmbientColor, AmbientIntensity = AmbientIntensity, BackgroundColor = BackgroundColor,
             GradientBackground = GradientBackground, GradientTop = GradientTop, GradientBottom = GradientBottom,
             Fog = Fog, FogMinDistance = FogMinDistance, FogMaxDistance = FogMaxDistance, FogColor = FogColor,
-            Occlusion = Occlusion, Environment = Environment,
+            Occlusion = Occlusion, Environment = Environment, Compositing = Compositing, _images = _images,
         };
         var docs = new Dictionary<Document, Document>(ReferenceEqualityComparer.Instance);
         var map = new Dictionary<SceneItem, SceneItem>();
@@ -273,6 +287,7 @@ public sealed class Scene
                 {
                     SourcePath = o.SourcePath, CastShadows = o.CastShadows, ReceiveShadows = o.ReceiveShadows, BoneFalloffExponent = o.BoneFalloffExponent,
                 };
+                obj.Dissolve.CopyFrom(o.Dissolve);
                 foreach (var m in o.Morphs) obj.AddMorph(new MorphTarget(m.Name, m.Target, m.Weight.Clone()));
                 foreach (var x in o.Displacements)
                 {
@@ -368,6 +383,7 @@ public sealed class Scene
             else warnings.AddRange(TextureImages.Problems(o.Surfaces, TextureImages.BaseOf(o.SourcePath ?? o.Document?.FilePath)).Select(p => $"{o.Name}, {p}"));
         }
         if (EnvironmentMap.Problem(Environment) is { } env) warnings.Add(env + " The backdrop shows instead.");
+        warnings.AddRange(SceneImages.Problems(this, frame));
         return new SceneFrame(frame, world, objects, warnings);
     }
 }

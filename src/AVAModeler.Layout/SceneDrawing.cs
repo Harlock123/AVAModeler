@@ -31,7 +31,8 @@ public static class SceneDrawing
             foreach (var p in world.Polygons) mesh.Polygons.Add(new Polygon(p.Points, p.Surface + offset) { CornerUVs = p.CornerUVs });
             mesh.Touch();
             // Textures are laid on in the object's own coordinates, so they move with it.
-            scene.Layers.Add(new ViewLayer { Mesh = mesh, TextureSpace = o.Mesh, ImageBase = ImageBase(o.Item) });
+            // A dissolved object is drawn with screen-door transparency (its textures' sequences show their base image).
+            scene.Layers.Add(new ViewLayer { Mesh = mesh, TextureSpace = o.Mesh, ImageBase = ImageBase(o.Item), Dissolve = o.Item.DissolveAt(frame.Frame) });
             // The chosen object is boxed in yellow, so its own colours still show.
             if (o.Item == selected && !mesh.IsEmpty)
                 scene.Overlay.AddRange(OverlayLine.Box(mesh.Bounds().Expanded(mesh.Bounds().Extent * 0.02), Palette.Selected));

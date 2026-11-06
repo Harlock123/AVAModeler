@@ -83,6 +83,11 @@ public static class SceneJson
                 FogColor = Arr(scene.FogColor),
                 Occlusion = scene.Occlusion == new AmbientOcclusion() ? null : scene.Occlusion,
                 Environment = scene.Environment == new EnvironmentSettings() ? null : scene.Environment with { Image = EnvironmentPath(scene.Environment.Image, baseDir, Relative) },
+                Images = scene.Images.Count == 0 ? null : scene.Images.Select(i => new ImageDto
+                {
+                    Path = Relative(i.Path, baseDir) ?? i.Path, Sequence = i.Sequence ? true : null, Offset = i.Offset == 0 ? null : i.Offset, Loop = i.Loop ? true : null,
+                }).ToList(),
+                Compositing = scene.Compositing == new CompositingSettings() ? null : CompositingDto.Of(scene.Compositing, p => Relative(p, baseDir) ?? p),
             },
             CurrentCamera = scene.CurrentCamera is { } cam ? items.IndexOf(cam) : null,
             Documents = docDtos,
@@ -130,6 +135,9 @@ public static class SceneJson
                     d.CastShadows = o.CastShadows;
                     d.ReceiveShadows = o.ReceiveShadows;
                     d.BoneFalloffExponent = o.BoneFalloffExponent;
+                    // Written only when it isn't the default (solid throughout), so other scenes' files are as they were.
+                    d.Dissolve = o.Dissolve.Keys.Count == 1 && o.Dissolve.Keys[0].Value == 0 && o.Dissolve.PreBehavior == EndBehavior.Constant && o.Dissolve.PostBehavior == EndBehavior.Constant
+                        ? null : Env(o.Dissolve);
                     d.Morphs = o.Morphs.Select(m => new MorphDto { Name = m.Name, Target = MeshDto.Of(m.Target), Weight = Env(m.Weight) }).ToList();
                     d.Displacements = o.Displacements.Select(x => new DisplacementDto
                     {
@@ -202,7 +210,20 @@ public static class SceneJson
             FogColor = Vec(s.FogColor),
             Occlusion = s.Occlusion ?? new AmbientOcclusion(),
             Environment = s.Environment is { } env ? env with { Image = EnvironmentPath(env.Image ?? "", baseDir, Absolute) } : new EnvironmentSettings(),
+            Images = (s.Images ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Path))
+                .Select(i => new SceneImage { Path = Absolute(i.Path, baseDir)!, Sequence = i.Sequence == true, Offset = i.Offset ?? 0, Loop = i.Loop == true }).ToList(),
         };
+        if (s.Compositing is { } comp)
+        {
+            try
+            {
+                scene.Compositing = comp.ToSettings(p => Absolute(p, baseDir) ?? p).Checked();
+            }
+            catch (ArgumentException e)
+            {
+                warnings.Add($"The compositing settings couldn't be used ({e.Message}); they're left off.");
+            }
+        }
         var docs = dto.Documents.Select(d => LoadDocument(d, load, baseDir, warnings)).ToList();
         var items = new List<SceneItem?>();
         foreach (var d in dto.Items)
@@ -317,6 +338,7 @@ public static class SceneJson
             ReceiveShadows = d.ReceiveShadows ?? true,
             BoneFalloffExponent = d.BoneFalloffExponent ?? 4,
         };
+        SetEnv(o.Dissolve, d.Dissolve);
         foreach (var m in d.Morphs ?? [])
         {
             var morph = new MorphTarget(m.Name, m.Target?.ToMesh() ?? new Mesh());
@@ -503,6 +525,51 @@ public static class SceneJson
         public double[]? FogColor { get; set; }
         public AmbientOcclusion? Occlusion { get; set; }
         public EnvironmentSettings? Environment { get; set; }
+        public List<ImageDto>? Images { get; set; }
+        public CompositingDto? Compositing { get; set; }
+    }
+
+    /// <summary>An entry in the scene's image list; its path relative to the scene's folder when it's in it or below it.</summary>
+    private sealed class ImageDto
+    {
+        public string Path { get; set; } = "";
+        public bool? Sequence { get; set; }
+        public int? Offset { get; set; }
+        public bool? Loop { get; set; }
+    }
+
+    /// <summary>The compositing settings, colours 0 to 1.</summary>
+    private sealed class CompositingDto
+    {
+        public string? Background { get; set; }
+        public string? Foreground { get; set; }
+        public string? ForegroundAlpha { get; set; }
+        public ForegroundKey Key { get; set; }
+        public double[]? KeyLow { get; set; }
+        public double[]? KeyHigh { get; set; }
+        public double? ForegroundDissolve { get; set; }
+
+        public static CompositingDto Of(CompositingSettings c, Func<string, string> path) => new()
+        {
+            Background = c.Background.Length == 0 ? null : path(c.Background),
+            Foreground = c.Foreground.Length == 0 ? null : path(c.Foreground),
+            ForegroundAlpha = c.ForegroundAlpha.Length == 0 ? null : path(c.ForegroundAlpha),
+            Key = c.Key,
+            KeyLow = c.KeyLow == Vec3.Zero ? null : Arr(c.KeyLow),
+            KeyHigh = c.KeyHigh == Vec3.Zero ? null : Arr(c.KeyHigh),
+            ForegroundDissolve = c.ForegroundDissolve == 0 ? null : c.ForegroundDissolve,
+        };
+
+        public CompositingSettings ToSettings(Func<string, string> path) => new()
+        {
+            Background = string.IsNullOrWhiteSpace(Background) ? "" : path(Background),
+            Foreground = string.IsNullOrWhiteSpace(Foreground) ? "" : path(Foreground),
+            ForegroundAlpha = string.IsNullOrWhiteSpace(ForegroundAlpha) ? "" : path(ForegroundAlpha),
+            Key = Key,
+            KeyLow = Vec(KeyLow),
+            KeyHigh = Vec(KeyHigh),
+            ForegroundDissolve = ForegroundDissolve ?? 0,
+        };
     }
 
     private sealed class DocumentDto
@@ -824,6 +891,7 @@ public static class SceneJson
         public bool? CastShadows { get; set; }
         public bool? ReceiveShadows { get; set; }
         public double? BoneFalloffExponent { get; set; }
+        public EnvelopeDto? Dissolve { get; set; }
         public List<MorphDto>? Morphs { get; set; }
         public List<DisplacementDto>? Displacements { get; set; }
 

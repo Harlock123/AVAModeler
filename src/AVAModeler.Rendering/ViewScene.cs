@@ -22,6 +22,43 @@ public sealed class ViewLayer
     public Mesh? TextureSpace;
     /// <summary>The folder this layer's relative image paths start from; null for the scene's.</summary>
     public string? ImageBase;
+    /// <summary>
+    /// How far the layer has faded away (a Layout object's dissolve), 0 (drawn as ever, the default) to 1 (not drawn):
+    /// its faces and wire are drawn with screen-door transparency, that share of its pixels left out by an ordered
+    /// dither (<see cref="Dither"/>), so the depth buffer stays as it is and nothing needs sorting.
+    /// </summary>
+    public double Dissolve;
+}
+
+/// <summary>
+/// Screen-door transparency, the same in both renderers: an 8 × 8 ordered (Bayer) dither of the screen's pixels. A pixel
+/// of a layer dissolved by d is left out when its threshold, (index + 0.5) / 64, is d or less, so d of every 8 × 8 block
+/// goes (to the nearest 64th). Pixels count from the picture's top left, as the software renderer's do; the GL shaders
+/// turn <c>gl_FragCoord</c> round to match.
+/// </summary>
+public static class Dither
+{
+    /// <summary>The 8 × 8 Bayer matrix, row by row (each 0 to 63 once).</summary>
+    public static readonly int[] Bayer =
+    [
+        0, 32, 8, 40, 2, 34, 10, 42,
+        48, 16, 56, 24, 50, 18, 58, 26,
+        12, 44, 4, 36, 14, 46, 6, 38,
+        60, 28, 52, 20, 62, 30, 54, 22,
+        3, 35, 11, 43, 1, 33, 9, 41,
+        51, 19, 59, 27, 49, 17, 57, 25,
+        15, 47, 7, 39, 13, 45, 5, 37,
+        63, 31, 55, 23, 61, 29, 53, 21,
+    ];
+
+    /// <summary>A pixel's threshold, 0 to 1.</summary>
+    public static float Threshold(int x, int y) => (Bayer[(y & 7) * 8 + (x & 7)] + 0.5f) / 64f;
+
+    /// <summary>Whether a pixel (from the top left) of a layer dissolved by <paramref name="dissolve"/> is drawn.</summary>
+    public static bool Keeps(int x, int y, double dissolve) => dissolve <= 0 || Threshold(x, y) > (float)dissolve;
+
+    /// <summary>The matrix as a GLSL array's contents ("0, 32, 8, …").</summary>
+    public static string Glsl => string.Join(", ", Bayer);
 }
 
 /// <summary>A line in world space a tool wants drawn (handles, the action centre, a volume's box).</summary>

@@ -93,6 +93,8 @@ public static class RayTracer
         public IReadOnlyList<(TextureLayer Layer, TextureImage Image)> Layers { get; init; } = [];
         /// <summary>Each layer's procedural, ready to evaluate, or null for an image layer.</summary>
         public IReadOnlyList<ProceduralTexture?> Procedurals { get; init; } = [];
+        /// <summary>The object's dissolve at the frame, 0 (solid) to under 1: the share of what's behind it seen through it.</summary>
+        public double Dissolve { get; init; }
         public bool Textured => Layers.Count > 0;
         public bool TexturedTransparency => Layers.Any(l => l.Layer.Channel == TextureChannel.Transparency);
     }
@@ -157,6 +159,10 @@ public static class RayTracer
             eyes[k] = toWorld[k].TransformPoint(Vec3.Zero);
         }
         double aperture = lens ? dof.ApertureRadius(zoom) : 0;
+        // Compositing (camera rays only): the background where they meet nothing, the foreground laid over afterwards.
+        var background = SceneImages.Picture(scene, scene.Compositing.Background, frame);
+        var foreground = SceneImages.Picture(scene, scene.Compositing.Foreground, frame);
+        var foregroundAlpha = foreground != null && scene.Compositing.Key == ForegroundKey.Alpha ? SceneImages.Picture(scene, scene.Compositing.ForegroundAlpha, frame) : null;
 
         var rgba = new byte[width * height * 4];
         int done = 0;
@@ -200,10 +206,26 @@ public static class RayTracer
                         origin = eyes[k];
                         dir = toWorld[k].TransformVector(local).Normalized();
                     }
-                    sum += tracers[k].Trace(origin, dir, 0, out bool hit, pixel);
-                    if (hit) alpha++;
+                    if (background == null)
+                    {
+                        sum += tracers[k].Trace(origin, dir, 0, out double coverage, pixel);
+                        alpha += coverage;
+                    }
+                    else
+                    {
+                        // The background picture stretched to the frame, at this ray's place on it, over the backdrop.
+                        var (bc, ba) = background.Sample((x + sx) / width, 1 - (y + sy) / height, TextureTiling.Edge, TextureTiling.Edge);
+                        sum += tracers[k].Trace(origin, dir, 0, out double coverage, pixel, backdropAlpha: ba, backdropColor: bc);
+                        alpha += coverage;
+                    }
                 }
                 var c = sum / samples;
+                if (foreground != null)
+                {
+                    double w = ForegroundWeight(scene.Compositing, foreground, foregroundAlpha, (x + 0.5) / width, 1 - (y + 0.5) / height, out var fc);
+                    c = c * (1 - w) + fc * w;
+                    alpha = (w + alpha / samples * (1 - w)) * samples;
+                }
                 int i = (y * width + x) * 4;
                 rgba[i] = ToByte(c.X);
                 rgba[i + 1] = ToByte(c.Y);
@@ -215,6 +237,23 @@ public static class RayTracer
         });
         cancel.ThrowIfCancellationRequested();
         return new RenderImage(width, height, rgba);
+    }
+
+    /// <summary>
+    /// How much of the foreground covers a place on the frame (u across, v up, 0 to 1), and its colour there: its alpha
+    /// (or the alpha image's brightness, for the alpha key), nothing where the colour key leaves it out, less its dissolve.
+    /// </summary>
+    private static double ForegroundWeight(CompositingSettings c, TextureImage foreground, TextureImage? alphaImage, double u, double v, out Vec3 color)
+    {
+        var (fc, fa) = foreground.Sample(u, v, TextureTiling.Edge, TextureTiling.Edge);
+        color = fc;
+        if (c.Key == ForegroundKey.Alpha && alphaImage != null)
+        {
+            var (ac, aa) = alphaImage.Sample(u, v, TextureTiling.Edge, TextureTiling.Edge);
+            fa = TextureImage.Brightness(ac) * aa;
+        }
+        if (c.KeyedOut(fc)) fa = 0;
+        return Math.Clamp(fa * (1 - c.ForegroundDissolve), 0, 1);
     }
 
     /// <summary>The most moments motion blur works the scene out at.</summary>
@@ -384,9 +423,16 @@ public static class RayTracer
             foreach (var of in sf.Objects)
             {
                 if (!of.Item.Visible || of.Item.IsPlaceholder) continue;
+                // A wholly dissolved object is left out: not seen, and casting no shadow.
+                double dissolve = of.Item.DissolveAt(frame);
+                if (dissolve >= 1) continue;
                 int firstMaterial = _materials.Count;
                 string? images = TextureImages.BaseOf(of.Item.SourcePath ?? of.Item.Document?.FilePath);
-                foreach (var s in of.Surfaces.DefaultIfEmpty(new Surface("Default"))) _materials.Add(MaterialOf(s, of.Item, settings, images));
+                foreach (var s in of.Surfaces.DefaultIfEmpty(new Surface("Default")))
+                {
+                    var material = MaterialOf(s, of.Item, settings, images, scene, frame);
+                    _materials.Add(dissolve > 0 ? material with { Dissolve = dissolve } : material);
+                }
                 var mesh = of.WorldMesh;
                 bounds = bounds.Include(mesh.Bounds());
                 AddTriangles(mesh, of.Mesh, of.Surfaces, firstMaterial, of.World.Determinant() < 0, tris);
@@ -405,10 +451,12 @@ public static class RayTracer
             }
         }
 
-        private static Material MaterialOf(Surface s, ObjectItem o, RenderSettings settings, string? images)
+        private static Material MaterialOf(Surface s, ObjectItem o, RenderSettings settings, string? images, Scene scene, double frame)
         {
+            // An image that's a sequence in the scene's image list shows its file for the frame.
             var layers = s.Textures.Where(t => t.IsDrawn && t.Opacity > 0)
-                .Select(t => (t, t.IsImage ? TextureImages.Load(t.Image, images) : Blank)).ToList();
+                .Select(t => (t, !t.IsImage ? Blank
+                    : SceneImages.TextureFile(scene, t.Image, images, frame) is { } file ? TextureImages.Load(file) : TextureImages.Load(t.Image, images))).ToList();
             return new(s.Color.ToVec(), s.Diffuse, s.Specular, Math.Max(1, s.Glossiness), s.Luminosity, Math.Clamp(s.Reflection, 0, 1),
                 Math.Clamp(s.Transparency, 0, 1), settings.RefractionIndices.GetValueOrDefault(s.Name, 1), o.CastShadows, o.ReceiveShadows)
             {
@@ -627,6 +675,13 @@ public static class RayTracer
             return tilted.LengthSquared > 0 ? tilted : n;
         }
 
+        /// <summary>
+        /// What a ray sees where it meets nothing: the compositing background picture for a camera ray when it has one
+        /// (over the backdrop by its alpha), else the backdrop.
+        /// </summary>
+        private Vec3 Backdrop(Vec3 dir, double backdropAlpha, Vec3 backdropColor) =>
+            backdropAlpha >= 1 ? backdropColor : backdropColor * backdropAlpha + Background(dir) * (1 - backdropAlpha);
+
         private Vec3 Background(Vec3 dir)
         {
             if (_environment != null) return _environment.Sample(dir) * _environmentIntensity;
@@ -635,11 +690,35 @@ public static class RayTracer
             return Vec3.Lerp(_scene.GradientBottom, _scene.GradientTop, t);
         }
 
-        public Vec3 Trace(Vec3 origin, Vec3 dir, int depth, out bool hitSomething, in PixelSamples pixel, double travelled = 0)
+        /// <summary>
+        /// What a ray sees, and how much of it is covered by something (1 a solid hit, 0 nothing; a dissolved surface
+        /// covers less). <paramref name="backdropAlpha"/> and <paramref name="backdropColor"/>
+        /// are a camera ray's compositing background: what it sees if it meets nothing (alpha 0: the backdrop). A ray carried
+        /// on past a dissolved surface starts again from the same origin, <paramref name="from"/> along it.
+        /// </summary>
+        public Vec3 Trace(Vec3 origin, Vec3 dir, int depth, out double coverage, in PixelSamples pixel, double travelled = 0,
+            double backdropAlpha = 0, Vec3 backdropColor = default, double from = 0)
         {
-            hitSomething = _bvh.Intersect(origin, dir, _bias, double.PositiveInfinity, out var hit);
-            if (!hitSomething) return Background(dir);
+            bool hitSomething = _bvh.Intersect(origin, dir, from > 0 ? from : _bias, double.PositiveInfinity, out var hit);
+            coverage = hitSomething ? 1 : 0;
+            if (!hitSomething) return backdropAlpha > 0 ? Backdrop(dir, backdropAlpha, backdropColor) : Background(dir);
 
+            var tri = _bvh[hit.Triangle];
+            var m = _materials[tri.Material];
+            if (m.Dissolve > 0)
+            {
+                // A dissolved surface: its share seen, the rest of what's behind it (the same ray, on past it) through it.
+                double d = m.Dissolve;
+                var behind = Trace(origin, dir, depth, out double through, pixel, travelled, backdropAlpha, backdropColor, hit.T + _bias * 10);
+                coverage = (1 - d) + d * through;
+                return Shade(origin, dir, depth, hit, pixel, travelled) * (1 - d) + behind * d;
+            }
+            return Shade(origin, dir, depth, hit, pixel, travelled);
+        }
+
+        /// <summary>The colour where a ray hit a surface: its lighting, reflection and transparency, and fog.</summary>
+        private Vec3 Shade(Vec3 origin, Vec3 dir, int depth, in Hit hit, in PixelSamples pixel, double travelled)
+        {
             var tri = _bvh[hit.Triangle];
             var m = _materials[tri.Material];
             var p = origin + dir * hit.T;
@@ -814,7 +893,9 @@ public static class RayTracer
                 if (_bvh.Intersect(from, d, _bias, o.Distance, out var hit))
                 {
                     double f = hit.T / o.Distance;
-                    hidden += 1 - f * f;
+                    // A dissolved surface hides only its solid share.
+                    if (_materials[_bvh[hit.Triangle].Material].Dissolve is var dissolve and > 0) hidden += (1 - f * f) * (1 - dissolve);
+                    else hidden += 1 - f * f;
                 }
             }
             return Math.Clamp(1 - o.Strength * hidden / k, 0, 1);
@@ -852,7 +933,12 @@ public static class RayTracer
                 var tri = _bvh[hit.Triangle];
                 var m = _materials[tri.Material];
                 double clear = m.TexturedTransparency ? LookAt(m, tri, hit, from + dir * hit.T, tri.Normal, 0).Transparency : m.Transparency;
-                if (m.CastShadows) share *= _settings.Transparency ? clear : 0;
+                if (m.CastShadows)
+                {
+                    // A dissolved surface lets its dissolved share of the light by, and the rest as its transparency does.
+                    if (m.Dissolve > 0) share *= m.Dissolve + (1 - m.Dissolve) * (_settings.Transparency ? clear : 0);
+                    else share *= _settings.Transparency ? clear : 0;
+                }
                 from += dir * hit.T;
                 distance -= hit.T;
             }

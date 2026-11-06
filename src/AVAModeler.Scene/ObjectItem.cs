@@ -36,7 +36,18 @@ public sealed class ObjectItem : SceneItem
     {
         Document = document;
         Layer = layer;
+        Dissolve = Watch(new Envelope(0));
     }
+
+    /// <summary>
+    /// LightWave's Object Dissolve: how far the object has faded away, 0 (solid, the default) to 1 (gone). A keyable
+    /// channel ("dissolve"). The ray tracer lets that share of what's behind it through (and of the light, for its
+    /// shadows), and leaves a wholly dissolved object out; Layout's views draw it with screen-door transparency.
+    /// </summary>
+    public Envelope Dissolve { get; }
+
+    /// <summary>The dissolve at a frame, kept to 0 to 1.</summary>
+    public double DissolveAt(double frame) => Math.Clamp(Dissolve.Evaluate(frame) is var d && double.IsFinite(d) ? d : 0, 0, 1);
 
     public override string Kind => "Object";
 

@@ -501,7 +501,48 @@ public sealed class LayoutSession
         var problems = Scene.Objects.Where(o => !o.IsPlaceholder)
             .SelectMany(o => TextureImages.Problems(o.Surfaces, ImageBase(o)).Select(p => $"{o.Name}, {p}")).ToList();
         if (EnvironmentMap.Problem(Scene.Environment) is { } env) problems.Add(env + " The backdrop shows instead.");
+        problems.AddRange(SceneImages.Problems(Scene, Frame));
         return problems;
+    }
+
+    /// <summary>
+    /// Sets the scene's image list (Layout's Images panel) and, if given, its compositing, as one undo step named
+    /// <paramref name="label"/>. Every image and the compositing are checked first (<see cref="SceneImage.Checked"/>,
+    /// <see cref="CompositingSettings.Checked"/>, and compositing's images must be in the list), so a bad one throws an
+    /// <see cref="ArgumentException"/> and changes nothing. Leaving an image out of the list that compositing uses throws
+    /// too: change the compositing in the same call.
+    /// </summary>
+    public void SetImages(IReadOnlyList<SceneImage> images, CompositingSettings? compositing = null, string label = "Change Images")
+    {
+        foreach (var image in images) image.Checked();
+        var comp = (compositing ?? Scene.Compositing).Checked();
+        foreach (var (path, what) in new[] { (comp.Background, "background"), (comp.Foreground, "foreground"), (comp.ForegroundAlpha, "foreground alpha") })
+            if (path.Length > 0 && !images.Any(i => SceneImages.Same(i.Path, path)))
+                throw new ArgumentException($"The {what} image {Path.GetFileName(path)} isn't in the scene's image list: load it first.");
+        Edit(label, () =>
+        {
+            Scene.Images = images;
+            Scene.Compositing = comp;
+            Scene.Notify();
+        });
+    }
+
+    /// <summary>Sets the scene's compositing (Effects › Compositing) as one undo step; its images must be in the list (see <see cref="SetImages"/>).</summary>
+    public void SetCompositing(CompositingSettings compositing) => SetImages(Scene.Images, compositing, "Change Compositing");
+
+    /// <summary>
+    /// Sets an object's dissolve (0 solid to 1 gone) at the current frame by <see cref="SetChannel"/>'s rule (a key with
+    /// auto-key on, else the value throughout or the key here), as one undo step.
+    /// </summary>
+    public void SetDissolve(ObjectItem item, double value)
+    {
+        if (!(value >= 0 && value <= 1)) throw new ArgumentException("Dissolve must be from 0 (solid) to 1 (gone).");
+        Edit($"Set {item.Name}'s Dissolve", () =>
+        {
+            bool key = AutoKey || Keying.IsAnimated(item.Dissolve) && item.Dissolve.IndexOf(Frame) < 0;
+            Keying.Set(item.Dissolve, Scene, Frame, value, key, $"{item.Name}'s dissolve");
+            Scene.Notify();
+        });
     }
 
     /// <summary>

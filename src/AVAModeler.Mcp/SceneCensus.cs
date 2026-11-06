@@ -289,6 +289,7 @@ internal static class SceneCensus
                 if (light.Type == LightType.Area) o["area_size"] = new JsonArray(Round(light.AreaWidth), Round(light.AreaHeight));
                 if (light.Type is LightType.Point or LightType.Spot) o["radius"] = Round(light.Radius);
                 if (light.IsSoft) o["shadow_samples"] = light.ShadowSamples;
+                LightEffectsCensus.Describe(light, o, frame);
                 break;
             case CameraItem cam:
                 o["current"] = s.CurrentCamera == cam;

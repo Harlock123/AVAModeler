@@ -229,6 +229,15 @@ internal static class SceneCensus
         if (item.Parent != null || item is Bone || item.Pivot != Vec3.Zero) o["world_position"] = Vec(world.TransformPoint(item.Pivot));
         o["keyed"] = Strings(Channels(item).Where(c => !Keying.IsConstant(c.Envelope, s)).Select(c => c.Name));
         if (item.Path is { } path) o["follow_path"] = FollowPathJson(item, path, frame);
+        if (item.Modifiers.Count > 0)
+        {
+            o["modifiers"] = Modifiers(item);
+            // Where the modifiers (after keys, path and IK) put it at this frame, in its parent's space.
+            o["modified_motion"] = new JsonObject
+            {
+                ["position"] = Vec(item.MotionPositionAt(frame)), ["rotation"] = Vec(item.MotionRotationAt(frame)), ["scale"] = Vec(item.MotionScaleAt(frame)),
+            };
+        }
         switch (item)
         {
             case LightItem light:
@@ -351,6 +360,46 @@ internal static class SceneCensus
             o["turned_to"] = Vec(item.MotionRotationAt(frame));
         }
         else o["problem"] = $"Its path needs at least {path.Fewest} points in the scene; it moves by its keys until it has them.";
+        return o;
+    }
+
+    /// <summary>An item's motion modifiers, numbered from 1 in the order they apply, each with its kind and settings.</summary>
+    public static JsonArray Modifiers(SceneItem item) =>
+        new(item.Modifiers.Select((m, i) => (JsonNode)Modifier(m, i)).ToArray());
+
+    /// <summary>One motion modifier: number (from 1), kind and settings, with units in the names' sense of the tools.</summary>
+    public static JsonObject Modifier(MotionModifier m, int index)
+    {
+        var o = new JsonObject { ["number"] = index + 1, ["kind"] = m.Kind };
+        switch (m)
+        {
+            case LagModifier l:
+                o["leader"] = l.Leader.Name;
+                o["delay"] = Round(l.Delay);
+                o["strength"] = Round(l.Strength);
+                o["rotation"] = l.Rotation;
+                break;
+            case JitterModifier j:
+                o["position"] = Vec(j.Position);
+                o["rotation"] = Vec(j.Rotation);
+                o["frequency"] = Round(j.Frequency);
+                o["seed"] = j.Seed;
+                break;
+            case CycleModifier c:
+                o["driver"] = c.Driver.Name;
+                o["driver_channel"] = ChannelNames[(int)c.DriverChannel];
+                o["low"] = Round(c.Low);
+                o["high"] = Round(c.High);
+                break;
+            case OscillateModifier w:
+                o["channel"] = ChannelNames[(int)w.Channel];
+                o["amplitude"] = Round(w.Amplitude);
+                o["period"] = Round(w.Period);
+                o["phase"] = Round(w.Phase);
+                o["damping"] = Round(w.Damping);
+                o["start"] = Round(w.Start);
+                break;
+        }
         return o;
     }
 

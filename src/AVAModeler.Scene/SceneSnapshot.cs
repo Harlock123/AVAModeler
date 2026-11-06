@@ -5,7 +5,7 @@ namespace AVAModeler.Scene;
 /// <summary>
 /// A scene as it was at one moment (<see cref="Scene.Snapshot"/>), to put back with <see cref="Restore"/>: its
 /// settings (the render effects' among them) and current camera, which items it held and in what order, and each item's name, parent, pivot,
-/// visibility, lock, path following (with its path.position channel), channels and own settings (a light's, a camera's, an object's, a bone's, its IK goal, flags and limits included). Items are kept by reference,
+/// visibility, lock, path following (with its path.position channel), motion modifiers, channels and own settings (a light's, a camera's, an object's, a bone's, its IK goal, flags and limits included). Items are kept by reference,
 /// so restoring brings back the very items that were removed since, takes away those added since, and leaves anything
 /// that holds an item (a selection) pointing at the right one. An object's morph targets and displacements are kept by
 /// reference too, with their settings: a morph's name, target and weight envelope, a displacement's shape, axes,
@@ -83,6 +83,7 @@ public sealed class SceneSnapshot
         private readonly bool _visible, _locked;
         private readonly SceneItem? _parent;
         private readonly FollowPath? _path;
+        private readonly IReadOnlyList<MotionModifier> _modifiers;
         private readonly EnvelopeState _pathPosition;
         private readonly EnvelopeState[] _channels;
         private readonly Action _restoreOwn;
@@ -91,6 +92,7 @@ public sealed class SceneSnapshot
         {
             _item = item;
             (_name, _pivot, _visible, _locked, _parent, _path) = (item.Name, item.Pivot, item.Visible, item.Locked, item.Parent, item.Path);
+            _modifiers = item.Modifiers;
             _channels = item.Channels.Select(c => new EnvelopeState(c)).ToArray();
             _pathPosition = new EnvelopeState(item.PathPosition);
             _restoreOwn = item switch
@@ -192,6 +194,7 @@ public sealed class SceneSnapshot
             _item.Scene = scene;
             (_item.Name, _item.Pivot, _item.Visible, _item.Locked, _item.Path) = (_name, _pivot, _visible, _locked, _path);
             _item.RestoreParent(_parent);
+            _item.RestoreModifiers(_modifiers);
             foreach (var c in _channels) c.Restore();
             _pathPosition.Restore();
             _restoreOwn();

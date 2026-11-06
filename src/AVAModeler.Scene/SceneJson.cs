@@ -108,6 +108,7 @@ public static class SceneJson
                 };
                 d.PathPosition = Env(item.PathPosition);
             }
+            if (item.Modifiers.Count > 0) d.Modifiers = item.Modifiers.Select(m => ModifierDto.Of(m, items)).Where(m => m != null).Cast<ModifierDto>().ToList();
             switch (item)
             {
                 case ObjectItem o:
@@ -259,6 +260,37 @@ public static class SceneJson
             if (FollowPath.Problem(follower, points) is { } problem) warnings.Add(problem);
             else if (points.Count < path.Fewest) warnings.Add($"{follower.Name}'s path has too few points left, so it no longer follows it.");
             else follower.Path = path;
+        }
+        for (int i = 0; i < dto.Items.Count; i++)
+        {
+            if (items[i] is not { } modified || dto.Items[i].Modifiers is not { Count: > 0 } mds) continue;
+            var list = new List<MotionModifier>();
+            foreach (var md in mds)
+            {
+                SceneItem? At(int? index) => index is int x && x >= 0 && x < items.Count ? items[x] : null;
+                MotionModifier? m;
+                try
+                {
+                    m = md.ToModifier(At)?.Checked();
+                }
+                catch (ArgumentException e)
+                {
+                    warnings.Add($"{modified.Name}'s {md.Kind} modifier is left out: {e.Message}");
+                    continue;
+                }
+                if (m == null)
+                {
+                    warnings.Add($"{modified.Name}'s {md.Kind} modifier is left out: {(md.Kind is "lag" or "cycle" ? "the item it follows isn't in the scene" : "its kind isn't known")}.");
+                    continue;
+                }
+                if (MotionModifier.Problem(modified, m) is { } problem)
+                {
+                    warnings.Add($"{modified.Name}'s {md.Kind} modifier is left out: {problem}");
+                    continue;
+                }
+                list.Add(m);
+            }
+            modified.Modifiers = list;
         }
         for (int i = 0; i < dto.Items.Count; i++)
         {
@@ -688,6 +720,89 @@ public static class SceneJson
         public double Banking { get; set; }
     }
 
+    /// <summary>
+    /// A motion modifier: its kind (lag, jitter, cycle, oscillate) and that kind's settings, other items by index. Only
+    /// the kind's own fields are written.
+    /// </summary>
+    private sealed class ModifierDto
+    {
+        public string Kind { get; set; } = "";
+        public int? Leader { get; set; }
+        public double? Delay { get; set; }
+        public double? Strength { get; set; }
+        public bool? Rotation { get; set; }
+        public double[]? PositionAmount { get; set; }
+        public double[]? RotationAmount { get; set; }
+        public double? Frequency { get; set; }
+        public int? Seed { get; set; }
+        public int? Driver { get; set; }
+        public Channel? DriverChannel { get; set; }
+        public double? Low { get; set; }
+        public double? High { get; set; }
+        public Channel? Channel { get; set; }
+        public double? Amplitude { get; set; }
+        public double? Period { get; set; }
+        public double? Phase { get; set; }
+        public double? Damping { get; set; }
+        public double? Start { get; set; }
+
+        public static ModifierDto? Of(MotionModifier m, List<SceneItem> items)
+        {
+            if (m.Reference is { } r && items.IndexOf(r) < 0) return null;
+            return m switch
+            {
+                LagModifier l => new ModifierDto { Kind = l.Kind, Leader = items.IndexOf(l.Leader), Delay = l.Delay, Strength = l.Strength, Rotation = l.Rotation },
+                JitterModifier j => new ModifierDto { Kind = j.Kind, PositionAmount = Arr(j.Position), RotationAmount = Arr(j.Rotation), Frequency = j.Frequency, Seed = j.Seed },
+                CycleModifier c => new ModifierDto { Kind = c.Kind, Driver = items.IndexOf(c.Driver), DriverChannel = c.DriverChannel, Low = c.Low, High = c.High },
+                OscillateModifier o => new ModifierDto
+                {
+                    Kind = o.Kind, Channel = o.Channel, Amplitude = o.Amplitude, Period = o.Period, Phase = o.Phase, Damping = o.Damping, Start = o.Start,
+                },
+                _ => null,
+            };
+        }
+
+        /// <summary>The modifier (unchecked), or null if its kind isn't known or the item it refers to isn't there.</summary>
+        public MotionModifier? ToModifier(Func<int?, SceneItem?> item)
+        {
+            switch (Kind)
+            {
+                case "lag":
+                {
+                    if (item(Leader) is not { } leader) return null;
+                    var d = new LagModifier(leader);
+                    return d with { Delay = Delay ?? d.Delay, Strength = Strength ?? d.Strength, Rotation = Rotation ?? d.Rotation };
+                }
+                case "jitter":
+                {
+                    var d = new JitterModifier();
+                    return d with
+                    {
+                        Position = PositionAmount == null ? d.Position : Vec(PositionAmount), Rotation = RotationAmount == null ? d.Rotation : Vec(RotationAmount),
+                        Frequency = Frequency ?? d.Frequency, Seed = Seed ?? d.Seed,
+                    };
+                }
+                case "cycle":
+                {
+                    if (item(Driver) is not { } driver) return null;
+                    var d = new CycleModifier(driver);
+                    return d with { DriverChannel = DriverChannel ?? d.DriverChannel, Low = Low ?? d.Low, High = High ?? d.High };
+                }
+                case "oscillate":
+                {
+                    var d = new OscillateModifier();
+                    return d with
+                    {
+                        Channel = Channel ?? d.Channel, Amplitude = Amplitude ?? d.Amplitude, Period = Period ?? d.Period, Phase = Phase ?? d.Phase,
+                        Damping = Damping ?? d.Damping, Start = Start ?? d.Start,
+                    };
+                }
+                default:
+                    return null;
+            }
+        }
+    }
+
     private sealed class ItemDto
     {
         public string Type { get; set; } = "";
@@ -700,6 +815,8 @@ public static class SceneJson
         public List<EnvelopeDto> Channels { get; set; } = [];
         public PathDto? Path { get; set; }
         public EnvelopeDto? PathPosition { get; set; }
+        /// <summary>Written only when the item has motion modifiers.</summary>
+        public List<ModifierDto>? Modifiers { get; set; }
 
         public int? Document { get; set; }
         public int? Layer { get; set; }

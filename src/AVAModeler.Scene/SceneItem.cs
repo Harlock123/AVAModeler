@@ -30,6 +30,27 @@ public abstract class SceneItem
     /// <summary>The path the item follows (null: it moves by its position keys). See <see cref="FollowPath"/>.</summary>
     public FollowPath? Path;
 
+    private IReadOnlyList<MotionModifier> _modifiers = [];
+
+    /// <summary>
+    /// The item's motion modifiers (lag, jitter, cycle, oscillate: see <see cref="MotionModifier"/>), applied in order
+    /// after its keys, path following and IK. Immutable: change them by setting a new list (it's copied), which bumps
+    /// the scene's version; snapshots share the list. Check each with <see cref="MotionModifier.Checked"/> and
+    /// <see cref="MotionModifier.Problem"/> first.
+    /// </summary>
+    public IReadOnlyList<MotionModifier> Modifiers
+    {
+        get => _modifiers;
+        set
+        {
+            _modifiers = value.Count == 0 ? [] : [.. value];
+            Scene?.Notify();
+        }
+    }
+
+    /// <summary>Puts the modifiers back as they were, without notifying (for snapshots and copies).</summary>
+    internal void RestoreModifiers(IReadOnlyList<MotionModifier> modifiers) => _modifiers = modifiers;
+
     /// <summary>The scene the item belongs to (set when it is added to one).</summary>
     public Scene? Scene { get; internal set; }
 
@@ -106,19 +127,28 @@ public abstract class SceneItem
 
     /// <summary>
     /// Heading, pitch and bank in degrees as the item actually turns at a frame: its keys' (<see cref="RotationAt"/>),
-    /// unless full-time IK turns it (a bone in a chain with a goal), when it's the solved rotation.
+    /// unless full-time IK turns it (a bone in a chain with a goal), when it's the solved rotation, or a path aligns it;
+    /// with any motion modifiers applied.
     /// </summary>
     public Vec3 MotionRotationAt(double frame) => Scene is { } s ? s.Motion.Rotation(this, frame) : RotationAt(frame);
 
     /// <summary>
     /// The item's position (in its parent's space) as it actually moves at a frame: its keys' (<see cref="PositionAt"/>),
-    /// unless it follows a path, when it's where the path puts it.
+    /// unless it follows a path, when it's where the path puts it, and with any motion modifiers applied.
     /// </summary>
     public Vec3 MotionPositionAt(double frame) => Scene is { } s ? s.Motion.Position(this, frame) : PositionAt(frame);
 
-    /// <summary>The item's own transform at a frame, from its position and rotation as it moves (path following and IK included), scale and pivot.</summary>
+    /// <summary>
+    /// The item's scale as it actually is at a frame: its keys' (<see cref="ScaleAt"/>), unless a motion modifier changes it.
+    /// </summary>
+    public Vec3 MotionScaleAt(double frame) => Scene is { } s ? s.Motion.Scale(this, frame) : ScaleAt(frame);
+
+    /// <summary>
+    /// The item's own transform at a frame, from its position, rotation and scale as it moves (path following, IK and
+    /// motion modifiers included) and its pivot.
+    /// </summary>
     public Mat4 LocalMatrix(double frame) =>
-        Mat4.Translation(MotionPositionAt(frame)) * Rotations.Matrix(MotionRotationAt(frame)) * Mat4.Scaling(ScaleAt(frame)) * Mat4.Translation(-Pivot);
+        Mat4.Translation(MotionPositionAt(frame)) * Rotations.Matrix(MotionRotationAt(frame)) * Mat4.Scaling(MotionScaleAt(frame)) * Mat4.Translation(-Pivot);
 
     public Mat4 WorldMatrix(double frame) => WorldMatrix(frame, null);
 

@@ -12,7 +12,8 @@ namespace AVAModeler.Scene;
 /// as LightWave's own settings; an area light's size, a light's radius, the effects' sample counts, ambient occlusion
 /// and the environment have no place in the format either (the .avascene keeps them). A bone's IK goal is written as
 /// <c>GoalItem</c> (with <c>GoalStrength 1</c> and <c>FullTimeIK</c>) and its joint limits as <c>HLimits</c>,
-/// <c>PLimits</c> and <c>BLimits</c>; its IK anchor and locked channels aren't written (a warning says so).
+/// <c>PLimits</c> and <c>BLimits</c>; its IK anchor and locked channels aren't written (a warning says so). Path following
+/// and motion modifiers have no place either: the keys are written, with a warning.
 /// </summary>
 public static class LwsWriter
 {
@@ -157,6 +158,8 @@ public static class LwsWriter
         {
             if (item.Path != null)
                 warnings.Add($"{item.Name} follows a path, which a LightWave scene has no place for: the .avascene keeps it, and the .lws has only its keys (bake the path into keys first to keep the motion).");
+            if (item.Modifiers.Count > 0)
+                warnings.Add($"{item.Name} has motion modifiers ({string.Join(", ", item.Modifiers.Select(m => m.Kind))}), which a LightWave scene has no place for: the .avascene keeps them, and the .lws has only its keys.");
             if (item.Pivot != Vec3.Zero) L($"PivotPosition {V(item.Pivot)}");
             if (item.Parent != null && item is not Bone) L($"ParentItem {Id(item.Parent)}");
         }

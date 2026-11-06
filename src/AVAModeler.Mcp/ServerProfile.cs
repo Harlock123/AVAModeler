@@ -84,6 +84,7 @@ public static class ToolGroups
         "set_follow_path", "bake_path", "shift_keys", "scale_keys", "set_scene", "undo_scene", "redo_scene", "render_scene",
         "render_scene_view", "render_animation", "make_movie",
         "set_morph", "remove_morph", "add_displacement", "set_displacement", "remove_displacement", "skelegons_to_bones", "set_ik", "bake_ik",
+        "add_motion_modifier", "set_motion_modifier", "remove_motion_modifier",
     };
 
     /// <summary>The modeling tools: every other one of <see cref="ModelerTools"/>'.</summary>

@@ -148,7 +148,8 @@ public sealed class Scene
 
     /// <summary>
     /// Removes an item. Its children move up to its parent (a removed object takes its bones with it, and anything
-    /// else parented to it or them is unparented).
+    /// else parented to it or them is unparented). IK goals on it are cleared, paths leave it out, and motion modifiers
+    /// that take their motion from it (a lag behind it, a cycle it drives) are dropped.
     /// </summary>
     public void Remove(SceneItem item)
     {
@@ -178,13 +179,17 @@ public sealed class Scene
                 var left = path.Points.Where(p => !gone.Contains(p)).ToList();
                 x.Path = left.Count >= path.Fewest ? path with { Points = left } : null;
             }
+        // A modifier that takes its motion from an item that has gone (a lag's leader, a cycle's driver) is dropped.
+        foreach (var x in _items)
+            if (x.Modifiers.Any(m => m.Reference is { } r && gone.Contains(r)))
+                x.RestoreModifiers([.. x.Modifiers.Where(m => m.Reference is not { } r || !gone.Contains(r))]);
         Notify();
     }
 
     /// <summary>
     /// A copy of the scene that shares nothing that can change with it, so it can be rendered on another thread while
     /// this one is edited: the settings, every item with its channels and settings, the parents and the current
-    /// camera (IK goals and paths' points pointing at the copies). Each object's document is copied once by <paramref name="copyDocument"/> (shared, as it is, if that is
+    /// camera (IK goals, paths' points and modifiers' leaders and drivers pointing at the copies). Each object's document is copied once by <paramref name="copyDocument"/> (shared, as it is, if that is
     /// null); morph target meshes are shared, as nothing edits them in place.
     /// </summary>
     public Scene Copy(Func<Document, Document>? copyDocument = null)
@@ -319,7 +324,7 @@ public sealed class Scene
     }
 
     /// <summary>
-    /// Points a copy's parent, IK goal and path at the copies of what the original's pointed at (in <paramref name="map"/>),
+    /// Points a copy's parent, IK goal, path and motion modifiers at the copies of what the original's pointed at (in <paramref name="map"/>),
     /// or at what <paramref name="outside"/> gives for one that wasn't copied (null: none). Extend it when an item gets
     /// a new reference to another.
     /// </summary>
@@ -334,6 +339,8 @@ public sealed class Scene
             var points = path.Points.Select(To).Where(x => x != null).Cast<SceneItem>().ToList();
             copy.Path = points.Count >= path.Fewest || points.Count == path.Points.Count ? path with { Points = points } : null;
         }
+        // Modifiers referring to another item refer to its copy, or to what's outside; one left with nothing to refer to is dropped.
+        if (item.Modifiers.Count > 0) copy.RestoreModifiers([.. item.Modifiers.Select(m => m.Relinked(To)).Where(m => m != null).Cast<MotionModifier>()]);
     }
 
     /// <summary>The first item with a name, or null.</summary>

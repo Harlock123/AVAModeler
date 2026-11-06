@@ -416,6 +416,25 @@ public sealed class LayoutSession
         SetStatus($"Keyed {end.Name}'s IK chain at frame {Frame:0}.");
     }
 
+    // ───────────────────────────── motion modifiers ─────────────────────────────
+
+    /// <summary>
+    /// Gives an item these motion modifiers (lag, jitter, cycle, oscillate; in the order they apply), replacing any it
+    /// had, as one undo step; an empty list takes them all away. Each is checked first
+    /// (<see cref="MotionModifier.Checked"/>, <see cref="MotionModifier.Problem"/>), so a bad one changes nothing and
+    /// throws an <see cref="ArgumentException"/> saying what's wrong.
+    /// </summary>
+    public void SetModifiers(SceneItem item, IReadOnlyList<MotionModifier> modifiers)
+    {
+        if (item.Scene != Scene) throw new ArgumentException($"{item.Name} isn't in the scene.");
+        for (int i = 0; i < modifiers.Count; i++)
+        {
+            var m = modifiers[i].Checked();
+            if (MotionModifier.Problem(item, m) is { } problem) throw new ArgumentException(modifiers.Count > 1 ? $"Modifier {i + 1} ({m.Kind}): {problem}" : problem);
+        }
+        Edit(modifiers.Count == 0 ? $"Remove {item.Name}'s Motion Modifiers" : $"Set {item.Name}'s Motion Modifiers", () => item.Modifiers = modifiers);
+    }
+
     /// <summary>Adds an item as one undo step ("Add Light") and chooses it.</summary>
     public T Add<T>(T item) where T : SceneItem
     {

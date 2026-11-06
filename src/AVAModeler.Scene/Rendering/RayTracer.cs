@@ -18,6 +18,8 @@ public sealed class RenderSettings
     public Dictionary<string, double> RefractionIndices = [];
     /// <summary>The most threads to use; 0 or less for as many as the machine has.</summary>
     public int MaxThreads = -1;
+    /// <summary>For tests: counts of the work a render did (shadow rays, shadow map lookups), or null to count nothing.</summary>
+    internal RenderCounters? Counters;
 }
 
 /// <summary>A rendered image: width × height pixels, 4 bytes each (red, green, blue, alpha), top row first.</summary>
@@ -84,7 +86,7 @@ public sealed class RenderImage(int width, int height, byte[] rgba)
 /// Rendering is deterministic: the antialiasing jitter and every effect's samples come from hashes of the pixel, the
 /// sample number and what they're for.
 /// </summary>
-public static class RayTracer
+public static partial class RayTracer
 {
     private sealed record Material(Vec3 Color, double Diffuse, double Specular, double Glossiness, double Luminosity,
         double Reflection, double Transparency, double Ior, bool CastShadows, bool ReceiveShadows)
@@ -165,6 +167,8 @@ public static class RayTracer
         var foregroundAlpha = foreground != null && scene.Compositing.Key == ForegroundKey.Alpha ? SceneImages.Picture(scene, scene.Compositing.ForegroundAlpha, frame) : null;
 
         var rgba = new byte[width * height * 4];
+        // Lens flares are drawn over the finished picture, so it is kept in full precision while they're on.
+        var flares = FlareCanvas.For(scene, width, height);
         int done = 0;
         var options = new ParallelOptions { MaxDegreeOfParallelism = settings.MaxThreads > 0 ? settings.MaxThreads : -1 };
         Parallel.For(0, height, options, y =>
@@ -206,18 +210,18 @@ public static class RayTracer
                         origin = eyes[k];
                         dir = toWorld[k].TransformVector(local).Normalized();
                     }
-                    if (background == null)
-                    {
-                        sum += tracers[k].Trace(origin, dir, 0, out double coverage, pixel);
-                        alpha += coverage;
-                    }
+                    Vec3 seen;
+                    double coverage;
+                    if (background == null) seen = tracers[k].Trace(origin, dir, 0, out coverage, pixel);
                     else
                     {
                         // The background picture stretched to the frame, at this ray's place on it, over the backdrop.
                         var (bc, ba) = background.Sample((x + sx) / width, 1 - (y + sy) / height, TextureTiling.Edge, TextureTiling.Edge);
-                        sum += tracers[k].Trace(origin, dir, 0, out double coverage, pixel, backdropAlpha: ba, backdropColor: bc);
-                        alpha += coverage;
+                        seen = tracers[k].Trace(origin, dir, 0, out coverage, pixel, backdropAlpha: ba, backdropColor: bc);
                     }
+                    if (tracers[k].HasVolumetrics) seen += tracers[k].Volumetric(origin, dir, pixel);
+                    sum += seen;
+                    alpha += coverage;
                 }
                 var c = sum / samples;
                 if (foreground != null)
@@ -227,6 +231,7 @@ public static class RayTracer
                     alpha = (w + alpha / samples * (1 - w)) * samples;
                 }
                 int i = (y * width + x) * 4;
+                if (flares != null) flares.Keep(x, y, c);
                 rgba[i] = ToByte(c.X);
                 rgba[i + 1] = ToByte(c.Y);
                 rgba[i + 2] = ToByte(c.Z);
@@ -236,6 +241,11 @@ public static class RayTracer
             progress?.Invoke((double)n / height);
         });
         cancel.ThrowIfCancellationRequested();
+        if (flares != null)
+        {
+            DrawFlares(flares, scene, camera, frame, tanH, tanV, tracers[moments / 2], options);
+            flares.WriteTo(rgba);
+        }
         return new RenderImage(width, height, rgba);
     }
 
@@ -395,7 +405,7 @@ public static class RayTracer
     }
 
     /// <summary>The scene at a frame turned into triangles, materials and lights, ready to trace rays through.</summary>
-    private sealed class Tracer
+    private sealed partial class Tracer
     {
         private readonly Scene _scene;
         private readonly RenderSettings _settings;
@@ -449,6 +459,7 @@ public static class RayTracer
                 _lights.Add(new LightInfo(l.Type, w.TransformPoint(Vec3.Zero), w.TransformVector(Vec3.UnitZ).Normalized(), color, l,
                     w.TransformVector(Vec3.UnitX) * l.AreaWidth, w.TransformVector(Vec3.UnitY) * l.AreaHeight));
             }
+            PrepareLightEffects(tris, bounds);
         }
 
         private static Material MaterialOf(Surface s, ObjectItem o, RenderSettings settings, string? images, Scene scene, double frame)
@@ -745,7 +756,9 @@ public static class RayTracer
             for (int li = 0; li < _lights.Count; li++)
             {
                 var light = _lights[li];
-                if (light.Item.IsSoft)
+                // A light with a shadow map is lit as a point, its softness the map's.
+                var map = _shadowMaps?[li];
+                if (light.Item.IsSoft && map == null)
                 {
                     SoftLight(light, li, p, lift, ns, view, look, m, diffuse, pixel, depth, ref lit, ref highlight);
                     continue;
@@ -774,7 +787,7 @@ public static class RayTracer
                 }
                 if (strength <= 0) continue;
                 if (_settings.Shadows && light.Item.Shadows && m.ReceiveShadows)
-                    strength *= Transmission(p + lift, toLight, distance);
+                    strength *= map != null ? map.Lit(p + lift, nf, toLight, _settings.Counters) : Transmission(p + lift, toLight, distance);
                 if (strength <= 0) continue;
                 var c = light.Color * strength;
                 lit += Vec3.Scale(diffuse, c) * ndl;
@@ -926,6 +939,7 @@ public static class RayTracer
         /// <summary>How much light gets from a point to a light: 1 unblocked, less through transparent surfaces, 0 blocked.</summary>
         private double Transmission(Vec3 from, Vec3 dir, double distance)
         {
+            if (_settings.Counters is { } counters) Interlocked.Increment(ref counters.ShadowRays);
             double share = 1;
             for (int i = 0; i < 64 && share > 1e-4; i++)
             {

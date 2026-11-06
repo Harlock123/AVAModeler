@@ -306,8 +306,10 @@ public sealed class Scene
                 {
                     Color = l.Color, Range = l.Range, ConeAngle = l.ConeAngle, EdgeAngle = l.EdgeAngle, Shadows = l.Shadows,
                     AreaWidth = l.AreaWidth, AreaHeight = l.AreaHeight, Radius = l.Radius, ShadowSamples = l.ShadowSamples,
+                    Flare = l.Flare, Volumetric = l.Volumetric, ShadowMap = l.ShadowMap,
                 };
                 light.Intensity.CopyFrom(l.Intensity);
+                light.FlareIntensity.CopyFrom(l.FlareIntensity);
                 c = light;
                 break;
             case CameraItem cam:

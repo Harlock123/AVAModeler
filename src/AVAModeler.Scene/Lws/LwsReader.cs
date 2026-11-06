@@ -30,6 +30,10 @@ public sealed record SceneLoadResult(Scene Scene, IReadOnlyList<string> Warnings
 /// <c>(sequence)</c> after it for a numbered sequence; each goes in the scene's image list), <c>ForegroundKey</c> with
 /// <c>LowClipColor</c> and <c>HighClipColor</c> (the colour key), and <c>FGDissolve</c>. An alpha image makes the key
 /// the alpha key.
+/// A light's <c>ShadowType</c> is 0 off, 1 ray traced, 2 shadow map, with <c>ShadowMapSize</c> and
+/// <c>ShadowFuzziness</c> (or <c>ShadowMapFuzziness</c>); its lens flare is <c>LensFlare</c>, <c>FlareIntensity</c>
+/// (a value or envelope), <c>FlareNominalDistance</c>, <c>FlareDissolve</c> (its first value if enveloped), and the
+/// <c>LensFlareFade</c> and <c>LensFlareOptions</c> bits as <see cref="LwsLightBits"/> describes them.
 /// </para>
 /// </summary>
 public static class LwsReader
@@ -218,8 +222,47 @@ public static class LwsReader
                     o.ReceiveShadows = (bits & 4) != 0;
                     break;
                 }
-                case "ShadowOptions" or "ShadowType" or "ShadowCasting" when _current is LightItem l:
+                case "ShadowType" when _current is LightItem l:
+                {
+                    int t = Int(rest, key);
+                    l.Shadows = t != 0;
+                    l.ShadowMap = l.ShadowMap with { On = t == 2 };
+                    break;
+                }
+                case "ShadowOptions" or "ShadowCasting" when _current is LightItem l:
                     l.Shadows = Int(rest, key) != 0;
+                    break;
+                case "ShadowMapSize" when _current is LightItem l:
+                {
+                    int n = Int(rest, key);
+                    if (n < LightEffects.MinMapSize || n > LightEffects.MaxMapSize)
+                        Warn($"Line {_pos}: shadow map size {n} is read as {Math.Clamp(n, LightEffects.MinMapSize, LightEffects.MaxMapSize)} (sizes are {LightEffects.MinMapSize} to {LightEffects.MaxMapSize}).");
+                    l.ShadowMap = l.ShadowMap with { Size = Math.Clamp(n, LightEffects.MinMapSize, LightEffects.MaxMapSize) };
+                    break;
+                }
+                case "ShadowFuzziness" or "ShadowMapFuzziness" when _current is LightItem l:
+                    l.ShadowMap = l.ShadowMap with { Fuzziness = Math.Clamp(First(ValueOrEnvelope(rest, key)), 0, LightEffects.MaxFuzziness) };
+                    break;
+                case "LensFlare" when _current is LightItem l:
+                    l.Flare = l.Flare with { On = Int(rest, key) != 0 };
+                    break;
+                case "FlareIntensity" when _current is LightItem l:
+                    Assign(l.FlareIntensity, ValueOrEnvelope(rest, key));
+                    break;
+                case "FlareNominalDistance" when _current is LightItem l:
+                {
+                    double d = First(ValueOrEnvelope(rest, key));
+                    if (d > 0 && double.IsFinite(d)) l.Flare = l.Flare with { NominalDistance = d };
+                    break;
+                }
+                case "FlareDissolve" when _current is LightItem l:
+                    l.Flare = l.Flare with { Dissolve = Math.Clamp(First(ValueOrEnvelope(rest, key)), 0, 1) };
+                    break;
+                case "LensFlareFade" when _current is LightItem l:
+                    l.Flare = LwsLightBits.ReadFade(l.Flare, Int(rest, key));
+                    break;
+                case "LensFlareOptions" when _current is LightItem l:
+                    l.Flare = LwsLightBits.ReadOptions(l.Flare, Int(rest, key));
                     break;
 
                 case "LightType" when _current is LightItem l:

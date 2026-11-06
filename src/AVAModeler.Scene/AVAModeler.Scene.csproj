@@ -4,6 +4,10 @@
     <RootNamespace>AVAModeler.Scene</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The tests count a render's shadow rays and shadow map lookups (RenderSettings.Counters). -->
+    <InternalsVisibleTo Include="AVAModeler.Scene.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
   </ItemGroup>
 </Project>

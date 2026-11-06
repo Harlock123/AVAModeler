@@ -17,6 +17,10 @@ namespace AVAModeler.Scene;
 /// object's dissolve is <c>ObjectDissolve</c> (a value or an envelope, when it isn't 0 throughout); compositing is
 /// <c>BGImage</c>, <c>FGImage</c>, <c>FGAlphaImage</c>, <c>ForegroundKey</c>, <c>LowClipColor</c>,
 /// <c>HighClipColor</c> and <c>FGDissolve</c>, sequences marked with <c>(sequence)</c> after the path.
+/// A light's shadow map is <c>ShadowType 2</c> with <c>ShadowMapSize</c> and <c>ShadowFuzziness</c>, and its lens
+/// flare <c>LensFlare 1</c> with <c>FlareIntensity</c>, <c>FlareNominalDistance</c>, <c>FlareDissolve</c>,
+/// <c>LensFlareFade</c> and <c>LensFlareOptions</c> (written only when on, so other scenes stay as they were); the
+/// flare's sizes and streak count and volumetric lights have no place in the format (a warning says so).
 /// </summary>
 public static class LwsWriter
 {
@@ -84,7 +88,15 @@ public static class LwsWriter
                 if (l.Range > 0) L($"LightRange {N(l.Range)}");
                 L($"LightConeAngle {N(l.ConeAngle)}");
                 L($"LightEdgeAngle {N(l.EdgeAngle)}");
-                L($"ShadowType {(l.Shadows ? 1 : 0)}");
+                L($"ShadowType {(!l.Shadows ? 0 : l.UsesShadowMap ? 2 : 1)}");
+                if (l.UsesShadowMap)
+                {
+                    L($"ShadowMapSize {l.ShadowMap.Size}");
+                    L($"ShadowFuzziness {N(l.ShadowMap.Fuzziness)}");
+                }
+                if (l.Flare.On) WriteFlare(l);
+                if (l.Volumetric.On)
+                    warnings.Add($"{l.Name}'s volumetric light has no place in a LightWave scene as AVA keeps it: the .avascene keeps it.");
                 L();
             }
 
@@ -156,6 +168,19 @@ public static class LwsWriter
                 && !SceneImages.Same(i.Path, c.ForegroundAlpha));
             if (unused > 0)
                 warnings.Add($"{unused} of the scene's images {(unused == 1 ? "isn't" : "aren't")} used by compositing, and a LightWave scene has no image list for {(unused == 1 ? "it" : "them")}: the .avascene keeps the list.");
+        }
+
+        private void WriteFlare(LightItem l)
+        {
+            var f = l.Flare;
+            L("LensFlare 1");
+            Value("FlareIntensity", l.FlareIntensity);
+            L($"FlareNominalDistance {N(f.NominalDistance)}");
+            L($"FlareDissolve {N(f.Dissolve)}");
+            L($"LensFlareFade {LwsLightBits.Fade(f)}");
+            L($"LensFlareOptions {LwsLightBits.Options(f)}");
+            if (!LwsLightBits.Kept(f))
+                warnings.Add($"{l.Name}'s lens flare size, ring size and streak count and length have no place in a LightWave scene: the .avascene keeps them.");
         }
 
         private void WriteObject(ObjectItem o)

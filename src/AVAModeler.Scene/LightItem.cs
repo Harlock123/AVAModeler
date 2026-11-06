@@ -27,7 +27,7 @@ public sealed class LightItem : SceneItem
     public double ConeAngle = 30;
     /// <summary>The soft edge in degrees inside the cone's rim, over which a spot light fades out.</summary>
     public double EdgeAngle = 5;
-    /// <summary>Whether the light casts ray-traced shadows.</summary>
+    /// <summary>Whether the light casts shadows: ray traced, or from a shadow map when <see cref="ShadowMap"/> is on.</summary>
     public bool Shadows = true;
     /// <summary>An area light's size in metres along its X and Y axes (default 1 × 1).</summary>
     public double AreaWidth = 1, AreaHeight = 1;
@@ -35,6 +35,12 @@ public sealed class LightItem : SceneItem
     public double Radius;
     /// <summary>Rays a pixel a soft light (area, or with a radius) takes for its light and shadows (1 to 256, default 16).</summary>
     public int ShadowSamples = 16;
+    /// <summary>The lens flare (off by default); its intensity is <see cref="FlareIntensity"/>.</summary>
+    public LensFlare Flare = new();
+    /// <summary>The beam seen in the air (off by default).</summary>
+    public VolumetricLight Volumetric = new();
+    /// <summary>Shadow-map shadows instead of ray-traced ones (off by default: ray traced, when <see cref="Shadows"/> is on).</summary>
+    public ShadowMapSettings ShadowMap = new();
 
     /// <summary>Whether the light has a size, so its shadows are soft: an area light, or a point or spot light with a radius.</summary>
     public bool IsSoft => Type == LightType.Area || Radius > 0 && Type is LightType.Point or LightType.Spot;
@@ -43,12 +49,19 @@ public sealed class LightItem : SceneItem
     {
         Type = type;
         Intensity = Watch(new Envelope(1));
+        FlareIntensity = Watch(new Envelope(1));
     }
 
     public override string Kind => "Light";
 
     /// <summary>The intensity (1 is LightWave's 100%).</summary>
     public Envelope Intensity { get; }
+
+    /// <summary>The lens flare's intensity (1 is 100%), keyable as the channel "flare.intensity".</summary>
+    public Envelope FlareIntensity { get; }
+
+    /// <summary>Whether the light's shadows come from a shadow map: shadows on, a map asked for, and not an area light (which keeps ray-traced shadows).</summary>
+    public bool UsesShadowMap => Shadows && ShadowMap.On && Type != LightType.Area;
 
     /// <summary>The way the light shines, in world space.</summary>
     public Vec3 Direction(double frame) => WorldMatrix(frame).TransformVector(Vec3.UnitZ).Normalized();

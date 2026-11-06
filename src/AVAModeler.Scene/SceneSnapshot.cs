@@ -113,12 +113,16 @@ public sealed class SceneSnapshot
         {
             var (type, color, range, cone, edge, shadows) = (l.Type, l.Color, l.Range, l.ConeAngle, l.EdgeAngle, l.Shadows);
             var (width, height, radius, samples) = (l.AreaWidth, l.AreaHeight, l.Radius, l.ShadowSamples);
+            var (flare, volumetric, map) = (l.Flare, l.Volumetric, l.ShadowMap);
             var intensity = new EnvelopeState(l.Intensity);
+            var flareIntensity = new EnvelopeState(l.FlareIntensity);
             return () =>
             {
                 (l.Type, l.Color, l.Range, l.ConeAngle, l.EdgeAngle, l.Shadows) = (type, color, range, cone, edge, shadows);
                 (l.AreaWidth, l.AreaHeight, l.Radius, l.ShadowSamples) = (width, height, radius, samples);
+                (l.Flare, l.Volumetric, l.ShadowMap) = (flare, volumetric, map);
                 intensity.Restore();
+                flareIntensity.Restore();
             };
         }
 

@@ -172,6 +172,11 @@ public static class SceneJson
                     d.AreaSize = l.AreaWidth == 1 && l.AreaHeight == 1 ? null : [l.AreaWidth, l.AreaHeight];
                     d.Radius = l.Radius == 0 ? null : l.Radius;
                     d.ShadowSamples = l.ShadowSamples == 16 ? null : l.ShadowSamples;
+                    d.LensFlare = l.Flare == new LensFlare() ? null : l.Flare;
+                    d.FlareIntensity = l.FlareIntensity.IsConstant && l.FlareIntensity.Evaluate(0) == 1
+                        && l.FlareIntensity.PreBehavior == EndBehavior.Constant && l.FlareIntensity.PostBehavior == EndBehavior.Constant ? null : Env(l.FlareIntensity);
+                    d.Volumetric = l.Volumetric == new VolumetricLight() ? null : l.Volumetric;
+                    d.ShadowMap = l.ShadowMap == new ShadowMapSettings() ? null : l.ShadowMap;
                     break;
                 case CameraItem c:
                     d.Zoom = Env(c.Zoom);
@@ -371,8 +376,12 @@ public static class SceneJson
             AreaHeight = d.AreaSize is { Length: >= 2 } b ? b[1] : 1,
             Radius = d.Radius ?? 0,
             ShadowSamples = d.ShadowSamples ?? 16,
+            Flare = d.LensFlare ?? new LensFlare(),
+            Volumetric = d.Volumetric ?? new VolumetricLight(),
+            ShadowMap = d.ShadowMap ?? new ShadowMapSettings(),
         };
         SetEnv(l.Intensity, d.Intensity);
+        SetEnv(l.FlareIntensity, d.FlareIntensity);
         return l;
     }
 
@@ -917,6 +926,10 @@ public static class SceneJson
         public double[]? AreaSize { get; set; }
         public double? Radius { get; set; }
         public int? ShadowSamples { get; set; }
+        public LensFlare? LensFlare { get; set; }
+        public EnvelopeDto? FlareIntensity { get; set; }
+        public VolumetricLight? Volumetric { get; set; }
+        public ShadowMapSettings? ShadowMap { get; set; }
 
         public EnvelopeDto? Zoom { get; set; }
         public int? Width { get; set; }

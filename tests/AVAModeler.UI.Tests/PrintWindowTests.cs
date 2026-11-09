@@ -114,6 +114,42 @@ public sealed class PrintWindowTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void The_3D_view_stacks_the_layers_up_to_the_chosen_one()
+    {
+        var (_, p) = Open();
+        Assert.False(p.Show3D);
+        Assert.True(Wait(p.Slice()));
+        Press(p, "3D");
+        Assert.True(p.Show3D);
+        Assert.True(p.Preview3D.IsVisible);
+        Assert.False(p.Preview.IsVisible);
+        p.ShownLayer = 0;
+        Assert.NotNull(p.CaptureRenderedFrame());
+        int low = p.Preview3D.Segments;
+        p.ShownLayer = 30;
+        Assert.NotNull(p.CaptureRenderedFrame());
+        int mid = p.Preview3D.Segments;
+        Assert.True(mid > low * 3, $"{mid} against {low}");
+        // Far below the chosen layer only the outer walls are drawn, so a tall print stays quick.
+        var job = p.Job!;
+        var lines = PrintPreview3D.Lines(job, 99, job.Setup.Printer);
+        var all = PrintPreview3D.Lines(job, 99, job.Setup.Printer).Count;
+        int everything = job.Plan.Layers.Sum(l => l.Paths.Sum(e => e.Points.Count));
+        Assert.True(all < everything, $"{all} lines, of {everything} points");
+        // The chosen layer's lines are at its height, in metres in the renderer's space (Y up).
+        double top = job.Plan.Layers[99].Layer.Top / 1000;
+        Assert.Contains(lines, l => Math.Abs(l.A.Y - top) < 1e-12);
+        Assert.Equal(PrintPreview3D.ToScene(1, 2, 3), new Vec3(0.001, 0.003, 0.002));
+        // Dragging turns it; Layer goes back.
+        double heading = p.Preview3D.Camera.Heading;
+        p.Preview3D.Camera.Orbit(20, 0);
+        Assert.NotEqual(heading, p.Preview3D.Camera.Heading);
+        Press(p, "Layer");
+        Assert.False(p.Show3D);
+        p.Close();
+    }
+
+    [AvaloniaFact]
     public void Bad_settings_say_what_is_wrong_and_slice_nothing()
     {
         var (_, p) = Open();

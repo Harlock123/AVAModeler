@@ -79,6 +79,10 @@ public class ScreenshotTests
         Assert.True(slice.Result);
         p.ShownLayer = p.Job!.Plan.Layers.Count / 3;
         Shot(p, "print");
+        // The same in 3D, stacked up to two thirds of the way.
+        p.Show3D = true;
+        p.ShownLayer = p.Job.Plan.Layers.Count * 2 / 3;
+        Shot(p, "print-3d");
         p.Close();
     }
 

@@ -43,6 +43,22 @@ public sealed class PrintWindow : Window
     /// <summary>The document version and setup the job was sliced from, to tell when it's out of date.</summary>
     private (int Version, PrintSetup Setup)? _slicedFrom;
     public LayerPreview Preview { get; } = new();
+    /// <summary>The print in 3D, stacked up to the chosen layer.</summary>
+    public PrintPreview3D Preview3D { get; } = new() { IsVisible = false };
+    /// <summary>Whether the 3D view is shown (else the top view of one layer).</summary>
+    public bool Show3D
+    {
+        get => Preview3D.IsVisible;
+        set
+        {
+            Preview3D.IsVisible = value;
+            Preview.IsVisible = !value;
+            Look.SetOn(_topButton, !value);
+            Look.SetOn(_threeDButton, value);
+        }
+    }
+    private readonly Button _topButton;
+    private readonly Button _threeDButton;
     /// <summary>The summary, the warnings, or what's wrong with the settings.</summary>
     public TextBlock Status { get; } = new() { Foreground = Look.Text, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     public Button SliceButton { get; }
@@ -95,7 +111,13 @@ public sealed class PrintWindow : Window
             Width = 340,
             Content = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 12, 0), Children = { print, material, printer } },
         };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { SliceButton, SaveButton } };
+        _topButton = Look.MakeButton("Layer", () => Show3D = false, "One layer from above.", 70);
+        _threeDButton = Look.MakeButton("3D", () => Show3D = true, "The print in 3D up to the chosen layer: drag to turn, right-drag to move, scroll to zoom.", 50);
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            Children = { SliceButton, SaveButton, new Border { Width = 16 }, _topButton, _threeDButton, Look.MakeButton("Fit", () => Preview3D.Refit(), "Frame the print in the 3D view again.", 44) },
+        };
         var legend = new WrapPanel();
         foreach (var kind in Enum.GetValues<PathKind>())
             legend.Children.Add(new StackPanel
@@ -111,11 +133,12 @@ public sealed class PrintWindow : Window
                 Dock(new Border { Margin = new Thickness(0, 6), Child = Status }, Avalonia.Controls.Dock.Top),
                 Dock(legend, Avalonia.Controls.Dock.Bottom),
                 Dock(new DockPanel { Children = { Dock(_layerText, Avalonia.Controls.Dock.Right), _layer } }, Avalonia.Controls.Dock.Bottom),
-                new Border { Background = Look.PanelDark, Child = Preview, Margin = new Thickness(0, 0, 0, 6) },
+                new Border { Background = Look.PanelDark, Child = new Panel { Children = { Preview, Preview3D } }, Margin = new Thickness(0, 0, 0, 6) },
             },
         };
         Content = new DockPanel { Margin = new Thickness(12), Children = { Dock(left, Avalonia.Controls.Dock.Left), right } };
         Fill(_setup);
+        Show3D = false;
         Version();
         Closed += (_, _) => { if (_watched != null) _watched.Changed -= Changed; };
         Status.Text = "Set up the print, then Slice. The foreground layers are printed: 1 m in the Modeler is 1000 mm on the bed (see Scale).";
@@ -150,6 +173,7 @@ public sealed class PrintWindow : Window
             Job = job;
             _slicedFrom = (version, setup);
             Preview.Job = job;
+            Preview3D.Job = job;
             _layer.Maximum = Math.Max(0, job.Plan.Layers.Count - 1);
             _layer.Value = Math.Min(_layer.Value, _layer.Maximum);
             if (job.Plan.Layers.Count > 0 && _layer.Value == 0) _layer.Value = Math.Min(_layer.Maximum, job.Plan.Layers.Count / 2);
@@ -417,6 +441,7 @@ public sealed class PrintWindow : Window
     private void ShowLayer()
     {
         Preview.Layer = ShownLayer;
+        Preview3D.Layer = ShownLayer;
         if (Job is { } job && job.Plan.Layers.Count > 0)
         {
             var l = job.Plan.Layers[ShownLayer].Layer;

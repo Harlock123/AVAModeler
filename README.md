@@ -204,10 +204,13 @@ phases 0 to 7 and Layout phases L1 to L6.
     - The G-code is Marlin-style (Marlin, Klipper and RepRapFirmware read it), with relative extrusion, heating and
       homing first, retraction and an optional Z hop on long moves, the fan from its layer, and Cura-style comments
       (`;LAYER:n`, `;TYPE:WALL-OUTER`…) so G-code previewers show it. The window shows each layer's lines on the bed
-      with a slider through the layers, and the print's time (from the moves alone: a real print takes somewhat
+      with a slider through the layers, or (3D) the print stacked up to the chosen layer, to turn, move and zoom
+      with the mouse, and the print's time (from the moves alone: a real print takes somewhat
       longer), filament and weight. AI agents slice with `slice_to_gcode`.
 
 ![The 3D Print window: the print settings down the left, one layer of the spiral stairs on the bed with supports in blue under a tread, and the print's layers, time, filament and weight above](Images/AVAModeler-print.png)
+
+![The 3D Print window's 3D view: the spiral stairs stacked up two thirds of the way, the column and the treads' outer walls in red, a tread's bridged underside in blue and the supports in pale blue under the treads still to come](Images/AVAModeler-print-3d.png)
 
   - Image paths are stored relative to the object file where they can be, and looked for from it (and LightWave's
     Images folders beside it), then from the working folder.
@@ -970,8 +973,9 @@ Layout reuses them.
   retracts). Supports are simple columns of lines under overhangs, kept to the
   sideways gap and one layer of air, with no interface layers or tree supports, and they stand on the object where it's
   below. The time is from the moves' lengths and speeds alone, so real prints take somewhat longer. Copies are all the same
-  way up and turned alike, laid out in a grid rather than packed. The preview shows one layer at
-  a time from above, not the print in 3D. For anything beyond this, export STL for a dedicated slicer.
+  way up and turned alike, laid out in a grid rather than packed. The 3D view draws lines (not
+  shaded plastic), later layers over earlier ones, and only the outer walls of layers more than 40 below the chosen
+  one. For anything beyond this, export STL for a dedicated slicer.
 - **Backdrops** are behind the Top, Front and Side views only: the perspective view (and Layout) shows none, as a
   picture fixed to the screen wouldn't line up with anything there. One image per view. The grid is drawn over them at
   full strength. Pictures are sampled bilinearly without mipmaps, so a large blueprint shown much smaller than its

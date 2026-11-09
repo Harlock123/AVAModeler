@@ -294,7 +294,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     `MeshCheck`, checking again (on the dispatcher, after a burst of changes) whenever the document changes while it's open.
   - `PrintWindow.cs` is File › 3D Print (and the Objects tab's 3D Print…): a thin window over `PrintJob` (the settings
     read into a `PrintSetup` and kept in `Preferences.Print`, slicing a `Document.Copy` on a worker, `LayerPreview`
-    drawing one layer on the bed, Save G-code). Agents slice with `slice_to_gcode` in `ModelerTools.cs`, which works
+    drawing one layer on the bed, `PrintPreview3D` the print stacked up to it in 3D through the software renderer's
+    overlay lines (bed millimetres to the renderer's metres with `ToScene`), Save G-code). Agents slice with `slice_to_gcode` in `ModelerTools.cs`, which works
     the same way (copy on the host, slice and write off it, inside the working folder).
   - `BackdropPanel.cs` is Backdrop (D), docked the same way: a view chooser, Browse, the numbers and check boxes,
     Fit to Object, Size from Pixels, and Save and Load Setup, each change going straight to `ModelerSession.SetBackdrop`.

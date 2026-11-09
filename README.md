@@ -218,6 +218,9 @@ phases 0 to 7 and Layout phases L1 to L6.
       material's shortest layer time is slowed to take it (no slower than its slowest speed), so small parts cool.
       Travel stays inside the object where it can (combing: round holes and notches along the inside of the walls),
       so it needn't retract or cross a wall.
+    - Send to printer uploads the G-code to OctoPrint or to Moonraker (Klipper's, behind Mainsail and Fluidd) on your
+      network, and starts it printing if you ask. Only the address you give is contacted; the API key is kept in its
+      own file beside the preferences, readable only by you, never in preferences.json.
     - For Sailfish printers (MakerBot-style: the Flashforge Creator Pro) it also saves .x3g, the binary file their
       firmware prints from, as GPX would convert the G-code: Save .x3g…, `slice("part.x3g")` or `slice_to_gcode`.
     - The G-code is Marlin-style (Marlin, Klipper and RepRapFirmware read it), with relative extrusion, heating and

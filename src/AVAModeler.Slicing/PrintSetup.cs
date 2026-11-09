@@ -14,6 +14,8 @@ public sealed record PrintSetup
     public MaterialProfile Material { get; init; } = Presets.Materials[0];
     public PlacementOptions Placement { get; init; } = new();
     public SliceSettings Settings { get; init; } = new();
+    /// <summary>The printer on the network to send prints to (its API key is kept apart, in <see cref="PrintHostKey"/>).</summary>
+    public PrintHost Host { get; init; } = new();
     /// <summary>Printers the person saved, shown after the presets.</summary>
     public IReadOnlyList<PrinterProfile> MyPrinters { get; init; } = [];
     /// <summary>Materials the person saved, shown after the presets.</summary>

@@ -196,6 +196,44 @@ public sealed class PrintWindowTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void Send_to_printer_uploads_the_gcode_and_keeps_the_key_apart()
+    {
+        var (w, p) = Open();
+        var server = new FakeServer();
+        p.HttpFactory = () => new HttpClient(server);
+        // No server chosen: it says what to do.
+        Assert.False(Wait(p.Send()));
+        Assert.Contains("Choose OctoPrint or Moonraker", p.Status.Text);
+        p.HostKindBox.SelectedIndex = 1;
+        p.FieldBox("host.url").Text = "http://octopi.local";
+        p.HostKeyBox.Text = "SECRETKEY1234";
+        p.HostStartBox.IsChecked = true;
+        Assert.True(Wait(p.Send()));
+        Assert.Equal("Sent untitled.gcode to octopi.local, and it's printing.", p.Status.Text);
+        Assert.Equal("http://octopi.local/api/files/local", server.Uri);
+        Assert.Equal("SECRETKEY1234", server.Key);
+        Assert.Contains(";FLAVOR:Marlin", server.Form);
+        // The key moved out of the box into the window's store (no file for a window made for tests), never into the preferences.
+        Assert.Equal("", p.HostKeyBox.Text);
+        Assert.Equal("SECRETKEY1234", p.HostKey.Get());
+        Assert.Equal(PrintHostKind.OctoPrint, w.Session.Preferences.Print.Host.Kind);
+        Assert.DoesNotContain("SECRETKEY", System.Text.Json.JsonSerializer.Serialize(w.Session.Preferences));
+        p.Close();
+    }
+
+    private sealed class FakeServer : HttpMessageHandler
+    {
+        public string Uri = "", Key = "", Form = "";
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
+        {
+            Uri = request.RequestUri!.ToString();
+            Key = request.Headers.TryGetValues("X-Api-Key", out var k) ? k.Single() : "";
+            Form = await request.Content!.ReadAsStringAsync(cancel);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Created);
+        }
+    }
+
+    [AvaloniaFact]
     public void Bad_settings_say_what_is_wrong_and_slice_nothing()
     {
         var (_, p) = Open();

@@ -115,6 +115,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     speeds, filament, grams). `FilamentPerMm` is the one extrusion rule. `Save` writes through a temporary file.
     `PrintJob.Run(doc, setup)` runs every stage and gives the `Warnings` (doesn't fit, not printable, open outlines):
     the UI and the MCP tool go through it.
+  - `PrintHost.cs`: `PrintHost` (OctoPrint or Moonraker, address, start printing; kept in `PrintSetup.Host`),
+    `PrintHostClient.SendAsync` (one multipart upload to `/api/files/local` or `/server/files/upload`, the key only in
+    `X-Api-Key`, every failure a `PrintHostException` worded for the person with any echoed key masked) and
+    `PrintHostKey` (the key's owner-only file beside preferences.json). The Print window's `HttpFactory` lets tests
+    give a fake server; no test reaches a real printer.
   - `X3g.cs`: `X3g.Convert` turns this slicer's G-code (a Sailfish start and end) into .x3g for a `SailfishMachine`
     (`PrinterProfile.X3gMachine`, "fcp" for the Creator Pro: GPX's Replicator 1 Dual numbers), command by command as
     GPX encodes them (155 moves with the extruder negative and its rounding carried, 139 after homing, 131/132,
@@ -439,6 +444,9 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   gives what it would draw, `Redrawn` says when); it still draws its guides and label and takes the mouse. `GlSurface`
   has `CameraSource`, `Ready` and `Initialised`; where OpenGL can't start, Avalonia never calls `OnOpenGlInit` (no
   `Failed`), so a host checks `Ready` and goes back to software.
+- **Sending to a printer contacts only its address.** Send to printer posts the G-code to the OctoPrint or Moonraker
+  address the person set and nothing else; the key is never logged, shown beyond `PrintHostKey.Mask`, written to
+  preferences.json or put in a message. AI agents have no tool that starts a print: a machine moving is the person's call.
 - **The hub is local and per user too.** Each app listens on its own pipe (`HubProtocol.PipeName`), opened with
   `PipeOptions.CurrentUserOnly`; messages name files by full path and never carry geometry or anything else; a
   missing app costs a short timeout, never a hang. Don't add a network listener. Tests use pipe names of their own.

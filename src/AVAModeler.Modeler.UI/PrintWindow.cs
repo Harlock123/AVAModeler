@@ -30,6 +30,18 @@ public sealed class PrintWindow : Window
     private readonly ComboBox _layFlat = Choice(["As modelled", "Largest face down", "Selected face down"]);
     private readonly ComboBox _supportOn = Choice(["On the bed or the object", "On the bed only"]);
     private readonly CheckBox _supports = new() { Content = "Supports under overhangs", Foreground = Look.Text };
+    private readonly ComboBox _hostKind = Choice(["None", "OctoPrint", "Moonraker (Klipper)"]);
+    private readonly TextBox _hostKey = new() { PasswordChar = '•', Width = 150, FontSize = 12, Name = "host.key" };
+    private readonly CheckBox _hostStart = new() { Content = "Start printing once it's there", Foreground = Look.Text };
+    /// <summary>Uploads to the printer: the person's button, the G-code bytes; tests give a fake server's client.</summary>
+    public Func<HttpClient> HttpFactory { get; set; } = () => SharedHttp;
+    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromMinutes(2) };
+    /// <summary>Where the printer's API key is kept (a file beside the preferences; nowhere for a window made for tests).</summary>
+    public PrintHostKey HostKey { get; set; }
+    public Button SendButton { get; }
+    public ComboBox HostKindBox => _hostKind;
+    public TextBox HostKeyBox => _hostKey;
+    public CheckBox HostStartBox => _hostStart;
     private readonly CheckBox _originCentre = new() { Content = "Origin at the bed's middle", Foreground = Look.Text };
     private readonly CheckBox _roundBed = new() { Content = "Round bed (a delta: width is its diameter)", Foreground = Look.Text };
     /// <summary>The chosen printer's notes (its firmware's quirks), under its name.</summary>
@@ -121,6 +133,9 @@ public sealed class PrintWindow : Window
 
         SliceButton = Look.MakeButton("Slice", () => _ = Slice(), "Slice the foreground layers with these settings and show the layers.", 100);
         SaveButton = Look.MakeButton("Save G-code…", () => _ = SaveGCode(), "Slice if need be, then save the G-code for the printer.", 120);
+        SendButton = Look.MakeButton("Send to printer", () => _ = Send(), "Slice if need be, then upload the G-code to OctoPrint or Moonraker (set below, under Send to printer).", 120);
+        SendButton.Name = "Send";
+        HostKey = PrintHostKey.In(session.Preferences.Location is { } loc ? Path.GetDirectoryName(loc) : null);
         SliceButton.Name = "Slice";
         SaveButton.Name = "SaveGCode";
         var savePrinter = Look.MakeButton("Save as my printer", SavePrinter, "Keep these printer settings under the name above, beside the presets.");
@@ -151,10 +166,13 @@ public sealed class PrintWindow : Window
             Field("scale", "Scale (%)"), Row("Way up", _layFlat), Field("turn", "Turn on the bed (°)"), Row("Position", _position),
             Field("copies", "Copies"), Field("gap", "Gap between copies (mm)"));
 
+        var send = Section("Send to printer", null,
+            Row("Server", _hostKind), Field("host.url", "Address"), Row("API key", _hostKey), _hostStart,
+            new TextBlock { Text = "The key is kept in its own file beside the preferences, readable only by you.", Foreground = Look.Text, FontSize = 10, TextWrapping = TextWrapping.Wrap });
         var left = new ScrollViewer
         {
             Width = 340,
-            Content = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 12, 0), Children = { print, material, printer } },
+            Content = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 12, 0), Children = { print, material, printer, send } },
         };
         _topButton = Look.MakeButton("Layer", () => Show3D = false, "One layer from above.", 70);
         _threeDButton = Look.MakeButton("3D", () => Show3D = true, "The print in 3D up to the chosen layer: drag to turn, right-drag to move, scroll to zoom.", 50);
@@ -163,7 +181,7 @@ public sealed class PrintWindow : Window
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 8,
-            Children = { SliceButton, SaveButton, new Border { Width = 16 }, _topButton, _threeDButton, Look.MakeButton("Fit", () => Preview3D.Refit(), "Frame the print in the 3D view again.", 44) },
+            Children = { SliceButton, SaveButton, SendButton, new Border { Width = 16 }, _topButton, _threeDButton, Look.MakeButton("Fit", () => Preview3D.Refit(), "Frame the print in the 3D view again.", 44) },
         };
         var buttons = new DockPanel { Children = { Dock(CloseButton, Avalonia.Controls.Dock.Right), row } };
         var legend = new WrapPanel();
@@ -324,6 +342,49 @@ public sealed class PrintWindow : Window
         }
     }
 
+    /// <summary>
+    /// Slices if need be, then uploads the G-code to the printer's OctoPrint or Moonraker (and starts it if asked). The
+    /// key typed in is kept (in its own file) when the upload works. Returns whether it was sent.
+    /// </summary>
+    public async Task<bool> Send()
+    {
+        if (!UpToDate && !await Slice()) return false;
+        if (Job is not { } job || job.Model.Triangles.Count == 0)
+        {
+            Complain("There's nothing to print: the foreground layers have no faces.");
+            return false;
+        }
+        var host = job.Setup.Host;
+        string typed = _hostKey.Text ?? "";
+        string? key = typed.Length > 0 ? typed : HostKey.Get();
+        string name = Path.GetFileNameWithoutExtension(_session.Document.FilePath ?? "untitled") + ".gcode";
+        SendButton.IsEnabled = false;
+        Status.Foreground = Look.Text;
+        Status.Text = $"Sending {name}…";
+        try
+        {
+            string said = await PrintHostClient.SendAsync(host, key, name, new UTF8Encoding(false).GetBytes(job.GCode), HttpFactory());
+            if (typed.Length > 0)
+            {
+                HostKey.Set(typed);
+                _hostKey.Text = "";
+            }
+            if (job.Setup.Printer.X3gMachine != null) said += " (Its Sailfish firmware reads .x3g: OctoPrint needs its GPX plugin to print G-code on it.)";
+            Status.Text = said;
+            _session.SetStatus(said);
+            return true;
+        }
+        catch (Exception e) when (e is PrintHostException or ArgumentException)
+        {
+            Complain(e.Message);
+            return false;
+        }
+        finally
+        {
+            SendButton.IsEnabled = true;
+        }
+    }
+
     public static readonly FilePickerFileType GCodeFile = new("G-code") { Patterns = ["*.gcode", "*.gco", "*.g"] };
     public static readonly FilePickerFileType X3gFile = new("Sailfish .x3g (MakerBot-style printers)") { Patterns = ["*.x3g"] };
 
@@ -381,6 +442,9 @@ public sealed class PrintWindow : Window
         _pattern.SelectedIndex = (int)s.Infill;
         _seam.SelectedIndex = (int)s.Seam;
         _supports.IsChecked = s.Supports;
+        _hostKind.SelectedIndex = (int)setup.Host.Kind;
+        _fields["host.url"].Text = setup.Host.Url;
+        _hostStart.IsChecked = setup.Host.StartPrint;
         _supportOn.SelectedIndex = (int)s.SupportOn;
         Set("interface", s.SupportInterfaceLayers); Set("interfacePercent", s.SupportInterfacePercent);
         _position.SelectedIndex = (int)setup.Placement.Position;
@@ -441,7 +505,8 @@ public sealed class PrintWindow : Window
             LayFlat = (LayFlat)Math.Max(0, _layFlat.SelectedIndex), RotateDegrees = Num("turn", "The turn"),
             Copies = Whole("copies", "Copies"), CopyGap = Num("gap", "The gap between copies"),
         };
-        return (_setup with { Printer = printer, Material = material, Settings = settings, Placement = placement }).Checked();
+        var host = new PrintHost { Kind = (PrintHostKind)Math.Max(0, _hostKind.SelectedIndex), Url = (_fields["host.url"].Text ?? "").Trim(), StartPrint = _hostStart.IsChecked == true };
+        return (_setup with { Printer = printer, Material = material, Settings = settings, Placement = placement, Host = host }).Checked();
     }
 
     private PrinterProfile ReadPrinter() => new PrinterProfile

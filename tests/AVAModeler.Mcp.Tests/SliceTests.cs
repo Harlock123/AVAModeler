@@ -36,6 +36,20 @@ public class SliceTests
     }
 
     [Fact]
+    public async Task A_macro_run_by_an_agent_slices_inside_the_working_folder()
+    {
+        using var b = new Bench();
+        await b.Tools.RunTool("Box", null, Cancel);
+        var r = await Parse(b.Tools.RunLua("print(slice('lua/box.gcode', {scale = 2}).layers)", cancel: Cancel));
+        Assert.StartsWith(";FLAVOR:Marlin", File.ReadAllText(b.Folder.File(Path.Combine("lua", "box.gcode"))));
+        Assert.Contains("100", r.ToJsonString());
+        Assert.Contains("outside the working folder", await Error(b.Tools.RunLua("slice('../out.gcode', {scale = 2})", cancel: Cancel)));
+        File.WriteAllText(b.Folder.File("theirs.gcode"), "keep me");
+        Assert.Contains("already exists", await Error(b.Tools.RunLua("slice('theirs.gcode', {scale = 2})", cancel: Cancel)));
+        Assert.Equal("keep me", File.ReadAllText(b.Folder.File("theirs.gcode")));
+    }
+
+    [Fact]
     public async Task Mistakes_are_explained_and_nothing_is_written()
     {
         using var b = new Bench();

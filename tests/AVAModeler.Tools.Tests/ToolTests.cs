@@ -516,6 +516,37 @@ public class CommandTests
     }
 
     [Fact]
+    public void A_macro_slices_the_object_to_gcode()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "avamodeler-slice-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var cmd = new Commands(new Document()) { BaseDirectory = dir };
+            // The 1 m box at 2%: a 20 mm cube, in PETG, two of them; relative to the macro's folder.
+            Macros.Run("""
+                tool('Box')
+                local r = slice('box.gcode', {scale = 2, material = 'PETG', copies = 2, infill = 15, layflat = 'largest'})
+                print(r.layers, r.size[1], r.size[3], r.printable, #r.warnings, r.grams > 1)
+                """, cmd);
+            Assert.Equal("100\t45\t20\ttrue\t0\ttrue", cmd.Output.Single());
+            string text = File.ReadAllText(Path.Combine(dir, "box.gcode"));
+            Assert.StartsWith(";FLAVOR:Marlin", text);
+            Assert.Contains("M109 S240", text);
+            // Slicing changes nothing in the object.
+            Assert.Equal(1, cmd.Document.Undo.Count);
+            // Its mistakes say what to do, and write nothing.
+            Assert.Contains("no option \"colour\"", Assert.Throws<MacroException>(() => Macros.Run("slice('a.gcode', {colour = 'red'})", cmd)).Message);
+            Assert.Contains(".gcode", Assert.Throws<MacroException>(() => Macros.Run("slice('a.txt', {scale = 2})", cmd)).Message);
+            Assert.Contains("PLA, PETG", Assert.Throws<MacroException>(() => Macros.Run("slice('a.gcode', {material = 'wood'})", cmd)).Message);
+            Assert.Contains("nothing to print", Assert.Throws<MacroException>(() => Macros.Run("new(); slice('a.gcode')", cmd)).Message);
+            Assert.False(File.Exists(Path.Combine(dir, "a.gcode")));
+            Assert.Contains("slice(path [, options])", Macros.Reference.Select(r => r.Signature));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public void A_plugin_from_its_own_assembly_adds_a_tool()
     {
         var built = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "StarPlugin", "bin");

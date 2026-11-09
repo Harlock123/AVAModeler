@@ -7,6 +7,7 @@
     <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
     <ProjectReference Include="..\AVAModeler.Formats\AVAModeler.Formats.csproj" />
     <ProjectReference Include="..\AVAModeler.Geometry\AVAModeler.Geometry.csproj" />
+    <ProjectReference Include="..\AVAModeler.Slicing\AVAModeler.Slicing.csproj" />
     <PackageReference Include="MoonSharp" Version="2.0.0" />
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <!-- Text outlines: Avalonia brings the same native Skia library in the app; scripts and tests need it too. -->

@@ -501,6 +501,9 @@ public sealed class ModelerWorkspace : DockPanel
     {
         var cmd = Session.Commands;
         cmd.Output.Clear();
+        // slice() starts from the 3D Print window's setup.
+        try { cmd.PrintSetup = Session.Preferences.Print.Checked(); }
+        catch (ArgumentException) { cmd.PrintSetup = new(); }
         cmd.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
         try
         {

@@ -44,6 +44,7 @@ public static class Macros
         ("texture(surface, image, {Option = value, ...})", "gives a surface an image texture; options: Channel (\"color\", \"diffuse\", \"specular\", \"luminosity\", \"reflection\", \"transparency\", \"bump\"), Projection (\"planar\", \"cylindrical\", \"spherical\", \"cubic\", \"uv\"), Axis, UVMap, Center, Size, Fit (automatic sizing), WidthTiling/HeightTiling (\"reset\", \"repeat\", \"mirror\", \"edge\"), WidthWrap/HeightWrap, Opacity, Blend, Amplitude. With a procedural's name in place of the image (\"checkerboard\", no extension) it does what proctex() does"),
         ("proctex(surface, kind, {Option = value, ...})", "gives a surface a LightWave 5 procedural texture (no image needed): kind is " + ProceduralKinds + "; it sets the channel's first layer of that kind (NewLayer = true adds another). Options: Channel, Color ({r, g, b}, 0 to 255: the texture colour, for the colour channel), Value (0 to 1: the texture value, for the other channels), Size (one pattern unit, e.g. a check's width, in metres), Center, Axis, Fit, Falloff ({x, y, z}, fraction per metre), Opacity, Blend, Amplitude (bump), Negative, World (world coordinates), and the kind's settings by name: Frequencies, Contrast, SmallPower, Turbulence, VeinSpacing, VeinSharpness, RingSpacing, RingSharpness, LineThickness, DotDiameter, Fuzziness, WaveSources, Wavelength, WaveSpeed, BandSharpness, BumpRadius, BumpSpacing"),
         ("notexture(surface, channel)", "removes a surface's textures (for one channel, or all)"),
+        ("slice(path [, options])", "slices the foreground layers for 3D printing and saves the G-code (.gcode), changing nothing in the object; options: printer and material (by name), layer (mm), infill (%), walls, supports, bedonly, brim (lines), scale (%), rotate (°), copies, gap (mm), layflat (\"modelled\", \"largest\" or \"selected\"); the rest as the 3D Print window has them. Returns a table: file, layers, time, minutes, grams, filament_m, size {x, y, z} in mm, printable, warnings"),
         ("checkmesh()", "checks the foreground layers as Mesh Info does, changing nothing; returns a table: verdict, printable, watertight, points, polygons, faces, area (m²), volume (m³, nil unless closed), center (centre of mass {x, y, z}), size, min, max, shells, holes, boundary_edges, nonmanifold_edges, inconsistent_edges, flipped_polygons, inward_shells, cavities, degenerate_polygons, nonplanar_polygons, duplicate_points, unused_points, points_and_lines, and report (the lines of text). tool(\"Select Problems\", {Problem = \"BoundaryEdges\"}) selects them"),
         ("backdrop(view, image, {Option = value, ...})", "puts a reference image (a blueprint or photo) behind the \"top\", \"front\" or \"side\" view, in world space, so it pans and zooms with the view and lines up across views; not saved in the object or undone (the app remembers it per object). Options: Center ({a, b}: the image's centre in metres on the view's two axes, top X and Z, front X and Y, side Z and Y), Size (its width in metres; its height follows the image's shape), Height (metres, to stretch it), Fit (true: sized round the foreground), PixelSize (metres a pixel covers: the width from the image's pixels), Brightness (-1 to 1), Contrast (0 to 4, 1 leaves it), Opacity (0 to 1, default 0.5), Invert, Visible. With nil as the image it changes the view's backdrop settings. Returns a note if the image can't be found (a magenta checker shows)"),
         ("nobackdrop(view)", "takes the backdrop from a view (\"top\", \"front\" or \"side\"), or from every view with none given; returns how many went"),
@@ -127,6 +128,22 @@ public static class Macros
         g["notexture"] = (Func<string, string?, int>)((surface, channel) =>
             commands.ClearTextures(surface, channel == null ? null : Enum.Parse<TextureChannel>(channel, ignoreCase: true)));
         g["checkmesh"] = (Func<Table>)(() => CheckMesh(lua, commands.Document));
+        g["slice"] = (Func<string, Table?, Table>)((path, options) =>
+        {
+            var job = commands.Slice(path, SliceOptions(commands.PrintSetup, options == null ? [] : ToArgs(options)));
+            var t = new Table(lua);
+            var size = job.Model.Bounds.Size;
+            t["file"] = path;
+            t["layers"] = job.Stats.Layers;
+            t["time"] = job.Stats.Time;
+            t["minutes"] = Math.Round(job.Stats.Seconds / 60, 1);
+            t["grams"] = Math.Round(job.Stats.Grams, 1);
+            t["filament_m"] = Math.Round(job.Stats.FilamentMm / 1000, 3);
+            t["size"] = List(lua, new object[] { size.X, size.Y, size.Z });
+            t["printable"] = job.Model.Printable;
+            t["warnings"] = List(lua, job.Warnings.Cast<object>().ToArray());
+            return t;
+        });
         g["backdrop"] = (Func<string, string?, Table?, string?>)((view, image, options) =>
         {
             var v = BackdropViewOf(view);
@@ -262,6 +279,55 @@ public static class Macros
     }
 
     /// <summary>The mesh check of the foreground layers as a Lua table (see the Macro Reference).</summary>
+    /// <summary>A print setup from slice()'s options table (names as in the Macro Reference, any case), over the one given.</summary>
+    private static Slicing.PrintSetup SliceOptions(Slicing.PrintSetup setup, Dictionary<string, object?> o)
+    {
+        double Num(string key, object? v) => v is double d ? d : throw new ArgumentException($"slice's {key} must be a number.");
+        int Whole(string key, object? v) => Num(key, v) is var d && d == Math.Floor(d) ? (int)d : throw new ArgumentException($"slice's {key} must be a whole number.");
+        bool Yes(string key, object? v) => v is bool b ? b : throw new ArgumentException($"slice's {key} must be true or false.");
+        string Text(string key, object? v) => v is string t ? t : throw new ArgumentException($"slice's {key} must be text.");
+        var s = setup.Settings;
+        var p = setup.Placement;
+        foreach (var (key, v) in o)
+            switch (key.ToLowerInvariant())
+            {
+                case "printer":
+                    string pn = Text(key, v);
+                    setup = setup with { Printer = setup.AllPrinters.FirstOrDefault(x => string.Equals(x.Name, pn, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new ArgumentException($"There's no printer \"{pn}\": {string.Join(", ", setup.AllPrinters.Select(x => x.Name))}.") };
+                    break;
+                case "material":
+                    string mn = Text(key, v);
+                    setup = setup with { Material = setup.AllMaterials.FirstOrDefault(x => string.Equals(x.Name, mn, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new ArgumentException($"There's no material \"{mn}\": {string.Join(", ", setup.AllMaterials.Select(x => x.Name))}.") };
+                    break;
+                case "layer": s = s with { LayerHeight = Num(key, v) }; break;
+                case "infill": s = s with { InfillPercent = Num(key, v) }; break;
+                case "walls": s = s with { Walls = Whole(key, v) }; break;
+                case "supports": s = s with { Supports = Yes(key, v) }; break;
+                case "bedonly": s = s with { SupportOn = Yes(key, v) ? Slicing.SupportPlacement.BedOnly : Slicing.SupportPlacement.Everywhere }; break;
+                case "brim": s = s with { BrimLines = Whole(key, v) }; break;
+                case "scale": p = p with { ScalePercent = Num(key, v) }; break;
+                case "rotate": p = p with { RotateDegrees = Num(key, v) }; break;
+                case "copies": p = p with { Copies = Whole(key, v) }; break;
+                case "gap": p = p with { CopyGap = Num(key, v) }; break;
+                case "layflat":
+                    p = p with
+                    {
+                        LayFlat = Text(key, v).ToLowerInvariant() switch
+                        {
+                            "modelled" or "none" => Slicing.LayFlat.AsModelled,
+                            "largest" => Slicing.LayFlat.LargestFace,
+                            "selected" => Slicing.LayFlat.SelectedFace,
+                            var x => throw new ArgumentException($"slice's layflat is \"modelled\", \"largest\" or \"selected\", not \"{x}\"."),
+                        },
+                    };
+                    break;
+                default: throw new ArgumentException($"slice has no option \"{key}\": printer, material, layer, infill, walls, supports, bedonly, brim, scale, rotate, copies, gap, layflat.");
+            }
+        return setup with { Settings = s, Placement = p };
+    }
+
     private static Table CheckMesh(Script lua, Document doc)
     {
         var r = Geometry.MeshCheck.Document(doc);

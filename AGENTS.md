@@ -122,6 +122,9 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     only the selection: `Tool.SelectsOnly` keeps the object unmodified) and Remove Degenerate; `SelectProblemsTool.FixFor`
     names the existing tool that fixes each kind (Fill Hole, Align, Merge Points, Remove Degenerate). Don't add a second
     tool for a fix one of those already makes.
+  - `Commands.Slice` (Lua's `slice()`) runs `PrintJob` from `Commands.PrintSetup` (the app sets it from the 3D
+    Print window's) and writes through `Commands.TextSaver`, which the MCP `Workspace.Confine` keeps inside the
+    working folder as it does `Saver`: a new kind of file a macro writes goes through a hook like it.
   - `LuaSandbox.cs`: the macro sandbox for any Lua (`Create`, `Run` with a caller's globals, print sink and time
     limit; `ToArgs`, `List`, `Indices`, `Numbers`, `Strings`). `Macros.Run` is built on it; another app's Lua
     (AVALightWave's scene macros) goes through it, never a bare MoonSharp `Script`.

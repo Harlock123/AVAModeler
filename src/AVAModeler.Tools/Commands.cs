@@ -139,6 +139,15 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
     public Func<string, Document>? Loader { get; set; } = Formats.ObjectFiles.Load;
     public Action<Document, string>? Saver { get; set; } = Formats.ObjectFiles.Save;
 
+    /// <summary>
+    /// How a text file a macro makes (G-code from <see cref="Slice"/>) is written: in full to a temporary file, then
+    /// moved into place, unless something else is set (the MCP server keeps it inside its working folder).
+    /// </summary>
+    public Action<string, string>? TextSaver { get; set; } = WriteWhole;
+
+    /// <summary>The print setup <see cref="Slice"/> starts from: the app gives it the 3D Print window's, kept in the preferences.</summary>
+    public Slicing.PrintSetup PrintSetup { get; set; } = new();
+
     /// <summary>Raised when New or Load replaces the document (the app shows the new one).</summary>
     public event Action<Document>? DocumentReplaced;
 
@@ -352,6 +361,39 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
     }
 
     public void Save(string path) => (Saver ?? throw new InvalidOperationException("No file saver is set up."))(Document, path);
+
+    /// <summary>
+    /// Slices the foreground layers for 3D printing with a setup (<see cref="PrintSetup"/> unless one is given) and
+    /// saves the G-code to <paramref name="path"/> (relative to <see cref="BaseDirectory"/> when that's set). Changes
+    /// nothing in the object. Throws if there's nothing to print.
+    /// </summary>
+    public Slicing.PrintJob Slice(string path, Slicing.PrintSetup? setup = null)
+    {
+        if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("slice needs a file to save the G-code in, such as \"part.gcode\".");
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        if (ext is not (".gcode" or ".gco" or ".g")) throw new ArgumentException($"A G-code file ends in .gcode, .gco or .g, such as \"{Path.GetFileNameWithoutExtension(path)}.gcode\".");
+        var job = Slicing.PrintJob.Run(Document, (setup ?? PrintSetup).Checked());
+        if (job.Model.Triangles.Count == 0) throw new InvalidOperationException("There's nothing to print: the foreground layers have no faces.");
+        string full = !Path.IsPathRooted(path) && BaseDirectory != null && TextSaver == WriteWhole ? Path.Combine(BaseDirectory, path) : path;
+        (TextSaver ?? throw new InvalidOperationException("No file saver is set up."))(full, job.GCode);
+        return job;
+    }
+
+    /// <summary>Writes a text file in full to a temporary file first, so a failure leaves the old one.</summary>
+    public static void WriteWhole(string path, string text)
+    {
+        if (Path.GetDirectoryName(Path.GetFullPath(path)) is { } dir) Directory.CreateDirectory(dir);
+        string temp = path + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, text, new System.Text.UTF8Encoding(false));
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
+    }
 
     // ───────────────────────────── UV maps and textures ─────────────────────────────
 

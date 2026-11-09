@@ -45,6 +45,12 @@ public sealed record SliceSettings
     /// <summary>How far, as a fraction of the line width, the infill reaches into the walls so the two bond.</summary>
     public double InfillOverlap { get; init; } = 0.15;
     public SeamPosition Seam { get; init; } = SeamPosition.Rear;
+    /// <summary>Fill the gaps the walls leave where there's no room for another loop, and fins too thin for a wall, with narrower lines.</summary>
+    public bool GapFill { get; init; } = true;
+    /// <summary>Print solid areas over air as bridges: straight lines across at the best-anchored angle, slower, the fan full.</summary>
+    public bool Bridging { get; init; } = true;
+    /// <summary>Keep travel inside the object where it can (no wall crossed, no retraction).</summary>
+    public bool Combing { get; init; } = true;
 
     /// <summary>Loops of skirt round the first layer (to prime the nozzle); 0 for none. A brim replaces it.</summary>
     public int SkirtLoops { get; init; } = 1;
@@ -66,6 +72,9 @@ public sealed record SliceSettings
     public double OuterWallSpeed { get; init; } = 30;
     public double InfillSpeed { get; init; } = 60;
     public double FirstLayerSpeed { get; init; } = 20;
+    public double BridgeSpeed { get; init; } = 25;
+    /// <summary>Gap fill's speed: its lines are short and narrow.</summary>
+    public double GapFillSpeed { get; init; } = 25;
     public double TravelSpeed { get; init; } = 150;
     /// <summary>Travel shorter than this doesn't retract.</summary>
     public double RetractMinTravel { get; init; } = 1.5;
@@ -93,7 +102,8 @@ public sealed record SliceSettings
         PrinterProfile.Range(SupportPercent, 5, 100, "The support density", "%");
         PrinterProfile.Range(SupportGap, 0, 5, "The support gap");
         foreach (var (v, what) in (ReadOnlySpan<(double, string)>)[(PrintSpeed, "The print speed"), (OuterWallSpeed, "The outer wall speed"),
-                     (InfillSpeed, "The infill speed"), (FirstLayerSpeed, "The first layer speed"), (TravelSpeed, "The travel speed")])
+                     (InfillSpeed, "The infill speed"), (FirstLayerSpeed, "The first layer speed"), (TravelSpeed, "The travel speed"),
+                     (BridgeSpeed, "The bridge speed"), (GapFillSpeed, "The gap fill speed")])
             PrinterProfile.Range(v, 1, 1000, what, " mm/s");
         PrinterProfile.Range(RetractMinTravel, 0, 100, "The shortest retracted travel");
         PrinterProfile.Range(ZHop, 0, 10, "The Z hop");

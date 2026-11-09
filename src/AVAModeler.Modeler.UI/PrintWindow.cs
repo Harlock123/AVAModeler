@@ -28,6 +28,9 @@ public sealed class PrintWindow : Window
     private readonly ComboBox _seam = Choice(Enum.GetNames<SeamPosition>());
     private readonly ComboBox _position = Choice(["Centre on the bed", "Origin at the bed's centre"]);
     private readonly CheckBox _supports = new() { Content = "Supports under overhangs", Foreground = Look.Text };
+    private readonly CheckBox _gapFill = new() { Content = "Fill gaps between walls", Foreground = Look.Text };
+    private readonly CheckBox _bridging = new() { Content = "Bridge spans over air", Foreground = Look.Text };
+    private readonly CheckBox _combing = new() { Content = "Keep travel inside the object", Foreground = Look.Text };
     private readonly TextBox _start = Script();
     private readonly TextBox _end = Script();
     private readonly Slider _layer = new() { Minimum = 0, Maximum = 0, IsSnapToTickEnabled = true, TickFrequency = 1, SmallChange = 1, LargeChange = 10 };
@@ -74,13 +77,15 @@ public sealed class PrintWindow : Window
         var material = Section("Material", _materials,
             Field("material.name", "Name"), Field("material.nozzle", "Nozzle (°C)"), Field("material.first", "First layer nozzle (°C)"), Field("material.bed", "Bed (°C)"),
             Field("material.retract", "Retraction (mm)"), Field("material.retractSpeed", "Retraction speed (mm/s)"), Field("material.fan", "Fan (%)"),
-            Field("material.fanFrom", "Fan from layer"), Field("material.density", "Density (g/cm³)"), saveMaterial);
+            Field("material.fanFrom", "Fan from layer"), Field("material.density", "Density (g/cm³)"),
+            Field("material.minLayer", "Shortest layer time (s)"), Field("material.minSpeed", "Slowest cooling speed (mm/s)"), saveMaterial);
         var print = Section("Print", null,
             Field("layer", "Layer height (mm)"), Field("first", "First layer (mm)"), Field("width", "Line width (mm)"), Field("walls", "Walls"),
             Field("top", "Top layers"), Field("bottom", "Bottom layers"), Field("infill", "Infill (%)"), Row("Infill pattern", _pattern), Field("angle", "Infill angle (°)"),
-            Row("Seam", _seam), Field("skirt", "Skirt loops"), Field("brim", "Brim lines"), _supports, Field("supportAngle", "Support angle (°)"),
+            Row("Seam", _seam), _gapFill, _bridging, _combing, Field("skirt", "Skirt loops"), Field("brim", "Brim lines"), _supports, Field("supportAngle", "Support angle (°)"),
             Field("speed", "Print speed (mm/s)"), Field("outer", "Outer wall speed (mm/s)"), Field("infillSpeed", "Infill speed (mm/s)"),
-            Field("firstSpeed", "First layer speed (mm/s)"), Field("travel", "Travel speed (mm/s)"), Field("zhop", "Z hop (mm)"),
+            Field("firstSpeed", "First layer speed (mm/s)"), Field("bridgeSpeed", "Bridge speed (mm/s)"), Field("gapSpeed", "Gap fill speed (mm/s)"),
+            Field("travel", "Travel speed (mm/s)"), Field("zhop", "Z hop (mm)"),
             Field("scale", "Scale (%)"), Row("Position", _position));
 
         var left = new ScrollViewer
@@ -250,6 +255,7 @@ public sealed class PrintWindow : Window
     public ComboBox Printers => _printers;
     public ComboBox Materials => _materials;
     public CheckBox SupportsBox => _supports;
+    public CheckBox CombingBox => _combing;
 
     private void Fill(PrintSetup setup)
     {
@@ -270,6 +276,10 @@ public sealed class PrintWindow : Window
         Set("skirt", s.SkirtLoops); Set("brim", s.BrimLines); Set("supportAngle", s.SupportAngle);
         Set("speed", s.PrintSpeed); Set("outer", s.OuterWallSpeed); Set("infillSpeed", s.InfillSpeed); Set("firstSpeed", s.FirstLayerSpeed);
         Set("travel", s.TravelSpeed); Set("zhop", s.ZHop); Set("scale", setup.Placement.ScalePercent);
+        Set("bridgeSpeed", s.BridgeSpeed); Set("gapSpeed", s.GapFillSpeed);
+        _gapFill.IsChecked = s.GapFill;
+        _bridging.IsChecked = s.Bridging;
+        _combing.IsChecked = s.Combing;
         _pattern.SelectedIndex = (int)s.Infill;
         _seam.SelectedIndex = (int)s.Seam;
         _supports.IsChecked = s.Supports;
@@ -291,6 +301,7 @@ public sealed class PrintWindow : Window
         Set("material.nozzle", m.NozzleTemp); Set("material.first", m.FirstLayerNozzleTemp); Set("material.bed", m.BedTemp);
         Set("material.retract", m.RetractLength); Set("material.retractSpeed", m.RetractSpeed); Set("material.fan", m.FanPercent);
         Set("material.fanFrom", m.FanFromLayer); Set("material.density", m.Density);
+        Set("material.minLayer", m.MinLayerSeconds); Set("material.minSpeed", m.MinSpeed);
     }
 
     private void Set(string key, double v) => _fields[key].Text = v.ToString("0.###", CultureInfo.InvariantCulture);
@@ -309,6 +320,8 @@ public sealed class PrintWindow : Window
             Supports = _supports.IsChecked == true, SupportAngle = Num("supportAngle", "The support angle"),
             PrintSpeed = Num("speed", "The print speed"), OuterWallSpeed = Num("outer", "The outer wall speed"), InfillSpeed = Num("infillSpeed", "The infill speed"),
             FirstLayerSpeed = Num("firstSpeed", "The first layer speed"), TravelSpeed = Num("travel", "The travel speed"), ZHop = Num("zhop", "The Z hop"),
+            BridgeSpeed = Num("bridgeSpeed", "The bridge speed"), GapFillSpeed = Num("gapSpeed", "The gap fill speed"),
+            GapFill = _gapFill.IsChecked == true, Bridging = _bridging.IsChecked == true, Combing = _combing.IsChecked == true,
         };
         var placement = new PlacementOptions { ScalePercent = Num("scale", "The scale"), Position = (BedPosition)Math.Max(0, _position.SelectedIndex) };
         return (_setup with { Printer = printer, Material = material, Settings = settings, Placement = placement }).Checked();
@@ -327,6 +340,7 @@ public sealed class PrintWindow : Window
         FirstLayerNozzleTemp = Whole("material.first", "The first layer's temperature"), BedTemp = Whole("material.bed", "The bed temperature"),
         RetractLength = Num("material.retract", "The retraction"), RetractSpeed = Num("material.retractSpeed", "The retraction speed"),
         FanPercent = Whole("material.fan", "The fan"), FanFromLayer = Whole("material.fanFrom", "The fan's first layer"), Density = Num("material.density", "The density"),
+        MinLayerSeconds = Num("material.minLayer", "The shortest layer time"), MinSpeed = Num("material.minSpeed", "The slowest cooling speed"),
     }.Checked();
 
     private void SavePrinter()
@@ -475,6 +489,9 @@ public sealed class LayerPreview : Control
         [PathKind.Support] = new SolidColorBrush(Color.FromRgb(90, 200, 240)),
         [PathKind.Skirt] = new SolidColorBrush(Color.FromRgb(200, 200, 210)),
         [PathKind.Brim] = new SolidColorBrush(Color.FromRgb(170, 140, 255)),
+        [PathKind.GapFill] = new SolidColorBrush(Color.FromRgb(240, 120, 200)),
+        [PathKind.Bridge] = new SolidColorBrush(Color.FromRgb(70, 130, 255)),
+        [PathKind.SupportInterface] = new SolidColorBrush(Color.FromRgb(40, 230, 230)),
     };
 
     public static IBrush BrushFor(PathKind kind) => Colours[kind];
@@ -488,6 +505,9 @@ public sealed class LayerPreview : Control
         PathKind.Support => "Support",
         PathKind.Skirt => "Skirt",
         PathKind.Brim => "Brim",
+        PathKind.GapFill => "Gap fill",
+        PathKind.Bridge => "Bridge",
+        PathKind.SupportInterface => "Support top",
         _ => kind.ToString(),
     };
 

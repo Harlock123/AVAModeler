@@ -55,6 +55,14 @@ public static class Polygons2D
         return Clipper.InflatePaths(region, delta, join, EndType.Polygon, 2.0, Precision, 0.005);
     }
 
+    /// <summary>The band a line <paramref name="halfWidth"/> either side of each closed polyline covers (a printed loop's footprint).</summary>
+    public static PathsD Band(IEnumerable<IEnumerable<Vec2>> loops, double halfWidth)
+    {
+        var paths = Paths(loops);
+        if (paths.Count == 0) return [];
+        return Union(Clipper.InflatePaths(paths, halfWidth, JoinType.Round, EndType.Joined, 2.0, Precision, 0.005));
+    }
+
     /// <summary>The area covered (mm²), holes taken away.</summary>
     public static double Area(PathsD region) => Clipper.Area(region);
 

@@ -17,6 +17,9 @@ public sealed record PrintStats
     public int ExtrusionMoves { get; init; }
     public int TravelMoves { get; init; }
     public int Retractions { get; init; }
+    /// <summary>Travel moves kept inside the object (no retraction), and layers slowed down to cool.</summary>
+    public int CombedTravels { get; init; }
+    public int SlowedLayers { get; init; }
 
     /// <summary>The time as hours and minutes ("1 h 05 min", "12 min").</summary>
     public string Time
@@ -51,7 +54,10 @@ public static class GCode
         PathKind.Skin => "SKIN",
         PathKind.Infill => "FILL",
         PathKind.Support => "SUPPORT",
+        PathKind.SupportInterface => "SUPPORT-INTERFACE",
         PathKind.Skirt or PathKind.Brim => "SKIRT",
+        PathKind.GapFill => "FILL",
+        PathKind.Bridge => "SKIN",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -85,11 +91,12 @@ public static class GCode
         var body = new StringBuilder();
         var w = new Writer(body);
         double seconds = 0, filament = 0;
-        int extrusions = 0, travels = 0, retractions = 0;
+        int extrusions = 0, travels = 0, retractions = 0, combed = 0, slowed = 0;
         var pos = new Vec2(double.NaN, double.NaN);
         double z = 0;
         bool retracted = false;
         int fan = (int)Math.Round(255 * material.FanPercent / 100.0);
+        int fanNow = 0;
 
         void Retract()
         {
@@ -100,10 +107,24 @@ public static class GCode
             retracted = true;
         }
 
-        void Travel(Vec2 to)
+        void Travel(Vec2 to, IReadOnlyList<Island> comb)
         {
             double d = double.IsNaN(pos.X) ? double.PositiveInfinity : (to - pos).Length;
             if (d < 1e-6) return;
+            // Inside the object: round what's in the way, without retracting.
+            if (s.Combing && d >= s.RetractMinTravel && double.IsFinite(d) && Combing.Route(comb, pos, to, 1.5 * s.LineWidth) is { } route)
+            {
+                foreach (var q in route)
+                {
+                    w.Line($"G0 X{F(q.X, 3)} Y{F(q.Y, 3)} F{F(s.TravelSpeed * 60, 0)}");
+                    seconds += (q - pos).Length / s.TravelSpeed;
+                    pos = q;
+                }
+                travels++;
+                combed++;
+                pos = to;
+                return;
+            }
             bool hop = false;
             // The first move of all comes straight from the start G-code's prime line: nothing to pull back from.
             if (d >= s.RetractMinTravel && !double.IsNaN(pos.X))
@@ -138,23 +159,42 @@ public static class GCode
             w.Line($"G0 Z{F(z, 3)} F600");
             if (layer.Layer.Index > 0) seconds += layer.Layer.Height / 10;
             if (number == 2 && material.NozzleTemp != material.FirstLayerNozzleTemp) w.Line($"M104 S{material.NozzleTemp}");
-            if (number == material.FanFromLayer && fan > 0) w.Line($"M106 S{fan}");
-            double perMm = FilamentPerMm(s.LineWidth, layer.Layer.Height, printer.FilamentDiameter);
+            if (number == material.FanFromLayer && fan > 0)
+            {
+                w.Line($"M106 S{fan}");
+                fanNow = fan;
+            }
+            double Speed(Extrusion path) => layer.Layer.Index == 0 ? s.FirstLayerSpeed : path.Kind switch
+            {
+                PathKind.OuterWall => s.OuterWallSpeed,
+                PathKind.Infill => s.InfillSpeed,
+                PathKind.Bridge => s.BridgeSpeed,
+                PathKind.GapFill => s.GapFillSpeed,
+                _ => s.PrintSpeed,
+            };
+            // Cooling: a layer quicker than the material's shortest layer time is slowed to take it (down to its slowest speed).
+            double layerSeconds = layer.Paths.Sum(p => p.Length / Speed(p));
+            double slow = material.MinLayerSeconds > 0 && layerSeconds > 0 && layerSeconds < material.MinLayerSeconds ? layerSeconds / material.MinLayerSeconds : 1;
+            if (slow < 1)
+            {
+                w.Line($";Slowed to {F(slow * 100, 0)}% to cool: the layer would take {F(layerSeconds, 1)} s");
+                slowed++;
+            }
             type = null;
             foreach (var path in layer.Paths)
             {
                 if (path.Kind != type)
                 {
+                    // Bridges with the fan full, to set them hard over the air; back as it was after.
+                    if (path.Kind == PathKind.Bridge && fanNow < 255) w.Line("M106 S255");
+                    if (type == PathKind.Bridge && fanNow < 255) w.Line($"M106 S{fanNow}");
                     w.Line($";TYPE:{TypeName(path.Kind)}");
                     type = path.Kind;
                 }
-                double speed = layer.Layer.Index == 0 ? s.FirstLayerSpeed : path.Kind switch
-                {
-                    PathKind.OuterWall => s.OuterWallSpeed,
-                    PathKind.Infill => s.InfillSpeed,
-                    _ => s.PrintSpeed,
-                };
-                Travel(path.Points[0]);
+                double normal = Speed(path);
+                double speed = slow < 1 ? Math.Max(normal * slow, Math.Min(normal, material.MinSpeed)) : normal;
+                double perMm = FilamentPerMm(path.Width > 0 ? path.Width : s.LineWidth, layer.Layer.Height, printer.FilamentDiameter);
+                Travel(path.Points[0], layer.Comb);
                 Unretract();
                 string feed = $" F{F(speed * 60, 0)}";
                 IEnumerable<Vec2> points = path.Closed ? path.Points.Skip(1).Append(path.Points[0]) : path.Points.Skip(1);
@@ -171,6 +211,7 @@ public static class GCode
                     pos = p;
                 }
             }
+            if (type == PathKind.Bridge && fanNow < 255) w.Line($"M106 S{fanNow}");
         }
 
         var stats = new PrintStats
@@ -182,6 +223,8 @@ public static class GCode
             ExtrusionMoves = extrusions,
             TravelMoves = travels,
             Retractions = retractions,
+            CombedTravels = combed,
+            SlowedLayers = slowed,
         };
 
         var values = Values(printer, material, s);

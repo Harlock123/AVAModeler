@@ -94,8 +94,14 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     in print order. Walls are offsets of each island; skin is the inside not covered by every layer within
     `TopLayers` above or `BottomLayers` below; lines are on one grid fixed to the bed so layers stack; support is
     carried down from each overhang (one layer of air under it, `SupportGap` from the object) until it meets the
-    object or the bed. Islands go nearest first; inner walls, outer wall, skin, infill; `Order` and `Seam` place the
-    lines.
+    object or the bed. Islands go nearest first; inner walls, outer wall, gap fill, bridges, skin, infill; `Order`
+    and `Seam` place the lines. Lines side by side are `Planner.Spacing` apart (w − h(1 − π/4)), never a full width.
+    A wall loop is kept only where it has half a line of room. `GapFill` covers what walls and the inside leave
+    (cut into 3 mm pieces, lines along each piece's long axis, `Extrusion.Width` narrower); `Bridges` takes the solid
+    over air (beyond the layer below by a line) and picks the angle that anchors most length at both ends. Each
+    `ToolpathLayer.Comb` is the islands a line in from their walls, for `Combing.Route` (travel round holes inside one
+    island, stepping in from a wall; null means straight with a retraction). The writer slows a layer quicker than
+    `MaterialProfile.MinLayerSeconds` and runs the fan full for bridges.
   - `GCode.cs`: `GCode.Write` turns a plan into Marlin-style G-code (G21, G90, M83 relative extrusion; heating and
     homing first, the start and end G-code with placeholders filled, `;LAYER:n` and `;TYPE:` comments, retraction
     before long travel and layer changes, Z hop, the fan from its layer) and `PrintStats` (time from lengths and

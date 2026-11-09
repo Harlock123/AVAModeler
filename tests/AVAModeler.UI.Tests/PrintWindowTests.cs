@@ -87,6 +87,10 @@ public sealed class PrintWindowTests : IDisposable
         Assert.NotNull(p.CaptureRenderedFrame());
         // The setup is kept in the preferences.
         Assert.Equal(2, w.Session.Preferences.Print.Placement.ScalePercent);
+        Assert.True(w.Session.Preferences.Print.Settings.Combing);
+        p.CombingBox.IsChecked = false;
+        Assert.False(p.UpToDate);
+        p.CombingBox.IsChecked = true;
         // Changing the object or a setting makes it out of date.
         p.FieldBox("infill").Text = "40";
         Assert.False(p.UpToDate);

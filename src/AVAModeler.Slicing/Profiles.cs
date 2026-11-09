@@ -88,6 +88,10 @@ public sealed record MaterialProfile
     public int FanFromLayer { get; init; } = 2;
     /// <summary>Grams per cubic centimetre.</summary>
     public double Density { get; init; } = 1.24;
+    /// <summary>A layer quicker than this (seconds) is slowed to take it, so it cools before the next goes on top.</summary>
+    public double MinLayerSeconds { get; init; } = 8;
+    /// <summary>The slowest that slowing down for cooling may go (mm/s).</summary>
+    public double MinSpeed { get; init; } = 10;
 
     public MaterialProfile Checked()
     {
@@ -100,6 +104,8 @@ public sealed record MaterialProfile
         PrinterProfile.Range(FanPercent, 0, 100, "The fan speed", "%");
         PrinterProfile.Range(FanFromLayer, 1, 1000, "The fan's first layer", "");
         PrinterProfile.Range(Density, 0.5, 10, "The density", " g/cm³");
+        PrinterProfile.Range(MinLayerSeconds, 0, 120, "The shortest layer time", " s");
+        PrinterProfile.Range(MinSpeed, 1, 100, "The slowest cooling speed", " mm/s");
         return this;
     }
 }

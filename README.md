@@ -193,6 +193,12 @@ phases 0 to 7 and Layout phases L1 to L6.
       back or nearest), solid top and bottom layers where a surface is near, sparse infill (lines or a grid, on one
       grid for the whole print), optional supports under overhangs (with a gap round them and a layer of air under
       what they hold), and a skirt or a brim on the first layer. Shells that overlap print as one solid.
+    - Gap fill puts narrower lines where the walls leave a strip with no room for another loop, and along fins too
+      thin for any wall. Solid areas over air are bridged: straight lines across at the angle (tried every 15°) that
+      lands most of them on what's below at both ends, slower and with the fan full. A layer quicker than the
+      material's shortest layer time is slowed to take it (no slower than its slowest speed), so small parts cool.
+      Travel stays inside the object where it can (combing: round holes and notches along the inside of the walls),
+      so it needn't retract or cross a wall.
     - The G-code is Marlin-style (Marlin, Klipper and RepRapFirmware read it), with relative extrusion, heating and
       homing first, retraction and an optional Z hop on long moves, the fan from its layer, and Cura-style comments
       (`;LAYER:n`, `;TYPE:WALL-OUTER`…) so G-code previewers show it. The window shows each layer's lines on the bed
@@ -956,9 +962,10 @@ Layout reuses them.
 
 - **3D printing** is a straightforward slicer, not a match for a dedicated one. It prints one extruder with
   Marlin-style G-code (no other flavours, no arcs, no firmware retraction), uses one line width and one speed per
-  kind of line, and fills with straight lines (lines or a grid: no gyroid or honeycomb). There's no bridging, ironing,
-  gap fill between walls too close for another loop, combing (travel avoiding the walls), cooling slowdown for small
-  layers, variable layer heights or pressure advance. Supports are simple columns of lines under overhangs, kept to the
+  kind of line, and fills with straight lines (lines or a grid: no gyroid or honeycomb). There's no ironing, variable
+  layer heights or pressure advance; gap fill lays straight pieces a few millimetres long (not one line along a curve),
+  bridges are found only over air (not over sparse infill), and combing keeps to one island (travel between islands
+  retracts). Supports are simple columns of lines under overhangs, kept to the
   sideways gap and one layer of air, with no interface layers or tree supports, and they stand on the object where it's
   below. The time is from the moves' lengths and speeds alone, so real prints take somewhat longer. Placement can
   centre and scale but not turn the object or lay several copies out: model them so. The preview shows one layer at

@@ -186,7 +186,9 @@ public class GCodeTests
     public void Speeds_follow_the_kind_of_line_and_the_first_layer_is_slow()
     {
         var plan = PlannerTests.Plan(Shapes.Cube(0.02));
-        var (text, stats) = GCode.Write(plan, Pla);
+        // No slowing down to cool, to see the speeds as set.
+        var (text, stats) = GCode.Write(plan, Pla with { MinLayerSeconds = 0 });
+        Assert.Equal(0, stats.SlowedLayers);
         var layer0 = text[text.IndexOf(";LAYER:0\n")..text.IndexOf(";LAYER:1\n")];
         Assert.DoesNotContain("F3000", layer0.Replace("G0 Z", ""));
         Assert.Contains("F1200", layer0);

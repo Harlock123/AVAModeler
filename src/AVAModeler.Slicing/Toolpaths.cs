@@ -117,10 +117,15 @@ public static class Planner
                 if (s.InfillPercent > 0)
                 {
                     var mySparse = Polygons2D.Intersect(sparse[i], own);
-                    var (apart, angles) = s.Infill == InfillPattern.Grid
-                        ? (2 * spacing[i] * 100 / s.InfillPercent, new[] { s.InfillAngle, s.InfillAngle + 90 })
-                        : (spacing[i] * 100 / s.InfillPercent, new[] { s.InfillAngle + turn });
-                    foreach (var e in Order(Fill(mySparse, apart, angles, PathKind.Infill), at)) Add(e);
+                    if (s.Infill == InfillPattern.Gyroid)
+                        foreach (var e in Order(Gyroid(mySparse, spacing[i] * 100 / s.InfillPercent, layers[i].CutAt), at)) Add(e);
+                    else
+                    {
+                        var (apart, angles) = s.Infill == InfillPattern.Grid
+                            ? (2 * spacing[i] * 100 / s.InfillPercent, new[] { s.InfillAngle, s.InfillAngle + 90 })
+                            : (spacing[i] * 100 / s.InfillPercent, new[] { s.InfillAngle + turn });
+                        foreach (var e in Order(Fill(mySparse, apart, angles, PathKind.Infill), at)) Add(e);
+                    }
                 }
             }
             var comb = s.Combing ? Polygons2D.Islands(Polygons2D.Offset(region[i], -w)) : [];
@@ -322,6 +327,107 @@ public static class Planner
                 if (Geometry2D.Perimeter(piece, false) > 1e-3) lines.Add(new Extrusion(kind, piece, false));
         }
         return lines;
+    }
+
+    /// <summary>
+    /// Gyroid infill for a region at height <paramref name="z"/>: the curves where sin kx cos ky + sin ky cos kz +
+    /// sin kz cos kx = 0, traced by marching squares on a grid fixed to the bed (so layers line up) and clipped to the
+    /// region. k is set so the curves lie about <paramref name="apart"/> mm from each other, as lines that far apart
+    /// would, the waviness adding a little length.
+    /// </summary>
+    internal static List<Extrusion> Gyroid(PathsD region, double apart, double z)
+    {
+        var result = new List<Extrusion>();
+        if (region.Count == 0) return result;
+        double k = Math.PI / apart;
+        double h = 2 * Math.PI / k / 12;
+        var pts = region.SelectMany(p => p).ToList();
+        int i0 = (int)Math.Floor(pts.Min(p => p.x) / h) - 1, i1 = (int)Math.Ceiling(pts.Max(p => p.x) / h) + 1;
+        int j0 = (int)Math.Floor(pts.Min(p => p.y) / h) - 1, j1 = (int)Math.Ceiling(pts.Max(p => p.y) / h) + 1;
+        int nx = i1 - i0 + 1, ny = j1 - j0 + 1;
+        double sz = Math.Sin(k * z), cz = Math.Cos(k * z);
+        var f = new double[nx, ny];
+        for (int a = 0; a < nx; a++)
+        {
+            double x = (i0 + a) * h, sx = Math.Sin(k * x), cx = Math.Cos(k * x);
+            for (int b = 0; b < ny; b++)
+            {
+                double y = (j0 + b) * h, sy = Math.Sin(k * y), cy = Math.Cos(k * y);
+                double v = sx * cy + sy * cz + sz * cx;
+                // Never exactly zero at a node, so each cell edge is crossed once or not at all.
+                f[a, b] = v == 0 ? 1e-12 : v;
+            }
+        }
+        // Where the curve crosses each cell edge, by the edge: horizontal (a, b)-(a+1, b) and vertical (a, b)-(a, b+1).
+        long Edge(int a, int b, bool vertical) => ((long)a * ny + b) * 2 + (vertical ? 1 : 0);
+        Vec2 Cut(int a, int b, bool vertical)
+        {
+            int a2 = vertical ? a : a + 1, b2 = vertical ? b + 1 : b;
+            double t = f[a, b] / (f[a, b] - f[a2, b2]);
+            return new Vec2((i0 + a + (a2 - a) * t) * h, (j0 + b + (b2 - b) * t) * h);
+        }
+        var links = new Dictionary<long, List<long>>();
+        void Link(long e1, long e2)
+        {
+            (links.TryGetValue(e1, out var l1) ? l1 : links[e1] = []).Add(e2);
+            (links.TryGetValue(e2, out var l2) ? l2 : links[e2] = []).Add(e1);
+        }
+        for (int a = 0; a + 1 < nx; a++)
+            for (int b = 0; b + 1 < ny; b++)
+            {
+                // The cell's four edges, round it: bottom, right, top, left; those the sign changes across.
+                var crossed = new List<long>(4);
+                if (f[a, b] > 0 != f[a + 1, b] > 0) crossed.Add(Edge(a, b, false));
+                if (f[a + 1, b] > 0 != f[a + 1, b + 1] > 0) crossed.Add(Edge(a + 1, b, true));
+                if (f[a, b + 1] > 0 != f[a + 1, b + 1] > 0) crossed.Add(Edge(a, b + 1, false));
+                if (f[a, b] > 0 != f[a, b + 1] > 0) crossed.Add(Edge(a, b, true));
+                if (crossed.Count == 2) Link(crossed[0], crossed[1]);
+                else if (crossed.Count == 4)
+                {
+                    // A saddle: pair the crossings by the cell's middle value.
+                    double mid = (f[a, b] + f[a + 1, b] + f[a, b + 1] + f[a + 1, b + 1]) / 4;
+                    if (mid > 0 == f[a, b] > 0) { Link(crossed[0], crossed[1]); Link(crossed[2], crossed[3]); }
+                    else { Link(crossed[0], crossed[3]); Link(crossed[1], crossed[2]); }
+                }
+            }
+        Vec2 At(long e)
+        {
+            bool vertical = (e & 1) == 1;
+            long cell = e >> 1;
+            return Cut((int)(cell / ny), (int)(cell % ny), vertical);
+        }
+        // Chains from each end (an edge with one link) first, then the closed loops left.
+        var seen = new HashSet<long>();
+        var lines = new List<List<Vec2>>();
+        void Walk(long start)
+        {
+            var line = new List<Vec2> { At(start) };
+            seen.Add(start);
+            long prev = -1, cur = start;
+            while (true)
+            {
+                long next = -1;
+                foreach (var n in links[cur])
+                    if (n != prev && !seen.Contains(n)) { next = n; break; }
+                if (next < 0)
+                {
+                    if (links[cur].Contains(start) && line.Count > 2 && prev != start) line.Add(line[0]);
+                    break;
+                }
+                line.Add(At(next));
+                seen.Add(next);
+                prev = cur;
+                cur = next;
+            }
+            if (line.Count >= 2) lines.Add(line);
+        }
+        foreach (var (e, l) in links)
+            if (l.Count == 1 && !seen.Contains(e)) Walk(e);
+        foreach (var e in links.Keys)
+            if (!seen.Contains(e)) Walk(e);
+        foreach (var piece in Polygons2D.ClipLines(lines, region))
+            if (Geometry2D.Perimeter(piece, false) > 1e-3) result.Add(new Extrusion(PathKind.Infill, piece, false));
+        return result;
     }
 
     /// <summary>Support for each layer, worked down from the top (see <see cref="Planner"/>).</summary>

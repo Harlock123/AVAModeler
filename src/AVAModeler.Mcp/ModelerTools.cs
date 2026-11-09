@@ -806,6 +806,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         [Description("The material preset: PLA (default), PETG, ABS or TPU.")] string? material = null,
         [Description("Layer height in mm, 0.04 to 0.8 × the nozzle (default 0.2).")] double layer_height = 0.2,
         [Description("Sparse infill, 0 to 100% (default 20).")] double infill_percent = 20,
+        [Description("The infill's pattern: lines (default, turned 90° each layer), grid (both ways every layer) or gyroid (wavy curves that shift with height: about as strong every way).")] string infill_pattern = "lines",
         [Description("Wall loops round each outline and hole, 1 to 20 (default 2).")] int walls = 2,
         [Description("Build supports under overhangs steeper than 50° from vertical (default false), topped by two dense interface layers that come away cleanly.")] bool supports = false,
         [Description("With supports: only columns that stand on the bed, none on the object (default false).")] bool supports_bed_only = false,
@@ -841,7 +842,8 @@ public sealed partial class ModelerTools(IModelerHost host)
                         _ => throw new ArgumentException($"lay_flat is as_modelled, largest_face or selected_face, not \"{lay_flat}\"."),
                     },
                 },
-                Settings = new SliceSettings { LayerHeight = layer_height, InfillPercent = infill_percent, Walls = walls, Supports = supports, BrimLines = brim_lines, SupportOn = supports_bed_only ? SupportPlacement.BedOnly : SupportPlacement.Everywhere },
+                Settings = new SliceSettings { LayerHeight = layer_height, InfillPercent = infill_percent,
+                    Infill = Enum.TryParse<InfillPattern>(infill_pattern, ignoreCase: true, out var ip) ? ip : throw new ArgumentException($"infill_pattern is lines, grid or gyroid, not \"{infill_pattern}\"."), Walls = walls, Supports = supports, BrimLines = brim_lines, SupportOn = supports_bed_only ? SupportPlacement.BedOnly : SupportPlacement.Everywhere },
             }.Checked();
         }
         catch (ArgumentException e)

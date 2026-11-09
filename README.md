@@ -208,7 +208,7 @@ phases 0 to 7 and Layout phases L1 to L6.
       on its largest flat face, or on the face you've selected; be turned about the bed's up axis; and be printed as
       several copies in rows with a gap between.
     - Each layer is cut halfway up its height, then printed as walls (inner first, the outer one last, seams at the
-      back or nearest), solid top and bottom layers where a surface is near, sparse infill (lines or a grid, on one
+      back or nearest), solid top and bottom layers where a surface is near, sparse infill (lines, a grid or a gyroid, on one
       grid for the whole print), optional supports under overhangs (with a gap round them and a layer of air under
       what they hold, topped by dense interface layers laid crossways so the part sits flat and comes away cleanly,
       standing on the bed and the object or on the bed only), and a skirt or a brim on the first layer. Shells that overlap print as one solid.
@@ -993,7 +993,7 @@ Layout reuses them.
 
 - **3D printing** is a straightforward slicer, not a match for a dedicated one. It prints one extruder with
   Marlin-style G-code (no other flavours, no arcs, no firmware retraction), uses one line width and one speed per
-  kind of line, and fills with straight lines (lines or a grid: no gyroid or honeycomb). There's no ironing, variable
+  kind of line, and fills with lines, a grid or a gyroid (no honeycomb or adaptive infill). There's no ironing, variable
   layer heights or pressure advance; gap fill lays straight pieces a few millimetres long (not one line along a curve),
   bridges are found only over air (not over sparse infill), and combing keeps to one island (travel between islands
   retracts). Supports are columns of straight lines under overhangs (no tree supports), with

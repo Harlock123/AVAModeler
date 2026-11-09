@@ -39,6 +39,9 @@ public class SliceTests
         await b.Tools.SliceToGCode("prints/fcp.x3g", printer: "Flashforge Creator Pro", scale_percent: 2, cancel: Cancel);
         Assert.Equal(153, File.ReadAllBytes(b.Folder.File(Path.Combine("prints", "fcp.x3g")))[0]);
         Assert.Contains("doesn't read .x3g", await Error(b.Tools.SliceToGCode("prints/no.x3g", scale_percent: 2, cancel: Cancel)));
+        await b.Tools.SliceToGCode("prints/gyroid.gcode", scale_percent: 2, infill_pattern: "gyroid", cancel: Cancel);
+        Assert.Contains("gyroid infill", File.ReadAllText(b.Folder.File(Path.Combine("prints", "gyroid.gcode"))));
+        Assert.Contains("lines, grid or gyroid", await Error(b.Tools.SliceToGCode("prints/x.gcode", infill_pattern: "honeycomb", cancel: Cancel)));
         // Slicing is no undo step.
         Assert.Equal(steps, b.Doc.Undo.Count);
     }

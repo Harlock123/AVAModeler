@@ -7,6 +7,11 @@ public enum InfillPattern
     Lines,
     /// <summary>Lines both ways in every layer, half as dense each way: stiffer, a little slower.</summary>
     Grid,
+    /// <summary>
+    /// The gyroid: wavy lines whose shape shifts with height, so the infill is one curved surface through the print,
+    /// about as strong every way. A little slower to print than lines.
+    /// </summary>
+    Gyroid,
 }
 
 /// <summary>Where supports may stand.</summary>

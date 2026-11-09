@@ -190,3 +190,42 @@ public class SupportTests
         Assert.Contains(highOnly.SelectMany(l => l.Paths), e => e.Kind == PathKind.Support && e.Points.All(p => p.X < 110 - 2));
     }
 }
+
+public class GyroidTests
+{
+    private static IEnumerable<Extrusion> Infill(ToolpathLayer l) => l.Paths.Where(p => p.Kind == PathKind.Infill);
+
+    [Fact]
+    public void Gyroid_infill_is_as_dense_as_its_percentage_and_shifts_with_height()
+    {
+        var plan = PlannerTests.Plan(Shapes.Cube(0.02), new SliceSettings { Infill = InfillPattern.Gyroid });
+        double sp = Planner.Spacing(0.45, 0.2), apart = sp * 100 / 20;
+        double side = 20 - 2 * (0.45 / 2 + 2 * sp - 0.15 * 0.45);
+        foreach (int i in (int[])[20, 33, 50, 71])
+        {
+            var lines = Infill(plan.Layers[i]).ToList();
+            double length = lines.Sum(e => e.Length);
+            // About the length lines that far apart would have, a little more for the waves.
+            Assert.InRange(length, side * side / apart * 0.8, side * side / apart * 1.5);
+            // Curved: most pieces aren't straight lines.
+            Assert.True(lines.Count(e => e.Points.Count > 4) > lines.Count / 2, $"layer {i}: {lines.Count} pieces");
+            Assert.All(lines.SelectMany(e => e.Points), p => Assert.True(p.X > 100.9 && p.X < 119.1 && p.Y > 100.9 && p.Y < 119.1, $"{p}"));
+        }
+        // The pattern changes with height: two layers apart are different.
+        static string Shape(ToolpathLayer l) => string.Join(";", l.Paths.Where(p => p.Kind == PathKind.Infill).SelectMany(e => e.Points).Take(20).Select(p => $"{p.X:0.0},{p.Y:0.0}"));
+        Assert.NotEqual(Shape(plan.Layers[30]), Shape(plan.Layers[40]));
+        // And it's the same every time.
+        var again = PlannerTests.Plan(Shapes.Cube(0.02), new SliceSettings { Infill = InfillPattern.Gyroid });
+        Assert.Equal(Shape(plan.Layers[30]), Shape(again.Layers[30]));
+    }
+
+    [Fact]
+    public void A_gyroid_print_is_safe_to_send()
+    {
+        var job = PrintJob.Run(Shapes.Tube(0.03, 0.012, 0.01), new PrintSetup { Settings = new SliceSettings { Infill = InfillPattern.Gyroid, InfillPercent = 15 } });
+        var run = Playback.Run(job.GCode);
+        Assert.Equal(-2, run.E - run.TotalE, 6);
+        Assert.All(run.Extrusions.Where(e => e.Layer >= 0), e => Assert.InRange(e.E, 0, 5));
+        Assert.True(job.Plan.Lengths[PathKind.Infill] > 100);
+    }
+}

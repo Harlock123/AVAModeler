@@ -64,6 +64,25 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void The_spiral_stairs_sliced_for_printing()
+    {
+        var w = WithMacro("spiral-stairs.lua");
+        w.Modeler.Execute("3D Print");
+        Ui.Pump();
+        var p = w.OwnedWindows.OfType<AVAModeler.Modeler.UI.PrintWindow>().Single();
+        // Scaled so its longest side is 80 mm, with supports under the treads.
+        double extent = w.Session.Document.Bounds().Size is var size ? Math.Max(size.X, Math.Max(size.Y, size.Z)) : 1;
+        p.FieldBox("scale").Text = (8 / extent).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        p.SupportsBox.IsChecked = true;
+        var slice = p.Slice();
+        for (int i = 0; i < 60000 && !slice.IsCompleted; i++) { Avalonia.Threading.Dispatcher.UIThread.RunJobs(); Thread.Sleep(1); }
+        Assert.True(slice.Result);
+        p.ShownLayer = p.Job!.Plan.Layers.Count / 3;
+        Shot(p, "print");
+        p.Close();
+    }
+
+    [AvaloniaFact]
     public void A_table_an_ai_agent_built_live()
     {
         var w = Ui.Open(1400, 860);

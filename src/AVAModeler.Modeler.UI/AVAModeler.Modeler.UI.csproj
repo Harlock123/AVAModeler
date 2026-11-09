@@ -9,5 +9,6 @@
     <PackageReference Include="Avalonia" Version="12.1.4" />
     <ProjectReference Include="..\AVAModeler.Rendering\AVAModeler.Rendering.csproj" />
     <ProjectReference Include="..\AVAModeler.Tools\AVAModeler.Tools.csproj" />
+    <ProjectReference Include="..\AVAModeler.Slicing\AVAModeler.Slicing.csproj" />
   </ItemGroup>
 </Project>

@@ -48,6 +48,8 @@ public sealed class Preferences
     /// this user can open: its Edit in Modeler opens objects here, and saves go back to its scene. On unless turned off.
     /// </summary>
     public bool HubEnabled { get; set; } = true;
+    /// <summary>The 3D Print window's printer, material and settings, and the person's own printers and materials.</summary>
+    public AVAModeler.Slicing.PrintSetup Print { get; set; } = new();
     /// <summary>
     /// Live sync with AVALightWave: while the open object is linked to an object in its scene (Edit in Modeler, or Send
     /// to AVALightWave), every change is sent there a moment after the editing pauses, unsaved (a copy in the hub

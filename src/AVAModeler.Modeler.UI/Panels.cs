@@ -59,7 +59,7 @@ public sealed class ToolTabs : DockPanel
     /// <summary>Commands that aren't tools, by tab: (label, command name).</summary>
     public Dictionary<string, List<(string Label, string Command)>> Extras { get; } = new()
     {
-        ["Objects"] = [],
+        ["Objects"] = [("3D Print…", "3D Print")],
         ["Modify"] = [],
         ["Multiply"] = [],
         ["Polygon"] = [("Select Loop", "Select Loop"), ("Select Ring", "Select Ring")],

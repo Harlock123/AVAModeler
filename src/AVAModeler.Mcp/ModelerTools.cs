@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using AVAModeler.Core;
 using AVAModeler.Formats;
 using AVAModeler.Rendering;
+using AVAModeler.Slicing;
 using AVAModeler.Tools;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -792,6 +793,96 @@ public sealed partial class ModelerTools(IModelerHost host)
         {
             Content = [ImageContentBlock.FromBytes(png, "image/png"), new TextContentBlock { Text = $"Ray-traced, {width}×{height}, {samples} samples a pixel, heading {heading:0.#}°, pitch {pitch:0.#}°." }],
         };
+    }
+
+    /// <summary>The extensions a G-code file may have.</summary>
+    public static readonly string[] GCodeExtensions = [".gcode", ".gco", ".g"];
+
+    [McpServerTool(Name = "slice_to_gcode")]
+    [Description("Slices the object for 3D printing and saves the G-code, changing nothing in the object: the foreground layers' faces are put on the printer's bed (Y up becomes Z up; 1 m of the object is 1000 mm printed, times scale_percent), cut into layers, and printed as walls, solid top and bottom layers, sparse infill, an optional brim and supports, then written as Marlin-style G-code (G21, G90, M83 relative extrusion; heats and homes first; ;LAYER and ;TYPE comments for previewers). Returns the file, the print's size in mm, layers, an estimated time (moves only: a real print takes somewhat longer), filament in metres and grams, and warnings (it doesn't fit the bed, the mesh isn't printable, outlines left open by holes in the mesh). Run check_mesh first and fix what it finds: an open or inside-out mesh slices badly. Printers and materials are presets by name (the list is in the error if a name is wrong).")]
+    public async Task<string> SliceToGCode(
+        [Description("The G-code file, relative to the working folder, e.g. \"part.gcode\" (.gcode, .gco or .g).")] string path,
+        [Description("The printer preset by name (default \"Generic 220 × 220\": a 220 × 220 mm bed, 250 mm tall, 0.4 mm nozzle, 1.75 mm filament).")] string? printer = null,
+        [Description("The material preset: PLA (default), PETG, ABS or TPU.")] string? material = null,
+        [Description("Layer height in mm, 0.04 to 0.8 × the nozzle (default 0.2).")] double layer_height = 0.2,
+        [Description("Sparse infill, 0 to 100% (default 20).")] double infill_percent = 20,
+        [Description("Wall loops round each outline and hole, 1 to 20 (default 2).")] int walls = 2,
+        [Description("Build supports under overhangs steeper than 50° from vertical (default false).")] bool supports = false,
+        [Description("Lines of brim round the first layer to hold it down, 0 for none (default 0: a skirt instead).")] int brim_lines = 0,
+        [Description("Scale in percent: 100 prints at the modelled size, 1 m = 1000 mm (default 100).")] double scale_percent = 100,
+        [Description("Centre the object on the bed (default true); false puts the Modeler's origin at the bed's centre.")] bool centre = true,
+        [Description("Replace the file if it already exists.")] bool overwrite = false,
+        CancellationToken cancel = default)
+    {
+        PrintSetup setup;
+        try
+        {
+            var p = printer == null ? Presets.Printers[0] : Presets.Printers.FirstOrDefault(x => string.Equals(x.Name, printer, StringComparison.OrdinalIgnoreCase))
+                ?? throw new ArgumentException($"There's no printer preset \"{printer}\". Choose one of: {string.Join(", ", Presets.Printers.Select(x => x.Name))}.");
+            var m = material == null ? Presets.Materials[0] : Presets.Materials.FirstOrDefault(x => string.Equals(x.Name, material, StringComparison.OrdinalIgnoreCase))
+                ?? throw new ArgumentException($"There's no material preset \"{material}\". Choose one of: {string.Join(", ", Presets.Materials.Select(x => x.Name))}.");
+            setup = new PrintSetup
+            {
+                Printer = p,
+                Material = m,
+                Placement = new PlacementOptions { Position = centre ? BedPosition.Centre : BedPosition.AsModelled, ScalePercent = scale_percent },
+                Settings = new SliceSettings { LayerHeight = layer_height, InfillPercent = infill_percent, Walls = walls, Supports = supports, BrimLines = brim_lines },
+            }.Checked();
+        }
+        catch (ArgumentException e)
+        {
+            throw new McpException(e.Message, e);
+        }
+        var (copy, full) = await Do($"sliced the object into {Path.GetFileName(path)}", c =>
+        {
+            var files = Files(c);
+            string f = files.Resolve(path);
+            if (!GCodeExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                throw new ArgumentException($"A G-code file ends in {string.Join(", ", GCodeExtensions)}, such as \"{Path.GetFileNameWithoutExtension(f)}.gcode\".");
+            files.CheckWritable([f], overwrite);
+            return (c.Document.Copy(), f);
+        }, cancel).ConfigureAwait(false);
+        try
+        {
+            var result = await Task.Run(() =>
+            {
+                var job = PrintJob.Run(copy, setup);
+                if (job.Model.Triangles.Count == 0) throw new InvalidOperationException("There's nothing to print: the foreground layers have no faces.");
+                cancel.ThrowIfCancellationRequested();
+                string temp = full + ".tmp";
+                try
+                {
+                    File.WriteAllText(temp, job.GCode, new System.Text.UTF8Encoding(false));
+                    File.Move(temp, full, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(temp)) File.Delete(temp);
+                }
+                return job;
+            }, cancel).ConfigureAwait(false);
+            _workspace!.Wrote(full);
+            var size = result.Model.Bounds.Size;
+            var st = result.Stats;
+            return new JsonObject
+            {
+                ["saved"] = full,
+                ["printer"] = setup.Printer.Name,
+                ["material"] = setup.Material.Name,
+                ["size_mm"] = new JsonArray(Math.Round(size.X, 2), Math.Round(size.Y, 2), Math.Round(size.Z, 2)),
+                ["layers"] = st.Layers,
+                ["time"] = st.Time,
+                ["minutes"] = Math.Round(st.Seconds / 60, 1),
+                ["filament_m"] = Math.Round(st.FilamentMm / 1000, 3),
+                ["grams"] = Math.Round(st.Grams, 1),
+                ["printable"] = result.Model.Printable,
+                ["warnings"] = new JsonArray([.. result.Warnings.Select(w => (JsonNode)w)]),
+            }.ToJsonString();
+        }
+        catch (Exception e) when (e is not McpException and not OperationCanceledException)
+        {
+            throw new McpException(Explain(e), e);
+        }
     }
 
     // ───────────────────────────── plumbing ─────────────────────────────

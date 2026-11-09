@@ -8,6 +8,7 @@
     <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
     <ProjectReference Include="..\AVAModeler.Formats\AVAModeler.Formats.csproj" />
     <ProjectReference Include="..\AVAModeler.Tools\AVAModeler.Tools.csproj" />
+    <ProjectReference Include="..\AVAModeler.Slicing\AVAModeler.Slicing.csproj" />
     <ProjectReference Include="..\AVAModeler.Rendering\AVAModeler.Rendering.csproj" />
     <ProjectReference Include="..\AVAModeler.Scene\AVAModeler.Scene.csproj" />
     <ProjectReference Include="..\AVAModeler.Layout\AVAModeler.Layout.csproj" />

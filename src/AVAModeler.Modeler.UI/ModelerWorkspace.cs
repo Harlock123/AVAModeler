@@ -140,6 +140,7 @@ public sealed class ModelerWorkspace : DockPanel
             ["Export STL"] = () => _ = Export(".stl"),
             ["Export STL ASCII"] = () => _ = Export(".stl", new SaveOptions { AsciiStl = true }),
             ["Export Plugin Format"] = () => _ = ExportPlugin(),
+            ["3D Print"] = OpenPrint,
             ["Send to AVALightWave"] = () => { s.CommitTool(); SendToLightWave?.Invoke(); },
             // Closing the window asks about unsaved changes first.
             ["Quit"] = () => Owner?.Close(),
@@ -431,6 +432,24 @@ public sealed class ModelerWorkspace : DockPanel
         }
     }
 
+    /// <summary>The 3D Print window, while it's open (one at a time).</summary>
+    public PrintWindow? Print { get; private set; }
+
+    /// <summary>File › 3D Print: opens the print window, or brings the open one to the front.</summary>
+    private void OpenPrint()
+    {
+        Session.CommitTool();
+        if (Print is { } open)
+        {
+            open.Activate();
+            return;
+        }
+        var w = new PrintWindow(Session);
+        w.Closed += (_, _) => Print = null;
+        Print = w;
+        if (Owner != null) w.Show(Owner); else w.Show();
+    }
+
     /// <summary>Saves through a plugin's format (any a plugin added that can save).</summary>
     private async Task ExportPlugin()
     {
@@ -542,6 +561,7 @@ public sealed class ModelerWorkspace : DockPanel
                 Group("_File", Item("_New", "New"), Item("_Open…", "Open"), _recent, "-", Item("_Save", "Save"), Item("Save _As…", "Save As"),
                     Item("Export _OBJ…", "Export OBJ"), Item("Export _GEO…", "Export GEO"),
                     Item("Export gl_TF…", "Export glTF"), Item("Export S_TL…", "Export STL"), Item("Export STL (AS_CII)…", "Export STL ASCII"), Item("Export with a _Plugin…", "Export Plugin Format"), "-",
+                    Item("3D _Print (G-code)…", "3D Print"), "-",
                     Item("Send to AVA_LightWave", "Send to AVALightWave"), "-", Item("_Quit", "Quit")),
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",
                     Item("Select _All", "Select All"), Item("_Deselect", "Deselect"), Item("_Invert", "Invert Selection"), Item("Select C_onnected", "Select Connected"),

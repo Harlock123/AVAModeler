@@ -29,6 +29,8 @@ public class SliceTests
         Assert.InRange((double)four["size_mm"]![0]!, 45, 60);
         Assert.Contains("selected_face", await Error(b.Tools.SliceToGCode("x.gcode", lay_flat: "upside_down", cancel: Cancel)));
         Assert.Contains("Select a polygon", await Error(b.Tools.SliceToGCode("x.gcode", scale_percent: 2, lay_flat: "selected_face", cancel: Cancel)));
+        await b.Tools.SliceToGCode("prints/held.gcode", scale_percent: 2, supports: true, supports_bed_only: true, cancel: Cancel);
+        Assert.Contains(", supports", File.ReadAllText(b.Folder.File(Path.Combine("prints", "held.gcode"))));
         // Slicing is no undo step.
         Assert.Equal(steps, b.Doc.Undo.Count);
     }

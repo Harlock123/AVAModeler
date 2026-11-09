@@ -28,6 +28,7 @@ public sealed class PrintWindow : Window
     private readonly ComboBox _seam = Choice(Enum.GetNames<SeamPosition>());
     private readonly ComboBox _position = Choice(["Centre on the bed", "Origin at the bed's centre"]);
     private readonly ComboBox _layFlat = Choice(["As modelled", "Largest face down", "Selected face down"]);
+    private readonly ComboBox _supportOn = Choice(["On the bed or the object", "On the bed only"]);
     private readonly CheckBox _supports = new() { Content = "Supports under overhangs", Foreground = Look.Text };
     private readonly CheckBox _gapFill = new() { Content = "Fill gaps between walls", Foreground = Look.Text };
     private readonly CheckBox _bridging = new() { Content = "Bridge spans over air", Foreground = Look.Text };
@@ -100,6 +101,7 @@ public sealed class PrintWindow : Window
             Field("layer", "Layer height (mm)"), Field("first", "First layer (mm)"), Field("width", "Line width (mm)"), Field("walls", "Walls"),
             Field("top", "Top layers"), Field("bottom", "Bottom layers"), Field("infill", "Infill (%)"), Row("Infill pattern", _pattern), Field("angle", "Infill angle (°)"),
             Row("Seam", _seam), _gapFill, _bridging, _combing, Field("skirt", "Skirt loops"), Field("brim", "Brim lines"), _supports, Field("supportAngle", "Support angle (°)"),
+            Row("Supports stand", _supportOn), Field("interface", "Interface layers"), Field("interfacePercent", "Interface density (%)"),
             Field("speed", "Print speed (mm/s)"), Field("outer", "Outer wall speed (mm/s)"), Field("infillSpeed", "Infill speed (mm/s)"),
             Field("firstSpeed", "First layer speed (mm/s)"), Field("bridgeSpeed", "Bridge speed (mm/s)"), Field("gapSpeed", "Gap fill speed (mm/s)"),
             Field("travel", "Travel speed (mm/s)"), Field("zhop", "Z hop (mm)"),
@@ -310,6 +312,8 @@ public sealed class PrintWindow : Window
         _pattern.SelectedIndex = (int)s.Infill;
         _seam.SelectedIndex = (int)s.Seam;
         _supports.IsChecked = s.Supports;
+        _supportOn.SelectedIndex = (int)s.SupportOn;
+        Set("interface", s.SupportInterfaceLayers); Set("interfacePercent", s.SupportInterfacePercent);
         _position.SelectedIndex = (int)setup.Placement.Position;
         _layFlat.SelectedIndex = (int)setup.Placement.LayFlat;
         Set("turn", setup.Placement.RotateDegrees); Set("copies", setup.Placement.Copies); Set("gap", setup.Placement.CopyGap);
@@ -347,6 +351,8 @@ public sealed class PrintWindow : Window
             InfillPercent = Num("infill", "Infill"), Infill = (InfillPattern)Math.Max(0, _pattern.SelectedIndex), InfillAngle = Num("angle", "The infill angle"),
             Seam = (SeamPosition)Math.Max(0, _seam.SelectedIndex), SkirtLoops = Whole("skirt", "Skirt loops"), BrimLines = Whole("brim", "Brim lines"),
             Supports = _supports.IsChecked == true, SupportAngle = Num("supportAngle", "The support angle"),
+            SupportOn = (SupportPlacement)Math.Max(0, _supportOn.SelectedIndex), SupportInterfaceLayers = Whole("interface", "Interface layers"),
+            SupportInterfacePercent = Num("interfacePercent", "The interface density"),
             PrintSpeed = Num("speed", "The print speed"), OuterWallSpeed = Num("outer", "The outer wall speed"), InfillSpeed = Num("infillSpeed", "The infill speed"),
             FirstLayerSpeed = Num("firstSpeed", "The first layer speed"), TravelSpeed = Num("travel", "The travel speed"), ZHop = Num("zhop", "The Z hop"),
             BridgeSpeed = Num("bridgeSpeed", "The bridge speed"), GapFillSpeed = Num("gapSpeed", "The gap fill speed"),

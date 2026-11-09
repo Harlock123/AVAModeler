@@ -807,7 +807,8 @@ public sealed partial class ModelerTools(IModelerHost host)
         [Description("Layer height in mm, 0.04 to 0.8 × the nozzle (default 0.2).")] double layer_height = 0.2,
         [Description("Sparse infill, 0 to 100% (default 20).")] double infill_percent = 20,
         [Description("Wall loops round each outline and hole, 1 to 20 (default 2).")] int walls = 2,
-        [Description("Build supports under overhangs steeper than 50° from vertical (default false).")] bool supports = false,
+        [Description("Build supports under overhangs steeper than 50° from vertical (default false), topped by two dense interface layers that come away cleanly.")] bool supports = false,
+        [Description("With supports: only columns that stand on the bed, none on the object (default false).")] bool supports_bed_only = false,
         [Description("Lines of brim round the first layer to hold it down, 0 for none (default 0: a skirt instead).")] int brim_lines = 0,
         [Description("Scale in percent: 100 prints at the modelled size, 1 m = 1000 mm (default 100).")] double scale_percent = 100,
         [Description("Centre the object on the bed (default true); false puts the Modeler's origin at the bed's centre.")] bool centre = true,
@@ -840,7 +841,7 @@ public sealed partial class ModelerTools(IModelerHost host)
                         _ => throw new ArgumentException($"lay_flat is as_modelled, largest_face or selected_face, not \"{lay_flat}\"."),
                     },
                 },
-                Settings = new SliceSettings { LayerHeight = layer_height, InfillPercent = infill_percent, Walls = walls, Supports = supports, BrimLines = brim_lines },
+                Settings = new SliceSettings { LayerHeight = layer_height, InfillPercent = infill_percent, Walls = walls, Supports = supports, BrimLines = brim_lines, SupportOn = supports_bed_only ? SupportPlacement.BedOnly : SupportPlacement.Everywhere },
             }.Checked();
         }
         catch (ArgumentException e)

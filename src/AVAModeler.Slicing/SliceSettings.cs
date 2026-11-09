@@ -9,6 +9,15 @@ public enum InfillPattern
     Grid,
 }
 
+/// <summary>Where supports may stand.</summary>
+public enum SupportPlacement
+{
+    /// <summary>On the bed, or on the object where it's below (they come away from it, leaving a rougher patch).</summary>
+    Everywhere,
+    /// <summary>Only columns that reach the bed: nothing stands on the object.</summary>
+    BedOnly,
+}
+
 /// <summary>Where each closed loop starts and ends (the seam, where a small mark is left).</summary>
 public enum SeamPosition
 {
@@ -67,6 +76,11 @@ public sealed record SliceSettings
     public double SupportPercent { get; init; } = 15;
     /// <summary>The gap between support and the object, sideways.</summary>
     public double SupportGap { get; init; } = 0.7;
+    public SupportPlacement SupportOn { get; init; } = SupportPlacement.Everywhere;
+    /// <summary>Dense layers at the top of the support, under the object, so it's held flat and comes away clean; 0 for none.</summary>
+    public int SupportInterfaceLayers { get; init; } = 2;
+    /// <summary>How densely the interface layers are filled, 10 to 100%.</summary>
+    public double SupportInterfacePercent { get; init; } = 70;
 
     public double PrintSpeed { get; init; } = 50;
     public double OuterWallSpeed { get; init; } = 30;
@@ -101,6 +115,8 @@ public sealed record SliceSettings
         PrinterProfile.Range(SupportAngle, 0, 90, "The support angle", "°");
         PrinterProfile.Range(SupportPercent, 5, 100, "The support density", "%");
         PrinterProfile.Range(SupportGap, 0, 5, "The support gap");
+        PrinterProfile.Range(SupportInterfaceLayers, 0, 20, "The support interface layers", "");
+        PrinterProfile.Range(SupportInterfacePercent, 10, 100, "The support interface density", "%");
         foreach (var (v, what) in (ReadOnlySpan<(double, string)>)[(PrintSpeed, "The print speed"), (OuterWallSpeed, "The outer wall speed"),
                      (InfillSpeed, "The infill speed"), (FirstLayerSpeed, "The first layer speed"), (TravelSpeed, "The travel speed"),
                      (BridgeSpeed, "The bridge speed"), (GapFillSpeed, "The gap fill speed")])

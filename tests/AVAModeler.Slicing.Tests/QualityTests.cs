@@ -145,3 +145,48 @@ public class QualityTests
         Assert.Equal(-2, run.E - run.TotalE, 6);
     }
 }
+
+public class SupportTests
+{
+    private static IEnumerable<Extrusion> Of(ToolpathLayer layer, PathKind kind) => layer.Paths.Where(p => p.Kind == kind);
+
+    [Fact]
+    public void The_top_of_the_support_is_dense_crossways_interface()
+    {
+        var plan = PlannerTests.Plan(SafetyTests.Tee(), new SliceSettings { Supports = true });
+        var supported = plan.Layers.Where(l => l.Paths.Any(p => p.Kind is PathKind.Support or PathKind.SupportInterface)).ToList();
+        // The last two support layers (under the slab, past the layer of air) are interface; those below are not.
+        Assert.All(supported[^2..], l => Assert.NotEmpty(Of(l, PathKind.SupportInterface)));
+        Assert.All(supported[..^2], l => Assert.Empty(Of(l, PathKind.SupportInterface)));
+        Assert.All(supported[..^2], l => Assert.NotEmpty(Of(l, PathKind.Support)));
+        // Interface lines run along Y, the rest along X, and the interface is denser.
+        Vec2 Dir(Extrusion e) => (e.Points[^1] - e.Points[0]).Normalized();
+        Assert.All(Of(supported[^1], PathKind.SupportInterface), e => Assert.True(Math.Abs(Dir(e).Y) > 0.99));
+        Assert.All(Of(supported[0], PathKind.Support), e => Assert.True(Math.Abs(Dir(e).X) > 0.99));
+        double body = Of(supported[0], PathKind.Support).Sum(e => e.Length), face = Of(supported[^1], PathKind.SupportInterface).Sum(e => e.Length);
+        Assert.True(face > body * 3, $"{face} against {body}");
+        // None asked for: all plain support. The G-code names it.
+        var plain = PlannerTests.Plan(SafetyTests.Tee(), new SliceSettings { Supports = true, SupportInterfaceLayers = 0 });
+        Assert.Empty(plain.Layers.SelectMany(l => Of(l, PathKind.SupportInterface)));
+        Assert.Contains(";TYPE:SUPPORT-INTERFACE\n", GCode.Write(plan, Presets.Materials[0]).Text);
+    }
+
+    [Fact]
+    public void Bed_only_support_doesnt_stand_on_the_object()
+    {
+        // A T whose right arm is over a low block 3 mm tall: support there would stand on the block.
+        var doc = SafetyTests.Tee();
+        Shapes.Box(doc.Layers[0].Mesh, new Vec3(0.004, 0, -0.002), new Vec3(0.009, 0.003, 0.002));
+        doc.Layers[0].Mesh.Touch();
+        // A line's run crossing over the block's middle (clear of the gap round it).
+        bool OverBlock(Extrusion e) => e.Points.Min(p => p.X) < 110 + 9 - 0.8 && e.Points.Max(p => p.X) > 110 + 4 + 0.8;
+        var everywhere = PlannerTests.Plan(doc, new SliceSettings { Supports = true });
+        var high = everywhere.Layers.Where(l => l.Layer.CutAt > 4 && l.Layer.CutAt < 9).ToList();
+        Assert.Contains(high.SelectMany(l => l.Paths), e => e.Kind == PathKind.Support && OverBlock(e));
+        var bedOnly = PlannerTests.Plan(doc, new SliceSettings { Supports = true, SupportOn = SupportPlacement.BedOnly });
+        var highOnly = bedOnly.Layers.Where(l => l.Layer.CutAt > 4 && l.Layer.CutAt < 9).ToList();
+        Assert.DoesNotContain(highOnly.SelectMany(l => l.Paths), e => e.Kind is PathKind.Support or PathKind.SupportInterface && OverBlock(e));
+        // The left arm, over the bed, is still held up.
+        Assert.Contains(highOnly.SelectMany(l => l.Paths), e => e.Kind == PathKind.Support && e.Points.All(p => p.X < 110 - 2));
+    }
+}

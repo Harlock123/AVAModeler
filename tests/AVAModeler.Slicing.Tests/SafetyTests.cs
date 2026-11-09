@@ -41,7 +41,7 @@ public class SafetyTests
     public static TheoryData<string, string> Cases() => new()
     {
         { "cube", "default" }, { "cube", "brim+grid+hop" }, { "tube", "nearest+0infill" }, { "ball", "default" },
-        { "ball", "fine" }, { "tee", "supports" }, { "tee", "supports+brim" }, { "two", "as-modelled" }, { "cube", "small-bed" },
+        { "ball", "fine" }, { "tee", "supports" }, { "tee", "supports+brim" }, { "tee", "supports+bedonly" }, { "two", "as-modelled" }, { "cube", "small-bed" },
     };
 
     private static (Document Doc, PrintSetup Setup) Case(string shape, string settings)
@@ -68,6 +68,7 @@ public class SafetyTests
                 case "0infill": s = s with { InfillPercent = 0 }; break;
                 case "fine": s = s with { LayerHeight = 0.1, FirstLayerHeight = 0.2, Walls = 3 }; break;
                 case "supports": s = s with { Supports = true, SupportAngle = 40 }; break;
+                case "bedonly": s = s with { SupportOn = SupportPlacement.BedOnly, SupportInterfaceLayers = 3 }; break;
                 case "as-modelled": setup = setup with { Placement = new PlacementOptions { Position = BedPosition.AsModelled } }; break;
                 case "small-bed": setup = setup with { Printer = Presets.Printers[3], Material = Presets.Materials[1] }; break;
                 default: throw new ArgumentException(part);

@@ -194,7 +194,8 @@ phases 0 to 7 and Layout phases L1 to L6.
     - Each layer is cut halfway up its height, then printed as walls (inner first, the outer one last, seams at the
       back or nearest), solid top and bottom layers where a surface is near, sparse infill (lines or a grid, on one
       grid for the whole print), optional supports under overhangs (with a gap round them and a layer of air under
-      what they hold), and a skirt or a brim on the first layer. Shells that overlap print as one solid.
+      what they hold, topped by dense interface layers laid crossways so the part sits flat and comes away cleanly,
+      standing on the bed and the object or on the bed only), and a skirt or a brim on the first layer. Shells that overlap print as one solid.
     - Gap fill puts narrower lines where the walls leave a strip with no room for another loop, and along fins too
       thin for any wall. Solid areas over air are bridged: straight lines across at the angle (tried every 15°) that
       lands most of them on what's below at both ends, slower and with the fan full. A layer quicker than the
@@ -970,9 +971,8 @@ Layout reuses them.
   kind of line, and fills with straight lines (lines or a grid: no gyroid or honeycomb). There's no ironing, variable
   layer heights or pressure advance; gap fill lays straight pieces a few millimetres long (not one line along a curve),
   bridges are found only over air (not over sparse infill), and combing keeps to one island (travel between islands
-  retracts). Supports are simple columns of lines under overhangs, kept to the
-  sideways gap and one layer of air, with no interface layers or tree supports, and they stand on the object where it's
-  below. The time is from the moves' lengths and speeds alone, so real prints take somewhat longer. Copies are all the same
+  retracts). Supports are columns of straight lines under overhangs (no tree supports), with
+  interface layers on top but not under them where they stand on the object. The time is from the moves' lengths and speeds alone, so real prints take somewhat longer. Copies are all the same
   way up and turned alike, laid out in a grid rather than packed. The 3D view draws lines (not
   shaded plastic), later layers over earlier ones, and only the outer walls of layers more than 40 below the chosen
   one. For anything beyond this, export STL for a dedicated slicer.

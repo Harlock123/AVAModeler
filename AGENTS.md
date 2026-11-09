@@ -95,7 +95,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     in print order. Walls are offsets of each island; skin is the inside not covered by every layer within
     `TopLayers` above or `BottomLayers` below; lines are on one grid fixed to the bed so layers stack; support is
     carried down from each overhang (one layer of air under it, `SupportGap` from the object) until it meets the
-    object or the bed. Islands go nearest first; inner walls, outer wall, gap fill, bridges, skin, infill; `Order`
+    object or the bed (`SupportPlacement.BedOnly` keeps only what stands on support down to the bed); its top
+    `SupportInterfaceLayers` (not covered by the support above, as skin is found) are `SupportInterface` lines at 90°. Islands go nearest first; inner walls, outer wall, gap fill, bridges, skin, infill; `Order`
     and `Seam` place the lines. Lines side by side are `Planner.Spacing` apart (w − h(1 − π/4)), never a full width.
     A wall loop is kept only where it has half a line of room. `GapFill` covers what walls and the inside leave
     (cut into 3 mm pieces, lines along each piece's long axis, `Extrusion.Width` narrower); `Bridges` takes the solid

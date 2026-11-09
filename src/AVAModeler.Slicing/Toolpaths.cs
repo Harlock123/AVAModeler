@@ -83,7 +83,16 @@ public static class Planner
             }
             if (i == 0) foreach (var e in Order(FirstLayerExtras(Polygons2D.Paths(layers[0].Islands.Select(isl => isl.Outline.Points)), support[0], s, spacing[0]), at)) Add(e);
             if (support[i] is { Count: > 0 } sup)
-                foreach (var e in Order(Fill(sup, spacing[i] * 100 / s.SupportPercent, [0], PathKind.Support), at)) Add(e);
+            {
+                // The top few layers of each column (none of the support above covers them) are interface: dense,
+                // crossways to the rest.
+                var top = s.SupportInterfaceLayers > 0 ? Covered(support, i + 1, i + s.SupportInterfaceLayers, n) : null;
+                var face = top == null ? new PathsD() : Polygons2D.Difference(sup, top);
+                var body = face.Count > 0 ? Polygons2D.Difference(sup, face) : sup;
+                foreach (var e in Order(Fill(body, spacing[i] * 100 / s.SupportPercent, [0], PathKind.Support), at)) Add(e);
+                if (face.Count > 0)
+                    foreach (var e in Order(Fill(face, spacing[i] * 100 / s.SupportInterfacePercent, [90], PathKind.SupportInterface), at)) Add(e);
+            }
 
             var islands = layers[i].Islands.ToList();
             while (islands.Count > 0)
@@ -321,6 +330,7 @@ public static class Planner
         int n = region.Length;
         var support = new PathsD[n];
         for (int i = 0; i < n; i++) support[i] = [];
+        if (n == 0) return support;
         // What each layer leaves hanging: beyond the layer below, grown by how far a slope at the support angle reaches in one layer.
         var overhang = new PathsD[n];
         overhang[0] = [];
@@ -340,6 +350,9 @@ public static class Planner
             // Support meeting the object stops there, standing on it.
             support[i] = carried;
         }
+        if (s.SupportOn == SupportPlacement.BedOnly)
+            // Only what stands on support all the way down to the bed: worked up from the first layer.
+            for (int i = 1; i < n; i++) support[i] = Polygons2D.Intersect(support[i], support[i - 1]);
         return support;
     }
 

@@ -42,6 +42,11 @@ public class SliceTests
         await b.Tools.SliceToGCode("prints/gyroid.gcode", scale_percent: 2, infill_pattern: "gyroid", cancel: Cancel);
         Assert.Contains("gyroid infill", File.ReadAllText(b.Folder.File(Path.Combine("prints", "gyroid.gcode"))));
         Assert.Contains("lines, grid or gyroid", await Error(b.Tools.SliceToGCode("prints/x.gcode", infill_pattern: "honeycomb", cancel: Cancel)));
+        // The part on the second extruder; supports' choices are taken (a box needs none).
+        await b.Tools.SliceToGCode("prints/dual.gcode", printer: "Flashforge Creator Pro", scale_percent: 2, extruder: 2, supports: true, support_extruder: 1, support_material: "petg", cancel: Cancel);
+        Assert.Contains("M109 T1 S210", File.ReadAllText(b.Folder.File(Path.Combine("prints", "dual.gcode"))));
+        Assert.Contains("wood", await Error(b.Tools.SliceToGCode("prints/no.gcode", printer: "Flashforge Creator Pro", support_material: "wood", cancel: Cancel)));
+        Assert.Contains("one extruder", await Error(b.Tools.SliceToGCode("prints/no.gcode", scale_percent: 2, extruder: 2, cancel: Cancel)));
         // Slicing is no undo step.
         Assert.Equal(steps, b.Doc.Undo.Count);
     }

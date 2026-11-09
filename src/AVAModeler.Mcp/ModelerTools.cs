@@ -810,6 +810,9 @@ public sealed partial class ModelerTools(IModelerHost host)
         [Description("Wall loops round each outline and hole, 1 to 20 (default 2).")] int walls = 2,
         [Description("Build supports under overhangs steeper than 50° from vertical (default false), topped by two dense interface layers that come away cleanly.")] bool supports = false,
         [Description("With supports: only columns that stand on the bed, none on the object (default false).")] bool supports_bed_only = false,
+        [Description("A dual printer (the Creator Pro): the extruder that prints the part, 1 (default, its right one) or 2.")] int extruder = 1,
+        [Description("A dual printer: the extruder for supports, 1 or 2 (default: the part's). The other one prints them in support_material.")] int? support_extruder = null,
+        [Description("The material in the supports' extruder, by preset name (default PLA).")] string? support_material = null,
         [Description("Lines of brim round the first layer to hold it down, 0 for none (default 0: a skirt instead).")] int brim_lines = 0,
         [Description("Scale in percent: 100 prints at the modelled size, 1 m = 1000 mm (default 100).")] double scale_percent = 100,
         [Description("Centre the object on the bed (default true); false puts the Modeler's origin at the bed's centre.")] bool centre = true,
@@ -843,7 +846,10 @@ public sealed partial class ModelerTools(IModelerHost host)
                     },
                 },
                 Settings = new SliceSettings { LayerHeight = layer_height, InfillPercent = infill_percent,
-                    Infill = Enum.TryParse<InfillPattern>(infill_pattern, ignoreCase: true, out var ip) ? ip : throw new ArgumentException($"infill_pattern is lines, grid or gyroid, not \"{infill_pattern}\"."), Walls = walls, Supports = supports, BrimLines = brim_lines, SupportOn = supports_bed_only ? SupportPlacement.BedOnly : SupportPlacement.Everywhere },
+                    Infill = Enum.TryParse<InfillPattern>(infill_pattern, ignoreCase: true, out var ip) ? ip : throw new ArgumentException($"infill_pattern is lines, grid or gyroid, not \"{infill_pattern}\"."), Walls = walls, Supports = supports, BrimLines = brim_lines, SupportOn = supports_bed_only ? SupportPlacement.BedOnly : SupportPlacement.Everywhere,
+                    ModelExtruder = extruder - 1, SupportExtruder = (support_extruder ?? extruder) - 1 == extruder - 1 ? -1 : (support_extruder ?? extruder) - 1 },
+                SupportMaterial = support_material == null ? Presets.Materials[0] : Presets.Materials.FirstOrDefault(x => string.Equals(x.Name, support_material, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new ArgumentException($"There's no material preset \"{support_material}\". Choose one of: {string.Join(", ", Presets.Materials.Select(x => x.Name))}."),
             }.Checked();
         }
         catch (ArgumentException e)

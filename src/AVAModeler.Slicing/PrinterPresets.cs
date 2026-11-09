@@ -222,8 +222,8 @@ public static class PrinterPresets
         // Flashforge
         new PrinterProfile
         {
-            Name = "Flashforge Creator Pro", BedWidth = 227, BedDepth = 148, MaxHeight = 150, OriginAtCentre = true, RetractLength = 1.0, X3gMachine = "fcp",
-            Notes = "Sailfish firmware reads .x3g, not G-code: save .x3g here (or convert the G-code with GPX: gpx -m fcp part.gcode part.x3g). Origin at the bed's middle; prints with the right extruder.",
+            Name = "Flashforge Creator Pro", BedWidth = 227, BedDepth = 148, MaxHeight = 150, OriginAtCentre = true, RetractLength = 1.0, X3gMachine = "fcp", Extruders = 2,
+            Notes = "Sailfish firmware reads .x3g, not G-code: save .x3g here (or convert the G-code with GPX: gpx -m fcp part.gcode part.x3g). Origin at the bed's middle. Two extruders: 1 is the right one, 2 the left; Sailfish moves the head by its stored offset between them.",
             StartGCode = SailfishStart, EndGCode = SailfishEnd,
         },
         Marlin("Flashforge Adventurer 3", 150, 150, 150, DirectDrive, notes: "Its own firmware: it may want Flashforge's .gx file from FlashPrint rather than plain G-code."),

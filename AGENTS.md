@@ -125,7 +125,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     (`PrinterProfile.X3gMachine`, "fcp" for the Creator Pro: GPX's Replicator 1 Dual numbers), command by command as
     GPX encodes them (155 moves with the extruder negative and its rounding carried, 139 after homing, 131/132,
     140, 144, 136, 135/141 with no timeout, 137, 153/154). It refuses what Sailfish lacks (G28) with the line.
-    `X3gTests` reads the bytes back. `Commands.FileSaver` (bytes) is how a macro's G-code or .x3g is written.
+    `X3gTests` reads the bytes back. T0/T1 are command 134; the second extruder's filament is the B axis.
+  - Two extruders: `PrinterProfile.Extruders`, `SliceSettings.ModelExtruder` and `SupportExtruder` (-1: the
+    part's), `PrintSetup.SupportMaterial`. The writer switches with `T0`/`T1` before each line on the other extruder
+    (retracting first), heats and waits for both, and tags temperatures with T only when more than the first is used,
+    so a one-extruder print is as it was. `Commands.FileSaver` (bytes) is how a macro's G-code or .x3g is written.
   - `tests/AVAModeler.Slicing.Tests`: `Playback` plays G-code back as a printer would; `SafetyTests` runs it over
     shapes and settings (on the bed, under the height, hot before printing, layers rising, retractions put back);
     `ReferenceTests` compares a small print with `Reference/tube-10mm.gcode`, numbers within a unit in their last

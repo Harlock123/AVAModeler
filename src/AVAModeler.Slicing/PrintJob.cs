@@ -28,7 +28,7 @@ public sealed record PrintJob(PrintSetup Setup, PrintModel Model, SlicedModel Sl
         var model = Placement.Place(doc, setup.Printer, setup.Placement);
         var sliced = Slicer.Slice(model, setup.Settings, setup.Printer);
         var plan = Planner.Plan(sliced, setup.Printer);
-        var (text, stats) = Slicing.GCode.Write(plan, setup.Material);
+        var (text, stats) = Slicing.GCode.Write(plan, setup.Material, setup.SupportMaterial);
         return new PrintJob(setup, model, sliced, plan, text, stats);
     }
 }

@@ -12,6 +12,8 @@ public sealed record PrintSetup
 {
     public PrinterProfile Printer { get; init; } = Presets.Printers[0];
     public MaterialProfile Material { get; init; } = Presets.Materials[0];
+    /// <summary>The material in the other extruder, for supports printed with it (<see cref="SliceSettings.SupportExtruder"/>).</summary>
+    public MaterialProfile SupportMaterial { get; init; } = Presets.Materials[0];
     public PlacementOptions Placement { get; init; } = new();
     public SliceSettings Settings { get; init; } = new();
     /// <summary>The printer on the network to send prints to (its API key is kept apart, in <see cref="PrintHostKey"/>).</summary>
@@ -30,6 +32,7 @@ public sealed record PrintSetup
     {
         Printer.Checked();
         Material.Checked();
+        SupportMaterial.Checked();
         Placement.Checked();
         Settings.Checked(Printer);
         foreach (var p in MyPrinters) p.Checked();

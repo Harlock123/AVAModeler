@@ -22,6 +22,8 @@ public sealed record PrinterProfile
     public double NozzleDiameter { get; init; } = 0.4;
     public double FilamentDiameter { get; init; } = 1.75;
     public GCodeFlavor Flavor { get; init; } = GCodeFlavor.Marlin;
+    /// <summary>How many extruders it has (1, or 2 for a dual like the Creator Pro: T0 and T1).</summary>
+    public int Extruders { get; init; } = 1;
     /// <summary>The firmware's (0, 0) is the middle of the bed, not its front-left corner.</summary>
     public bool OriginAtCentre { get; init; }
     /// <summary>A round bed (a delta's), <see cref="BedWidth"/> across; the object must fit inside the circle.</summary>
@@ -79,6 +81,7 @@ public sealed record PrinterProfile
         Range(NozzleDiameter, 0.1, 2, "The nozzle diameter");
         Range(FilamentDiameter, 1, 3.5, "The filament diameter");
         if (RetractLength is { } r) Range(r, 0, 15, "The printer's retraction");
+        Range(Extruders, 1, 2, "The extruders", "");
         Range(Acceleration, 50, 100000, "The acceleration", " mm/s²");
         Range(CornerSpeed, 0.5, 100, "The corner speed", " mm/s");
         if (X3gMachine != null && !SailfishMachine.ById.ContainsKey(X3gMachine))

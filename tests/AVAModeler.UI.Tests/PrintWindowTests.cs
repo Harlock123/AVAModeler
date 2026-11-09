@@ -179,6 +179,18 @@ public sealed class PrintWindowTests : IDisposable
         Assert.Equal("Flashforge Creator Pro", w.Session.Preferences.Print.Printer.Name);
         Assert.True(w.Session.Preferences.Print.Printer.OriginAtCentre);
         Assert.Contains("G162 X Y", p.Job!.GCode);
+        // Its two extruders: supports in PETG on the second.
+        p.SupportsBox.IsChecked = true;
+        p.SupportExtruderBox.SelectedIndex = 2;
+        p.SupportMaterialBox.SelectedIndex = Presets.Materials.ToList().FindIndex(m => m.Name == "PETG");
+        Assert.True(Wait(p.Slice()));
+        // A box needs no supports, so the second extruder isn't heated; the choice is kept for one that does.
+        Assert.DoesNotContain("T1", p.Job!.GCode);
+        Assert.Equal(1, w.Session.Preferences.Print.Settings.SupportExtruder);
+        Assert.Equal("PETG", w.Session.Preferences.Print.SupportMaterial.Name);
+        p.SupportsBox.IsChecked = false;
+        p.SupportExtruderBox.SelectedIndex = 0;
+        Assert.True(Wait(p.Slice()));
         // It saves .x3g, which its Sailfish firmware reads.
         Assert.Equal("Save .x3g…", p.SaveButton.Content);
         string x3g = Path.Combine(_dir, "cube.x3g");

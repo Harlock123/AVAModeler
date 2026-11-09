@@ -73,6 +73,10 @@ public sealed record SliceSettings
     /// <summary>Lines of brim round the first layer, touching the object, to hold it down; 0 for none.</summary>
     public int BrimLines { get; init; }
 
+    /// <summary>The extruder that prints the part, from 0 (the first: on the Creator Pro the right one).</summary>
+    public int ModelExtruder { get; init; }
+    /// <summary>The extruder for supports: -1 for the part's, or the other, for a second (support) material.</summary>
+    public int SupportExtruder { get; init; } = -1;
     /// <summary>Build supports under overhangs.</summary>
     public bool Supports { get; init; }
     /// <summary>Overhangs steeper than this from the vertical get support (0 would support every slope, 90 nothing).</summary>
@@ -128,6 +132,10 @@ public sealed record SliceSettings
             PrinterProfile.Range(v, 1, 1000, what, " mm/s");
         PrinterProfile.Range(RetractMinTravel, 0, 100, "The shortest retracted travel");
         PrinterProfile.Range(ZHop, 0, 10, "The Z hop");
+        if (ModelExtruder < 0 || ModelExtruder >= printer.Extruders)
+            throw new ArgumentException(printer.Extruders == 1 ? $"{printer.Name} has one extruder: print with it." : $"{printer.Name}'s extruders are 1 to {printer.Extruders}.");
+        if (SupportExtruder < -1 || SupportExtruder >= printer.Extruders)
+            throw new ArgumentException(printer.Extruders == 1 ? $"{printer.Name} has one extruder: supports print with it too." : $"{printer.Name}'s extruders are 1 to {printer.Extruders}.");
         return this;
     }
 }

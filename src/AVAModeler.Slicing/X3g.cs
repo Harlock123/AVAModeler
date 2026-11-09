@@ -34,7 +34,8 @@ public sealed record SailfishMachine(
 /// <item>Comments, G21, G90 and M83 (it's always millimetres, absolute XYZ, relative E), M82, G91 for the end
 /// G-code's lift, and M73/M117 are understood; anything else is refused with its line.</item>
 /// </list>
-/// Rounding of the extruder's steps carries over from move to move, so no filament is lost to it.
+/// Rounding of the extruder's steps carries over from move to move, so no filament is lost to it. T0 and T1 change
+/// extruder (134); the left extruder's (T1's) filament is the B axis.
 /// </summary>
 public static class X3g
 {
@@ -57,6 +58,10 @@ public static class X3g
         U8(0);
 
         double x = 0, y = 0, z = 0, a = 0, feed = 0, excess = 0;
+        // The extruder in use (T0 or T1): its filament is the A axis or the B; each keeps its own rounding and position.
+        int tool = 0;
+        var aOf = new double[2];
+        var excessOf = new double[2];
         bool relativeXyz = false, relativeE = true;
         byte known = 0;
         int lineNo = 0;
@@ -89,6 +94,17 @@ public static class X3g
                 case "M83": relativeE = true; break;
                 case "M82": relativeE = false; break;
                 case "M73": case "M117": break;
+                case "T0": case "T1":
+                {
+                    int to = code == "T0" ? 0 : 1;
+                    (aOf[tool], excessOf[tool]) = (a, excess);
+                    tool = to;
+                    (a, excess) = (aOf[tool], excessOf[tool]);
+                    // Change extruder (134): Sailfish moves the head by the offset it has stored between them.
+                    U8(134);
+                    U8(tool);
+                    break;
+                }
                 case "G0": case "G1":
                 {
                     if (Arg('F') is { } f) feed = f;
@@ -110,8 +126,8 @@ public static class X3g
                         I32((long)Math.Round(tx * machine.XSteps));
                         I32((long)Math.Round(ty * machine.YSteps));
                         I32((long)Math.Round(tz * machine.ZSteps));
-                        I32((long)Math.Round(-a * machine.ASteps));
-                        I32(0);
+                        I32(tool == 0 ? (long)Math.Round(-a * machine.ASteps) : 0);
+                        I32(tool == 1 ? (long)Math.Round(-a * machine.ASteps) : 0);
                         // Microseconds a step on the finest axis at that feedrate.
                         U32((long)Math.Round(60_000_000 / (Math.Max(machine.XSteps, machine.ZSteps) * mmPerMin)));
                         (x, y, z) = (tx, ty, tz);
@@ -151,8 +167,8 @@ public static class X3g
                     I32((long)Math.Round(x * machine.XSteps));
                     I32((long)Math.Round(y * machine.YSteps));
                     I32((long)Math.Round(z * machine.ZSteps));
-                    I32(aWhole);
-                    I32(0);
+                    I32(tool == 0 ? aWhole : 0);
+                    I32(tool == 1 ? aWhole : 0);
                     U32((long)Math.Round(ddaRate));
                     U8(A | B);
                     F32((float)distance);

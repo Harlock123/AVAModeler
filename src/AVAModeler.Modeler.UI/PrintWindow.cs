@@ -42,6 +42,13 @@ public sealed class PrintWindow : Window
     public ComboBox HostKindBox => _hostKind;
     public TextBox HostKeyBox => _hostKey;
     public CheckBox HostStartBox => _hostStart;
+    private readonly ComboBox _modelExtruder = Choice(["Extruder 1", "Extruder 2"]);
+    private readonly ComboBox _supportExtruder = Choice(["The part's", "Extruder 1", "Extruder 2"]);
+    private readonly ComboBox _supportMaterial = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private Control? _dualRows;
+    public ComboBox ModelExtruderBox => _modelExtruder;
+    public ComboBox SupportExtruderBox => _supportExtruder;
+    public ComboBox SupportMaterialBox => _supportMaterial;
     private readonly CheckBox _originCentre = new() { Content = "Origin at the bed's middle", Foreground = Look.Text };
     private readonly CheckBox _roundBed = new() { Content = "Round bed (a delta: width is its diameter)", Foreground = Look.Text };
     /// <summary>The chosen printer's notes (its firmware's quirks), under its name.</summary>
@@ -152,7 +159,7 @@ public sealed class PrintWindow : Window
             Field("printer.name", "Name"), Field("printer.width", "Bed width (mm)"), Field("printer.depth", "Bed depth (mm)"), Field("printer.height", "Build height (mm)"),
             PrinterNotes, Field("printer.nozzle", "Nozzle (mm)"), Field("printer.filament", "Filament (mm)"),
             Field("printer.retract", "Retraction (mm, blank: the material's)"), Field("printer.accel", "Acceleration (mm/s²)"),
-            Field("printer.corner", "Corner speed (mm/s)"), _originCentre, _roundBed,
+            Field("printer.corner", "Corner speed (mm/s)"), Field("printer.extruders", "Extruders (1 or 2)"), _originCentre, _roundBed,
             Label("Start G-code ({bed_temp}, {nozzle_temp}… filled in)"), _start, Label("End G-code"), _end, savePrinter);
         var material = Section("Material", _materials,
             MaterialNotes, Field("material.name", "Name"), Field("material.nozzle", "Nozzle (°C)"), Field("material.first", "First layer nozzle (°C)"), Field("material.bed", "Bed (°C)"),
@@ -163,7 +170,11 @@ public sealed class PrintWindow : Window
             Field("layer", "Layer height (mm)"), Field("first", "First layer (mm)"), Field("width", "Line width (mm)"), Field("walls", "Walls"),
             Field("top", "Top layers"), Field("bottom", "Bottom layers"), Field("infill", "Infill (%)"), Row("Infill pattern", _pattern), Field("angle", "Infill angle (°)"),
             Row("Seam", _seam), _gapFill, _bridging, _combing, Field("skirt", "Skirt loops"), Field("brim", "Brim lines"), _supports, Field("supportAngle", "Support angle (°)"),
-            Row("Supports stand", _supportOn), Field("interface", "Interface layers"), Field("interfacePercent", "Interface density (%)"),
+            Row("Supports stand", _supportOn), (_dualRows = new StackPanel
+            {
+                Spacing = 3,
+                Children = { Row("Part's extruder", _modelExtruder), Row("Supports' extruder", _supportExtruder), Row("Supports' material", _supportMaterial) },
+            }), Field("interface", "Interface layers"), Field("interfacePercent", "Interface density (%)"),
             Field("speed", "Print speed (mm/s)"), Field("outer", "Outer wall speed (mm/s)"), Field("infillSpeed", "Infill speed (mm/s)"),
             Field("firstSpeed", "First layer speed (mm/s)"), Field("bridgeSpeed", "Bridge speed (mm/s)"), Field("gapSpeed", "Gap fill speed (mm/s)"),
             Field("travel", "Travel speed (mm/s)"), Field("zhop", "Z hop (mm)"),
@@ -446,6 +457,10 @@ public sealed class PrintWindow : Window
         _pattern.SelectedIndex = (int)s.Infill;
         _seam.SelectedIndex = (int)s.Seam;
         _supports.IsChecked = s.Supports;
+        _modelExtruder.SelectedIndex = s.ModelExtruder;
+        _supportExtruder.SelectedIndex = s.SupportExtruder + 1;
+        _supportMaterial.ItemsSource = setup.AllMaterials.Select(m => m.Name).ToList();
+        _supportMaterial.SelectedIndex = Math.Max(0, setup.AllMaterials.ToList().FindIndex(m => m.Name == setup.SupportMaterial.Name));
         _hostKind.SelectedIndex = (int)setup.Host.Kind;
         _fields["host.url"].Text = setup.Host.Url;
         _hostStart.IsChecked = setup.Host.StartPrint;
@@ -462,7 +477,8 @@ public sealed class PrintWindow : Window
         Set("printer.width", p.BedWidth); Set("printer.depth", p.BedDepth); Set("printer.height", p.MaxHeight);
         Set("printer.nozzle", p.NozzleDiameter); Set("printer.filament", p.FilamentDiameter);
         _fields["printer.retract"].Text = p.RetractLength is { } r ? r.ToString("0.###", CultureInfo.InvariantCulture) : "";
-        Set("printer.accel", p.Acceleration); Set("printer.corner", p.CornerSpeed);
+        Set("printer.accel", p.Acceleration); Set("printer.corner", p.CornerSpeed); Set("printer.extruders", p.Extruders);
+        if (_dualRows != null) _dualRows.IsVisible = p.Extruders > 1;
         _originCentre.IsChecked = p.OriginAtCentre;
         _roundBed.IsChecked = p.RoundBed;
         _notes = p.Notes;
@@ -502,6 +518,7 @@ public sealed class PrintWindow : Window
             Supports = _supports.IsChecked == true, SupportAngle = Num("supportAngle", "The support angle"),
             SupportOn = (SupportPlacement)Math.Max(0, _supportOn.SelectedIndex), SupportInterfaceLayers = Whole("interface", "Interface layers"),
             SupportInterfacePercent = Num("interfacePercent", "The interface density"),
+            ModelExtruder = Math.Max(0, _modelExtruder.SelectedIndex), SupportExtruder = Math.Max(0, _supportExtruder.SelectedIndex) - 1,
             PrintSpeed = Num("speed", "The print speed"), OuterWallSpeed = Num("outer", "The outer wall speed"), InfillSpeed = Num("infillSpeed", "The infill speed"),
             FirstLayerSpeed = Num("firstSpeed", "The first layer speed"), TravelSpeed = Num("travel", "The travel speed"), ZHop = Num("zhop", "The Z hop"),
             BridgeSpeed = Num("bridgeSpeed", "The bridge speed"), GapFillSpeed = Num("gapSpeed", "The gap fill speed"),
@@ -514,7 +531,10 @@ public sealed class PrintWindow : Window
             Copies = Whole("copies", "Copies"), CopyGap = Num("gap", "The gap between copies"),
         };
         var host = new PrintHost { Kind = (PrintHostKind)Math.Max(0, _hostKind.SelectedIndex), Url = (_fields["host.url"].Text ?? "").Trim(), StartPrint = _hostStart.IsChecked == true };
-        return (_setup with { Printer = printer, Material = material, Settings = settings, Placement = placement, Host = host }).Checked();
+        var supportMaterial = _supportMaterial.SelectedIndex >= 0 ? _setup.AllMaterials.ElementAt(_supportMaterial.SelectedIndex) : _setup.SupportMaterial;
+        // A printer with one extruder prints everything with it, whatever was chosen for another.
+        if (printer.Extruders < 2) settings = settings with { ModelExtruder = 0, SupportExtruder = -1 };
+        return (_setup with { Printer = printer, Material = material, SupportMaterial = supportMaterial, Settings = settings, Placement = placement, Host = host }).Checked();
     }
 
     private PrinterProfile ReadPrinter() => new PrinterProfile
@@ -525,6 +545,7 @@ public sealed class PrintWindow : Window
         RetractLength = string.IsNullOrWhiteSpace(_fields["printer.retract"].Text) ? null : Num("printer.retract", "The printer's retraction"),
         OriginAtCentre = _originCentre.IsChecked == true, RoundBed = _roundBed.IsChecked == true, Notes = _notes,
         Acceleration = Num("printer.accel", "The acceleration"), CornerSpeed = Num("printer.corner", "The corner speed"),
+        Extruders = Whole("printer.extruders", "The extruders"),
     }.Checked();
 
     private MaterialProfile ReadMaterial() => new MaterialProfile

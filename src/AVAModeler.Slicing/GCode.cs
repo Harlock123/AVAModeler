@@ -17,6 +17,8 @@ public sealed record PrintStats
     public int ExtrusionMoves { get; init; }
     public int TravelMoves { get; init; }
     public int Retractions { get; init; }
+    /// <summary>Of <see cref="FilamentMm"/>, what the support's extruder used (0 unless supports are in a second material).</summary>
+    public double SupportFilamentMm { get; init; }
     /// <summary>Travel moves kept inside the object (no retraction), and layers slowed down to cool.</summary>
     public int CombedTravels { get; init; }
     public int SlowedLayers { get; init; }
@@ -87,11 +89,26 @@ public static class GCode
     };
 
     /// <summary>The G-code for a plan, and what the print will take.</summary>
-    public static (string Text, PrintStats Stats) Write(PrintPlan plan, MaterialProfile material)
+    public static (string Text, PrintStats Stats) Write(PrintPlan plan, MaterialProfile material, MaterialProfile? supportMaterial = null)
     {
         material.Checked();
+        supportMaterial?.Checked();
         var printer = plan.Printer;
         var s = plan.Settings;
+        // Which extruder prints what: the part on one, supports on the same or (a second material) the other.
+        int modelTool = s.ModelExtruder, supportTool = s.SupportExtruder < 0 ? s.ModelExtruder : s.SupportExtruder;
+        bool dual = supportTool != modelTool && plan.Layers.Any(l => l.Paths.Any(p => p.Kind is PathKind.Support or PathKind.SupportInterface));
+        if (!dual) supportTool = modelTool;
+        var mats = new MaterialProfile[Math.Max(2, printer.Extruders)];
+        mats[modelTool] = material;
+        mats[supportTool] = dual ? supportMaterial ?? material : material;
+        int[] used = dual ? [modelTool, supportTool] : [modelTool];
+        // Temperatures name their extruder whenever more than the first is in use.
+        bool tagged = dual || modelTool != 0;
+        string T(int t) => tagged ? $" T{t}" : "";
+        int tool = modelTool;
+        var retractedBy = new bool[mats.Length];
+        var filamentBy = new double[mats.Length];
         var body = new StringBuilder();
         var w = new Writer(body);
         double seconds = 0, filament = 0;
@@ -102,17 +119,18 @@ public static class GCode
         int fan = (int)Math.Round(255 * material.FanPercent / 100.0);
         // The firmware's origin: the bed's front-left corner, or its middle (deltas, Sailfish machines).
         double ox = printer.OriginAtCentre ? printer.BedWidth / 2 : 0, oy = printer.OriginAtCentre ? printer.BedDepth / 2 : 0;
-        // The printer's own retraction (a Bowden tube needs more) over the material's.
-        double retractLength = printer.RetractLength ?? material.RetractLength;
         // How the printer speeds up and takes corners, for the time it'll take.
         double accel = printer.Acceleration, corner = printer.CornerSpeed;
         int fanNow = 0;
 
+        double RetractLength() => printer.RetractLength ?? mats[tool].RetractLength;
+
         void Retract()
         {
+            double retractLength = RetractLength();
             if (retracted || retractLength <= 0) return;
-            w.Line($"G1 E{F(-retractLength, 5)} F{F(material.RetractSpeed * 60, 0)}");
-            seconds += retractLength / material.RetractSpeed;
+            w.Line($"G1 E{F(-retractLength, 5)} F{F(mats[tool].RetractSpeed * 60, 0)}");
+            seconds += retractLength / mats[tool].RetractSpeed;
             retractions++;
             retracted = true;
         }
@@ -153,9 +171,21 @@ public static class GCode
         void Unretract()
         {
             if (!retracted) return;
-            w.Line($"G1 E{F(retractLength, 5)} F{F(material.RetractSpeed * 60, 0)}");
-            seconds += retractLength / material.RetractSpeed;
+            double retractLength = RetractLength();
+            w.Line($"G1 E{F(retractLength, 5)} F{F(mats[tool].RetractSpeed * 60, 0)}");
+            seconds += retractLength / mats[tool].RetractSpeed;
             retracted = false;
+        }
+
+        // To the other extruder: this one's filament pulled back first, the other's left as it was.
+        void Switch(int to)
+        {
+            if (to == tool) return;
+            Retract();
+            retractedBy[tool] = retracted;
+            w.Line($"T{to}");
+            tool = to;
+            retracted = retractedBy[tool];
         }
 
         PathKind? type = null;
@@ -168,7 +198,9 @@ public static class GCode
             if (!double.IsNaN(pos.X)) Retract();
             w.Line($"G0 Z{F(z, 3)} F600");
             if (layer.Layer.Index > 0) seconds += layer.Layer.Height / 10;
-            if (number == 2 && material.NozzleTemp != material.FirstLayerNozzleTemp) w.Line($"M104 S{material.NozzleTemp}");
+            if (number == 2)
+                foreach (int t in used)
+                    if (mats[t].NozzleTemp != mats[t].FirstLayerNozzleTemp) w.Line($"M104{T(t)} S{mats[t].NozzleTemp}");
             if (number == material.FanFromLayer && fan > 0)
             {
                 w.Line($"M106 S{fan}");
@@ -194,6 +226,7 @@ public static class GCode
             type = null;
             foreach (var path in layer.Paths)
             {
+                Switch(path.Kind is PathKind.Support or PathKind.SupportInterface ? supportTool : modelTool);
                 if (path.Kind != type)
                 {
                     // Bridges with the fan full, to set them hard over the air; back as it was after.
@@ -218,6 +251,7 @@ public static class GCode
                     w.Line($"G1 X{F(p.X - ox, 3)} Y{F(p.Y - oy, 3)} E{F(e, 5)}{feed}");
                     feed = "";
                     filament += e;
+                    filamentBy[tool] += e;
                     extrusions++;
                     pos = p;
                 }
@@ -230,7 +264,8 @@ public static class GCode
             Layers = plan.Layers.Count,
             Seconds = seconds,
             FilamentMm = filament,
-            Grams = filament * Math.PI * printer.FilamentDiameter * printer.FilamentDiameter / 4 / 1000 * material.Density,
+            Grams = used.Sum(t => filamentBy[t] * mats[t].Density) * Math.PI * printer.FilamentDiameter * printer.FilamentDiameter / 4 / 1000,
+            SupportFilamentMm = dual ? filamentBy[supportTool] : 0,
             ExtrusionMoves = extrusions,
             TravelMoves = travels,
             Retractions = retractions,
@@ -264,14 +299,18 @@ public static class GCode
         h.Line("M83 ; relative extrusion");
         h.Line("M107 ; fan off");
         h.Line($"M140 S{material.BedTemp} ; heat the bed");
-        h.Line($"M104 S{material.FirstLayerNozzleTemp} ; heat the nozzle");
+        foreach (int t in used) h.Line($"M104{T(t)} S{mats[t].FirstLayerNozzleTemp} ; heat the nozzle{(tagged ? $" (extruder {t + 1})" : "")}");
         h.Line($"M190 S{material.BedTemp} ; wait for the bed");
-        h.Line($"M109 S{material.FirstLayerNozzleTemp} ; wait for the nozzle");
+        foreach (int t in used) h.Line($"M109{T(t)} S{mats[t].FirstLayerNozzleTemp} ; wait for the nozzle{(tagged ? $" (extruder {t + 1})" : "")}");
         foreach (var line in Lines(Placeholders.Fill(printer.StartGCode, values))) h.Line(line);
         h.Line("G90");
         h.Line("M83 ; relative extrusion, whatever the start G-code chose");
+        if (tagged) h.Line($"T{modelTool} ; the part's extruder");
         all.Append(body);
         h.Line(";TYPE:END");
+        // The end G-code turns off the extruder in use; the other one too.
+        foreach (int t in used)
+            if (t != tool) h.Line($"M104 T{t} S0 ; extruder {t + 1} off");
         foreach (var line in Lines(Placeholders.Fill(printer.EndGCode, values))) h.Line(line);
         h.Line(";End of print");
         return (all.ToString(), stats);

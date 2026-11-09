@@ -61,6 +61,7 @@ public static class GCode
         PathKind.GapFill => "FILL",
         PathKind.Bridge => "SKIN",
         PathKind.Ironing => "IRONING",
+        PathKind.PrimeTower => "PRIME-TOWER",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -228,7 +229,7 @@ public static class GCode
             type = null;
             foreach (var path in layer.Paths)
             {
-                Switch(path.Kind is PathKind.Support or PathKind.SupportInterface ? supportTool : modelTool);
+                Switch(path.Tool >= 0 && path.Tool < mats.Length && (dual || path.Tool == modelTool) ? path.Tool : path.Kind is PathKind.Support or PathKind.SupportInterface ? supportTool : modelTool);
                 if (path.Kind != type)
                 {
                     // Bridges with the fan full, to set them hard over the air; back as it was after.

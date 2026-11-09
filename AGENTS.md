@@ -136,7 +136,10 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - Two extruders: `PrinterProfile.Extruders`, `SliceSettings.ModelExtruder` and `SupportExtruder` (-1: the
     part's), `PrintSetup.SupportMaterial`. The writer switches with `T0`/`T1` before each line on the other extruder
     (retracting first), heats and waits for both, and tags temperatures with T only when more than the first is used,
-    so a one-extruder print is as it was. `Commands.FileSaver` (bytes) is how a macro's G-code or .x3g is written.
+    so a one-extruder print is as it was. The prime tower (`SliceSettings.PrimeTower`, placed by `Planner.TowerPlace`,
+    on `PrintPlan.PrimeTower`) is `PathKind.PrimeTower` lines whose `Extrusion.Tool` says which extruder primes on
+    them: half before the supports (theirs), half and the outline after (the part's); just the outline on layers
+    with no change, up to the last one that has. `Commands.FileSaver` (bytes) is how a macro's G-code or .x3g is written.
   - `tests/AVAModeler.Slicing.Tests`: `Playback` plays G-code back as a printer would; `SafetyTests` runs it over
     shapes and settings (on the bed, under the height, hot before printing, layers rising, retractions put back);
     `ReferenceTests` compares a small print with `Reference/tube-10mm.gcode`, numbers within a unit in their last

@@ -94,6 +94,10 @@ public sealed record SliceSettings
     public int ModelExtruder { get; init; }
     /// <summary>The extruder for supports: -1 for the part's, or the other, for a second (support) material.</summary>
     public int SupportExtruder { get; init; } = -1;
+    /// <summary>With supports on the other extruder: a tower beside the part for each extruder to prime on after a change.</summary>
+    public bool PrimeTower { get; init; } = true;
+    /// <summary>The prime tower's side (mm).</summary>
+    public double PrimeTowerSize { get; init; } = 15;
     /// <summary>Build supports under overhangs.</summary>
     public bool Supports { get; init; }
     /// <summary>Overhangs steeper than this from the vertical get support (0 would support every slope, 90 nothing).</summary>
@@ -152,6 +156,7 @@ public sealed record SliceSettings
             PrinterProfile.Range(v, 1, 1000, what, " mm/s");
         PrinterProfile.Range(RetractMinTravel, 0, 100, "The shortest retracted travel");
         PrinterProfile.Range(ZHop, 0, 10, "The Z hop");
+        PrinterProfile.Range(PrimeTowerSize, 5, 60, "The prime tower");
         PrinterProfile.Range(IroningSpacing, 0.02, LineWidth, "The ironing spacing");
         PrinterProfile.Range(IroningFlowPercent, 0, 50, "The ironing flow", "%");
         PrinterProfile.Range(IroningSpeed, 1, 1000, "The ironing speed", " mm/s");

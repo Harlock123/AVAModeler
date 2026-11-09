@@ -14,6 +14,7 @@ public sealed record PrintJob(PrintSetup Setup, PrintModel Model, SlicedModel Sl
         get
         {
             var list = new List<string>(Model.Problems);
+            list.AddRange(Plan.Problems);
             if (Model.Triangles.Count > 0 && !Model.Printable) list.Add($"The mesh check says: {Model.Verdict}. Parts may print wrongly or be missing.");
             if (Sliced.OpenChains > 0)
                 list.Add($"{Sliced.OpenChains} cut outline{(Sliced.OpenChains == 1 ? "" : "s")} didn't close (the mesh has holes there) and {(Sliced.OpenChains == 1 ? "was" : "were")} left out.");

@@ -47,6 +47,8 @@ public sealed class PrintWindow : Window
     private readonly ComboBox _modelExtruder = Choice(["Extruder 1", "Extruder 2"]);
     private readonly ComboBox _supportExtruder = Choice(["The part's", "Extruder 1", "Extruder 2"]);
     private readonly ComboBox _supportMaterial = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly CheckBox _primeTower = new() { Content = "Prime tower (each extruder primes after a change)", Foreground = Look.Text };
+    public CheckBox PrimeTowerBox => _primeTower;
     private Control? _dualRows;
     public ComboBox ModelExtruderBox => _modelExtruder;
     public ComboBox SupportExtruderBox => _supportExtruder;
@@ -209,7 +211,7 @@ public sealed class PrintWindow : Window
             Row("Supports stand", _supportOn), (_dualRows = new StackPanel
             {
                 Spacing = 3,
-                Children = { Row("Part's extruder", _modelExtruder), Row("Supports' extruder", _supportExtruder), Row("Supports' material", _supportMaterial) },
+                Children = { Row("Part's extruder", _modelExtruder), Row("Supports' extruder", _supportExtruder), Row("Supports' material", _supportMaterial), _primeTower, Field("tower", "Prime tower size (mm)") },
             }), Field("interface", "Interface layers"), Field("interfacePercent", "Interface density (%)"),
             Field("speed", "Print speed (mm/s)"), Field("outer", "Outer wall speed (mm/s)"), Field("infillSpeed", "Infill speed (mm/s)"),
             Field("firstSpeed", "First layer speed (mm/s)"), Field("bridgeSpeed", "Bridge speed (mm/s)"), Field("gapSpeed", "Gap fill speed (mm/s)"),
@@ -500,6 +502,8 @@ public sealed class PrintWindow : Window
         _seam.SelectedIndex = (int)s.Seam;
         _supports.IsChecked = s.Supports;
         _modelExtruder.SelectedIndex = s.ModelExtruder;
+        _primeTower.IsChecked = s.PrimeTower;
+        Set("tower", s.PrimeTowerSize);
         _supportExtruder.SelectedIndex = s.SupportExtruder + 1;
         _supportMaterial.ItemsSource = setup.AllMaterials.Select(m => m.Name).ToList();
         _supportMaterial.SelectedIndex = Math.Max(0, setup.AllMaterials.ToList().FindIndex(m => m.Name == setup.SupportMaterial.Name));
@@ -561,6 +565,7 @@ public sealed class PrintWindow : Window
             SupportOn = (SupportPlacement)Math.Max(0, _supportOn.SelectedIndex), SupportInterfaceLayers = Whole("interface", "Interface layers"),
             SupportInterfacePercent = Num("interfacePercent", "The interface density"),
             ModelExtruder = Math.Max(0, _modelExtruder.SelectedIndex), SupportExtruder = Math.Max(0, _supportExtruder.SelectedIndex) - 1,
+            PrimeTower = _primeTower.IsChecked == true, PrimeTowerSize = Num("tower", "The prime tower's size"),
             PrintSpeed = Num("speed", "The print speed"), OuterWallSpeed = Num("outer", "The outer wall speed"), InfillSpeed = Num("infillSpeed", "The infill speed"),
             FirstLayerSpeed = Num("firstSpeed", "The first layer speed"), TravelSpeed = Num("travel", "The travel speed"), ZHop = Num("zhop", "The Z hop"),
             BridgeSpeed = Num("bridgeSpeed", "The bridge speed"), GapFillSpeed = Num("gapSpeed", "The gap fill speed"),
@@ -753,6 +758,7 @@ public sealed class LayerPreview : Control
         [PathKind.Bridge] = new SolidColorBrush(Color.FromRgb(70, 130, 255)),
         [PathKind.SupportInterface] = new SolidColorBrush(Color.FromRgb(40, 230, 230)),
         [PathKind.Ironing] = new SolidColorBrush(Color.FromRgb(255, 255, 200)),
+        [PathKind.PrimeTower] = new SolidColorBrush(Color.FromRgb(160, 120, 90)),
     };
 
     public static IBrush BrushFor(PathKind kind) => Colours[kind];
@@ -770,6 +776,7 @@ public sealed class LayerPreview : Control
         PathKind.Bridge => "Bridge",
         PathKind.SupportInterface => "Support top",
         PathKind.Ironing => "Ironing",
+        PathKind.PrimeTower => "Prime tower",
         _ => kind.ToString(),
     };
 

@@ -4,7 +4,7 @@ using Clipper2Lib;
 namespace AVAModeler.Slicing;
 
 /// <summary>What a printed line is part of: it decides the speed, and G-code previewers colour by it.</summary>
-public enum PathKind { OuterWall, InnerWall, Skin, Infill, Support, Skirt, Brim, GapFill, Bridge, SupportInterface, Ironing }
+public enum PathKind { OuterWall, InnerWall, Skin, Infill, Support, Skirt, Brim, GapFill, Bridge, SupportInterface, Ironing, PrimeTower }
 
 /// <summary>
 /// One printed line: a polyline the nozzle extrudes along, closed (back to its start) or open. <see cref="Width"/> is
@@ -14,6 +14,8 @@ public enum PathKind { OuterWall, InnerWall, Skin, Infill, Support, Skirt, Brim,
 public sealed record Extrusion(PathKind Kind, IReadOnlyList<Vec2> Points, bool Closed, double Width = 0, double Flow = 1)
 {
     public double Length => Geometry2D.Perimeter(Points, Closed);
+    /// <summary>The extruder that prints it when its kind doesn't say (the prime tower's lines: each extruder primes its own); -1 by kind.</summary>
+    public int Tool { get; init; } = -1;
 }
 
 /// <summary>
@@ -28,6 +30,11 @@ public sealed record ToolpathLayer(SliceLayer Layer, IReadOnlyList<Extrusion> Pa
 /// <summary>The whole print as toolpaths, layer by layer, ready for the G-code writer.</summary>
 public sealed record PrintPlan(SlicedModel Sliced, PrinterProfile Printer, SliceSettings Settings, IReadOnlyList<ToolpathLayer> Layers)
 {
+    /// <summary>What the person should know about the plan (no room on the bed for the prime tower).</summary>
+    public IReadOnlyList<string> Problems { get; init; } = [];
+    /// <summary>Where the prime tower stands (mm on the bed), if there is one.</summary>
+    public (Vec2 Min, Vec2 Max)? PrimeTower { get; init; }
+
     /// <summary>The length of line printed of each kind (mm), over the whole print.</summary>
     public IReadOnlyDictionary<PathKind, double> Lengths =>
         Layers.SelectMany(l => l.Paths).GroupBy(p => p.Kind).ToDictionary(g => g.Key, g => g.Sum(p => p.Length));
@@ -71,6 +78,27 @@ public static class Planner
         }
         var support = s.Supports ? SupportRegions(region, layers, s) : new PathsD[n];
 
+        // A prime tower when supports print on the other extruder: up to the last layer that changes extruder.
+        int modelTool = s.ModelExtruder, supportTool = s.SupportExtruder;
+        int lastChange = -1;
+        if (s.PrimeTower && supportTool >= 0 && supportTool != modelTool)
+            for (int i = 0; i < n; i++)
+                if (support[i] is { Count: > 0 }) lastChange = i;
+        var problems = new List<string>();
+        PathsD? tower = null;
+        (Vec2, Vec2)? towerBox = null;
+        if (lastChange >= 0)
+        {
+            towerBox = TowerPlace(sliced.Model.Bounds, printer, s.PrimeTowerSize);
+            if (towerBox is var (tmin, tmax))
+                tower = Polygons2D.Paths([[tmin, new Vec2(tmax.X, tmin.Y), tmax, new Vec2(tmin.X, tmax.Y)]]);
+            else
+            {
+                problems.Add($"There's no room on the bed for the {PrinterProfile.Num(s.PrimeTowerSize)} mm prime tower beside the part: the idle extruder may drip on it. Make the tower smaller, or move the part.");
+                lastChange = -1;
+            }
+        }
+
         var result = new List<ToolpathLayer>(n);
         var at = new Vec2(0, 0);
         for (int i = 0; i < n; i++)
@@ -82,7 +110,28 @@ public static class Planner
                 paths.Add(placed);
                 at = placed.Closed ? placed.Points[0] : placed.Points[^1];
             }
-            if (i == 0) foreach (var e in Order(FirstLayerExtras(Polygons2D.Paths(layers[0].Islands.Select(isl => isl.Outline.Points)), support[0], s, spacing[0]), at)) Add(e);
+            if (i == 0)
+            {
+                var footprint = Polygons2D.Paths(layers[0].Islands.Select(isl => isl.Outline.Points));
+                if (tower != null && lastChange >= 0) footprint = Polygons2D.Union(footprint, tower);
+                foreach (var e in Order(FirstLayerExtras(footprint, support[0], s, spacing[0]), at)) Add(e);
+            }
+            // The tower's lines this layer, crossways each layer: half for each extruder to prime on, or (on a layer
+            // with no change) just its outline, to keep it standing.
+            List<Extrusion> towerA = [], towerB = [];
+            if (tower != null && i <= lastChange)
+            {
+                var inner = Polygons2D.Offset(tower, -w / 2);
+                var lines = Fill(inner, spacing[i], [i % 2 == 0 ? 45 : 135], PathKind.PrimeTower);
+                var outline = inner.Select(p => new Extrusion(PathKind.PrimeTower, Polygons2D.Points(p), true)).ToList();
+                if (support[i] is { Count: > 0 })
+                {
+                    towerA = lines.Where((_, k) => k % 2 == 0).Select(e => e with { Tool = supportTool }).ToList();
+                    towerB = [.. outline.Select(e => e with { Tool = modelTool }), .. lines.Where((_, k) => k % 2 == 1).Select(e => e with { Tool = modelTool })];
+                }
+                else towerB = outline.Select(e => e with { Tool = modelTool }).ToList();
+            }
+            foreach (var e in Order(towerA, at)) Add(e);
             if (support[i] is { Count: > 0 } sup)
             {
                 // The top few layers of each column (none of the support above covers them) are interface: dense,
@@ -95,6 +144,7 @@ public static class Planner
                     foreach (var e in Order(Fill(face, spacing[i] * 100 / s.SupportInterfacePercent, [90], PathKind.SupportInterface), at)) Add(e);
             }
 
+            foreach (var e in Order(towerB, at)) Add(e);
             var islands = layers[i].Islands.ToList();
             while (islands.Count > 0)
             {
@@ -143,7 +193,32 @@ public static class Planner
             var comb = s.Combing ? Polygons2D.Islands(Polygons2D.Offset(region[i], -w)) : [];
             result.Add(new ToolpathLayer(layers[i], paths) { Comb = comb });
         }
-        return new PrintPlan(sliced, printer, s, result);
+        return new PrintPlan(sliced, printer, s, result) { Problems = problems, PrimeTower = lastChange >= 0 ? towerBox : null };
+    }
+
+    /// <summary>
+    /// Where the prime tower goes: a square of <paramref name="size"/> mm, 5 mm to the right of the part, else its left,
+    /// else in front or behind it, centred on it the other way, and kept 2 mm in from the bed's edge; null if none fit.
+    /// </summary>
+    internal static (Vec2 Min, Vec2 Max)? TowerPlace(Box3 part, PrinterProfile printer, double size)
+    {
+        const double gap = 5, edge = 2;
+        double cx = (part.Min.X + part.Max.X) / 2, cy = (part.Min.Y + part.Max.Y) / 2;
+        (Vec2, Vec2)[] tries =
+        [
+            (new Vec2(part.Max.X + gap, cy - size / 2), new Vec2(part.Max.X + gap + size, cy + size / 2)),
+            (new Vec2(part.Min.X - gap - size, cy - size / 2), new Vec2(part.Min.X - gap, cy + size / 2)),
+            (new Vec2(cx - size / 2, part.Min.Y - gap - size), new Vec2(cx + size / 2, part.Min.Y - gap)),
+            (new Vec2(cx - size / 2, part.Max.Y + gap), new Vec2(cx + size / 2, part.Max.Y + gap + size)),
+        ];
+        foreach (var (min, max) in tries)
+        {
+            bool inside = printer.RoundBed
+                ? new[] { min, max, new Vec2(min.X, max.Y), new Vec2(max.X, min.Y) }.All(c => (c - new Vec2(printer.BedWidth / 2, printer.BedDepth / 2)).Length <= printer.BedWidth / 2 - edge)
+                : min.X >= edge && min.Y >= edge && max.X <= printer.BedWidth - edge && max.Y <= printer.BedDepth - edge;
+            if (inside) return (min, max);
+        }
+        return null;
     }
 
     /// <summary>

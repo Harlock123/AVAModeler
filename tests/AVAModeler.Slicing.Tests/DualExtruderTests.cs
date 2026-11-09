@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using AVAModeler.Core;
 
 namespace AVAModeler.Slicing.Tests;
 
@@ -28,7 +29,8 @@ public class DualExtruderTests
         {
             if (line is "T0" or "T1") tool = line;
             if (line.StartsWith(";TYPE:")) type = line[6..];
-            if (line.StartsWith("G1 X") && line.Contains(" E"))
+            // (The prime tower is printed by both: each primes on it.)
+            if (line.StartsWith("G1 X") && line.Contains(" E") && type != "PRIME-TOWER")
                 Assert.Equal(type is "SUPPORT" or "SUPPORT-INTERFACE" ? "T1" : "T0", tool ?? "T0");
         }
         // The filament split between them, weighed by each one's density; the second turned off at the end.
@@ -97,4 +99,69 @@ public class DualExtruderTests
         Assert.Equal(0, wrong);
         Assert.True(aMoved > 0 && bMoved > 0);
     }
+}
+
+public class PrimeTowerTests
+{
+    private static readonly PrinterProfile Fcp = Presets.Printers.Single(p => p.Name == "Flashforge Creator Pro");
+
+    private static PrintJob Dual(Document doc, SliceSettings? extra = null) => PrintJob.Run(doc,
+        new PrintSetup { Printer = Fcp, Settings = (extra ?? new SliceSettings()) with { Supports = true, SupportExtruder = 1 }, SupportMaterial = Presets.Materials[1] });
+
+    [Fact]
+    public void Each_extruder_primes_on_the_tower_after_a_change_up_to_the_last_change()
+    {
+        var job = Dual(SafetyTests.Tee());
+        var plan = job.Plan;
+        var (min, max) = plan.PrimeTower!.Value;
+        // 15 mm square, 5 mm to the right of the part, on the bed.
+        Assert.Equal(15, max.X - min.X, 6);
+        Assert.Equal(plan.Sliced.Model.Bounds.Max.X + 5, min.X, 6);
+        Assert.True(max.X <= Fcp.BedWidth - 2);
+        int lastSupport = plan.Layers.ToList().FindLastIndex(l => l.Paths.Any(p => p.Kind == PathKind.Support || p.Kind == PathKind.SupportInterface));
+        for (int i = 0; i < plan.Layers.Count; i++)
+        {
+            var paths = plan.Layers[i].Paths.ToList();
+            var tower = paths.Where(p => p.Kind == PathKind.PrimeTower).ToList();
+            if (i > lastSupport) { Assert.Empty(tower); continue; }
+            Assert.NotEmpty(tower);
+            Assert.All(tower.SelectMany(p => p.Points), q => Assert.True(q.X >= min.X - 1e-6 && q.X <= max.X + 1e-6 && q.Y >= min.Y - 1e-6 && q.Y <= max.Y + 1e-6));
+            if (!paths.Any(p => p.Kind == PathKind.Support || p.Kind == PathKind.SupportInterface)) continue;
+            // The support extruder primes before its supports; the part's after them, before the part.
+            int firstSupport = paths.FindIndex(p => p.Kind is PathKind.Support or PathKind.SupportInterface);
+            int lastSupportPath = paths.FindLastIndex(p => p.Kind is PathKind.Support or PathKind.SupportInterface);
+            int firstPart = paths.FindIndex(p => p.Kind is PathKind.OuterWall or PathKind.InnerWall);
+            Assert.Contains(paths.Take(firstSupport), p => p.Kind == PathKind.PrimeTower && p.Tool == 1);
+            Assert.Contains(paths.Skip(lastSupportPath).Take(firstPart - lastSupportPath), p => p.Kind == PathKind.PrimeTower && p.Tool == 0);
+        }
+        // In the G-code: after every change of extruder, the first thing printed is the tower.
+        var lines = job.GCode[job.GCode.IndexOf(";LAYER:0")..job.GCode.IndexOf(";TYPE:END")].Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+            if (lines[i] is "T0" or "T1")
+                Assert.Equal(";TYPE:PRIME-TOWER", lines.Skip(i + 1).First(l => l.StartsWith(";TYPE:")));
+        // The skirt goes round the tower too.
+        var skirt = plan.Layers[0].Paths.Where(p => p.Kind == PathKind.Skirt).SelectMany(p => p.Points).ToList();
+        Assert.True(skirt.Max(p => p.X) > max.X);
+        Assert.Empty(job.Warnings);
+    }
+
+    [Fact]
+    public void No_tower_with_one_extruder_or_when_turned_off_and_a_note_when_theres_no_room()
+    {
+        Assert.Null(PrintJob.Run(SafetyTests.Tee(), new PrintSetup { Printer = Fcp, Settings = new SliceSettings { Supports = true } }).Plan.PrimeTower);
+        var off = Dual(SafetyTests.Tee(), new SliceSettings { PrimeTower = false });
+        Assert.Null(off.Plan.PrimeTower);
+        Assert.DoesNotContain(off.Plan.Layers.SelectMany(l => l.Paths), p => p.Kind == PathKind.PrimeTower);
+        // A part nearly as wide as the bed leaves no room either side, in front or behind: said, and printed without.
+        var crowded = Dual(WideWithOverhang());
+        Assert.Contains(crowded.Warnings, w => w.Contains("no room on the bed for the 15 mm prime tower"));
+        Assert.Null(crowded.Plan.PrimeTower);
+    }
+
+    /// <summary>A T across nearly the whole bed: a 20 mm post with a slab 220 × 140 mm on top.</summary>
+    private static Document WideWithOverhang() => Shapes.Doc(m =>
+    {
+        Shapes.Box(m, new Vec3(-0.01, 0, -0.01), new Vec3(0.01, 0.01, 0.01));
+        Shapes.Box(m, new Vec3(-0.11, 0.01, -0.07), new Vec3(0.11, 0.012, 0.07));
+    });
 }

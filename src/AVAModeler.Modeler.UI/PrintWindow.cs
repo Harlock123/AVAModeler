@@ -47,6 +47,9 @@ public sealed class PrintWindow : Window
     /// <summary>The chosen printer's notes (its firmware's quirks), under its name.</summary>
     public TextBlock PrinterNotes { get; } = new() { Foreground = Brushes.Khaki, FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private string _notes = "";
+    private string _materialNotes = "";
+    /// <summary>The chosen material's notes (what it needs), under its name.</summary>
+    public TextBlock MaterialNotes { get; } = new() { Foreground = Brushes.Khaki, FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private string? _x3gMachine;
     private readonly CheckBox _gapFill = new() { Content = "Fill gaps between walls", Foreground = Look.Text };
     private readonly CheckBox _bridging = new() { Content = "Bridge spans over air", Foreground = Look.Text };
@@ -152,7 +155,7 @@ public sealed class PrintWindow : Window
             Field("printer.corner", "Corner speed (mm/s)"), _originCentre, _roundBed,
             Label("Start G-code ({bed_temp}, {nozzle_temp}… filled in)"), _start, Label("End G-code"), _end, savePrinter);
         var material = Section("Material", _materials,
-            Field("material.name", "Name"), Field("material.nozzle", "Nozzle (°C)"), Field("material.first", "First layer nozzle (°C)"), Field("material.bed", "Bed (°C)"),
+            MaterialNotes, Field("material.name", "Name"), Field("material.nozzle", "Nozzle (°C)"), Field("material.first", "First layer nozzle (°C)"), Field("material.bed", "Bed (°C)"),
             Field("material.retract", "Retraction (mm)"), Field("material.retractSpeed", "Retraction speed (mm/s)"), Field("material.fan", "Fan (%)"),
             Field("material.fanFrom", "Fan from layer"), Field("material.density", "Density (g/cm³)"),
             Field("material.minLayer", "Shortest layer time (s)"), Field("material.minSpeed", "Slowest cooling speed (mm/s)"), saveMaterial);
@@ -478,6 +481,9 @@ public sealed class PrintWindow : Window
         Set("material.retract", m.RetractLength); Set("material.retractSpeed", m.RetractSpeed); Set("material.fan", m.FanPercent);
         Set("material.fanFrom", m.FanFromLayer); Set("material.density", m.Density);
         Set("material.minLayer", m.MinLayerSeconds); Set("material.minSpeed", m.MinSpeed);
+        _materialNotes = m.Notes;
+        MaterialNotes.Text = m.Notes;
+        MaterialNotes.IsVisible = m.Notes.Length > 0;
     }
 
     private void Set(string key, double v) => _fields[key].Text = v.ToString("0.###", CultureInfo.InvariantCulture);
@@ -527,7 +533,7 @@ public sealed class PrintWindow : Window
         FirstLayerNozzleTemp = Whole("material.first", "The first layer's temperature"), BedTemp = Whole("material.bed", "The bed temperature"),
         RetractLength = Num("material.retract", "The retraction"), RetractSpeed = Num("material.retractSpeed", "The retraction speed"),
         FanPercent = Whole("material.fan", "The fan"), FanFromLayer = Whole("material.fanFrom", "The fan's first layer"), Density = Num("material.density", "The density"),
-        MinLayerSeconds = Num("material.minLayer", "The shortest layer time"), MinSpeed = Num("material.minSpeed", "The slowest cooling speed"),
+        MinLayerSeconds = Num("material.minLayer", "The shortest layer time"), MinSpeed = Num("material.minSpeed", "The slowest cooling speed"), Notes = _materialNotes,
     }.Checked();
 
     private void SavePrinter()

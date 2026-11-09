@@ -96,3 +96,40 @@ public class PresetTests
         Assert.False(old.Printer.OriginAtCentre);
     }
 }
+
+public class MaterialPresetTests
+{
+    public static TheoryData<string> Names()
+    {
+        var data = new TheoryData<string>();
+        foreach (var m in Presets.Materials) data.Add(m.Name);
+        return data;
+    }
+
+    [Fact]
+    public void Eleven_materials_each_checked_and_named_once_with_notes_where_they_need_care()
+    {
+        Assert.Equal(11, Presets.Materials.Count);
+        Assert.Equal(Presets.Materials.Count, Presets.Materials.Select(m => m.Name).Distinct().Count());
+        foreach (var m in Presets.Materials) m.Checked();
+        foreach (string name in (string[])["ASA", "Nylon (PA)", "Polycarbonate (PC)", "CF-PETG", "Wood-fill PLA"])
+            Assert.NotEmpty(Presets.Materials.Single(m => m.Name == name).Notes);
+        Assert.Contains("hardened", Presets.Materials.Single(m => m.Name == "CF-PETG").Notes);
+        // The hot ones are hotter than PLA, and the warping ones keep the fan low.
+        var pc = Presets.Materials.Single(m => m.Name == "Polycarbonate (PC)");
+        Assert.True(pc.NozzleTemp > 260 && pc.BedTemp >= 100 && pc.FanPercent == 0);
+    }
+
+    [Theory]
+    [MemberData(nameof(Names))]
+    public void Every_material_prints_a_cube_at_its_temperatures(string name)
+    {
+        var material = Presets.Materials.Single(m => m.Name == name);
+        var job = PrintJob.Run(Shapes.Cube(0.02), new PrintSetup { Material = material });
+        var run = Playback.Run(job.GCode);
+        Assert.Equal(material.FirstLayerNozzleTemp, run.NozzleWhenFirstExtruded);
+        Assert.Equal(material.BedTemp, run.BedWhenFirstExtruded);
+        Assert.Equal(job.Stats.FilamentMm * Math.PI * 1.75 * 1.75 / 4 / 1000 * material.Density, job.Stats.Grams, 6);
+        if (material.FanPercent == 0) Assert.DoesNotContain("M106 S", job.GCode.Replace("M106 S0", ""));
+    }
+}

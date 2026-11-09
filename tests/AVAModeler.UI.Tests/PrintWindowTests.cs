@@ -53,7 +53,14 @@ public sealed class PrintWindowTests : IDisposable
         var (w, p) = Open();
         Assert.Equal("3D Print", p.Title);
         Assert.Equal(Presets.Printers.Select(x => x.Name), p.Printers.ItemsSource!.Cast<string>());
-        Assert.Equal(["PLA", "PETG", "ABS", "TPU"], p.Materials.ItemsSource!.Cast<string>());
+        Assert.Equal(Presets.Materials.Select(m => m.Name), p.Materials.ItemsSource!.Cast<string>());
+        // A material's notes show under its name.
+        p.Materials.SelectedIndex = Presets.Materials.ToList().FindIndex(m => m.Name == "Nylon (PA)");
+        Assert.Equal("255", p.FieldBox("material.nozzle").Text);
+        Assert.Contains("dry the spool", p.MaterialNotes.Text);
+        Assert.True(p.MaterialNotes.IsVisible);
+        p.Materials.SelectedIndex = 0;
+        Assert.False(p.MaterialNotes.IsVisible);
         Assert.Equal("0.2", p.FieldBox("layer").Text);
         Assert.Equal("220", p.FieldBox("printer.width").Text);
         // Asking again brings the same window forward; the Objects tab has the button too.
@@ -280,10 +287,10 @@ public sealed class PrintWindowTests : IDisposable
         Assert.Equal("Saved the printer \"Workshop printer\".", p.Status.Text);
         Assert.Equal("Workshop printer", p.Printers.SelectedItem);
         Assert.Equal(180, Assert.Single(w.Session.Preferences.Print.MyPrinters).BedWidth);
-        p.FieldBox("material.name").Text = "Silk PLA";
+        p.FieldBox("material.name").Text = "My silk PLA";
         p.FieldBox("material.nozzle").Text = "215";
         Press(p, "Save as my material");
-        Assert.Equal("Silk PLA", p.Materials.SelectedItem);
+        Assert.Equal("My silk PLA", p.Materials.SelectedItem);
         // Choosing a preset fills its numbers in; the new window starts from what was kept.
         p.Printers.SelectedIndex = 0;
         Assert.Equal("220", p.FieldBox("printer.width").Text);
@@ -292,7 +299,7 @@ public sealed class PrintWindowTests : IDisposable
         Ui.Pump();
         var again = Assert.Single(w.OwnedWindows.OfType<PrintWindow>());
         Assert.Contains("Workshop printer", again.Printers.ItemsSource!.Cast<string>());
-        Assert.Equal("Silk PLA", again.Materials.SelectedItem);
+        Assert.Equal("My silk PLA", again.Materials.SelectedItem);
         Assert.Equal("215", again.FieldBox("material.nozzle").Text);
         again.Close();
     }

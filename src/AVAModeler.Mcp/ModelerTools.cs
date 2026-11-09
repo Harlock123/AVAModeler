@@ -803,7 +803,7 @@ public sealed partial class ModelerTools(IModelerHost host)
     public async Task<string> SliceToGCode(
         [Description("The G-code file, relative to the working folder, e.g. \"part.gcode\" (.gcode, .gco or .g), or \"part.x3g\" for a Sailfish printer (the Flashforge Creator Pro), which reads .x3g rather than G-code.")] string path,
         [Description("The printer preset by name, any case: a generic size (default \"Generic 220 × 220\": a 220 × 220 mm bed, 250 mm tall, 0.4 mm nozzle, 1.75 mm filament) or a printer on the market with its bed, height, filament, retraction, origin and start G-code, such as \"Prusa MK4S\", \"Prusa MINI+\", \"Creality Ender 3 / 3 Pro / 3 V2\", \"Bambu Lab P1S / P1P\", \"Voron 2.4 (300)\", \"Flashforge Creator Pro\" or \"Ultimaker S5\" (a wrong name lists them all). Its notes, such as converting for Sailfish firmware, come back as a warning.")] string? printer = null,
-        [Description("The material preset: PLA (default), PETG, ABS or TPU.")] string? material = null,
+        [Description("The material preset by name, any case: PLA (default), PETG, ABS, TPU, PLA+, Silk PLA, Wood-fill PLA, ASA, Nylon (PA), Polycarbonate (PC) or CF-PETG. Its notes (an enclosure, a dry spool, a hardened nozzle) come back as a warning.")] string? material = null,
         [Description("Layer height in mm, 0.04 to 0.8 × the nozzle (default 0.2).")] double layer_height = 0.2,
         [Description("Sparse infill, 0 to 100% (default 20).")] double infill_percent = 20,
         [Description("The infill's pattern: lines (default, turned 90° each layer), grid (both ways every layer) or gyroid (wavy curves that shift with height: about as strong every way).")] string infill_pattern = "lines",
@@ -898,7 +898,7 @@ public sealed partial class ModelerTools(IModelerHost host)
                 ["filament_m"] = Math.Round(st.FilamentMm / 1000, 3),
                 ["grams"] = Math.Round(st.Grams, 1),
                 ["printable"] = result.Model.Printable,
-                ["warnings"] = new JsonArray([.. result.Warnings.Concat(setup.Printer.Notes.Length > 0 ? [setup.Printer.Notes] : []).Select(w => (JsonNode)w)]),
+                ["warnings"] = new JsonArray([.. result.Warnings.Concat(setup.Printer.Notes.Length > 0 ? [setup.Printer.Notes] : []).Concat(setup.Material.Notes.Length > 0 ? [setup.Material.Notes] : []).Select(w => (JsonNode)w)]),
             }.ToJsonString();
         }
         catch (Exception e) when (e is not McpException and not OperationCanceledException)

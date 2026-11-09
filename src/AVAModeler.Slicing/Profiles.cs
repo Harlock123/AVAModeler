@@ -120,6 +120,8 @@ public sealed record MaterialProfile
     public double MinLayerSeconds { get; init; } = 8;
     /// <summary>The slowest that slowing down for cooling may go (mm/s).</summary>
     public double MinSpeed { get; init; } = 10;
+    /// <summary>What to know before printing it (an enclosure, a dry spool, a hardened nozzle), shown under its name.</summary>
+    public string Notes { get; init; } = "";
 
     public MaterialProfile Checked()
     {
@@ -156,7 +158,21 @@ public static class Presets
         new MaterialProfile(),
         new MaterialProfile { Name = "PETG", NozzleTemp = 235, FirstLayerNozzleTemp = 240, BedTemp = 80, RetractLength = 1.0, RetractSpeed = 30, FanPercent = 50, FanFromLayer = 3, Density = 1.27 },
         new MaterialProfile { Name = "ABS", NozzleTemp = 245, FirstLayerNozzleTemp = 250, BedTemp = 100, FanPercent = 0, Density = 1.04 },
-        new MaterialProfile { Name = "TPU", NozzleTemp = 225, FirstLayerNozzleTemp = 225, BedTemp = 50, RetractLength = 0.4, RetractSpeed = 20, FanPercent = 60, Density = 1.21 },
+        new MaterialProfile { Name = "TPU", NozzleTemp = 225, FirstLayerNozzleTemp = 225, BedTemp = 50, RetractLength = 0.4, RetractSpeed = 20, FanPercent = 60, Density = 1.21,
+            Notes = "Flexible: print slowly (20–30 mm/s), and a direct drive feeds it best; a Bowden tube may let it buckle." },
+        new MaterialProfile { Name = "PLA+", NozzleTemp = 215, FirstLayerNozzleTemp = 220, BedTemp = 60, Density = 1.23 },
+        new MaterialProfile { Name = "Silk PLA", NozzleTemp = 215, FirstLayerNozzleTemp = 220, BedTemp = 60, RetractLength = 1.0, Density = 1.24,
+            Notes = "The shine is best a little slower and hotter; it's weaker between layers than plain PLA." },
+        new MaterialProfile { Name = "Wood-fill PLA", NozzleTemp = 200, FirstLayerNozzleTemp = 205, BedTemp = 60, RetractLength = 1.0, Density = 1.15,
+            Notes = "Its wood fibres can clog a 0.4 mm nozzle: 0.5 mm or more is safer. Hotter prints come out darker." },
+        new MaterialProfile { Name = "ASA", NozzleTemp = 250, FirstLayerNozzleTemp = 255, BedTemp = 100, FanPercent = 30, FanFromLayer = 3, Density = 1.07,
+            Notes = "Like ABS but weatherproof: an enclosure keeps it from warping and cracking; it gives off fumes, so ventilate." },
+        new MaterialProfile { Name = "Nylon (PA)", NozzleTemp = 255, FirstLayerNozzleTemp = 260, BedTemp = 70, RetractLength = 1.2, FanPercent = 0, Density = 1.14,
+            Notes = "Soaks up water from the air: dry the spool first and keep it dry. Sticks best to garolite or a glue stick." },
+        new MaterialProfile { Name = "Polycarbonate (PC)", NozzleTemp = 270, FirstLayerNozzleTemp = 275, BedTemp = 110, FanPercent = 0, Density = 1.20,
+            Notes = "Needs an all-metal hotend for 270 °C and an enclosure; dry it first. Very strong and heat-resistant." },
+        new MaterialProfile { Name = "CF-PETG", NozzleTemp = 245, FirstLayerNozzleTemp = 250, BedTemp = 80, RetractLength = 1.0, FanPercent = 40, FanFromLayer = 3, Density = 1.30,
+            Notes = "Carbon fibre wears a brass nozzle out quickly: use a hardened steel one, 0.4 mm or more." },
     ];
 }
 

@@ -185,7 +185,9 @@ phases 0 to 7 and Layout phases L1 to L6.
   - 3D printing straight to G-code (File › 3D Print…, or 3D Print… in the Objects tab), with no slicer needed:
     - The printer (bed size, build height, nozzle, filament, start and end G-code with placeholders such as
       `{bed_temp}`) and the material (temperatures, retraction, fan, density) come from presets or your own, saved
-      beside them. Everything is kept in the preferences. The materials are PLA, PETG, ABS and TPU. Besides four
+      beside them. Everything is kept in the preferences. The materials are PLA, PETG, ABS, TPU, PLA+, silk PLA, wood-fill PLA, ASA, nylon,
+      polycarbonate and carbon-fibre PETG, each with its temperatures, fan and density and a note where it needs
+      more (an enclosure, a dry spool, a hardened nozzle). Besides four
       generic sizes, 47 printers on the market each come with their build volume, filament, extruder (a Bowden
       printer pulls the filament back further than a direct drive), origin (deltas and Sailfish machines have it in
       the middle of the bed, and deltas a round bed) and start and end G-code for their firmware (Marlin, Prusa's,

@@ -42,7 +42,7 @@ public class ProfileTests
     {
         var setup = new PrintSetup()
             .SavePrinter(new PrinterProfile { Name = "My delta", BedWidth = 180, BedDepth = 180, MaxHeight = 300 })
-            .SaveMaterial(new MaterialProfile { Name = "Silk PLA", NozzleTemp = 215 })
+            .SaveMaterial(new MaterialProfile { Name = "My silk PLA", NozzleTemp = 215 })
             with { Placement = new PlacementOptions { Position = BedPosition.AsModelled, ScalePercent = 50 } };
         string json = setup.ToJson();
         Assert.Contains("\"AsModelled\"", json);

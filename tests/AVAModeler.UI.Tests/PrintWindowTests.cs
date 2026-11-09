@@ -63,7 +63,15 @@ public sealed class PrintWindowTests : IDisposable
         Ui.Pump();
         Assert.Contains(w.Modeler.Tabs.Column.GetLogicalDescendants().OfType<Button>(), b => b.Content as string == "3D Print…");
         Assert.NotNull(p.CaptureRenderedFrame());
-        p.Close();
+        // Its own Close button (a tiling window manager may draw no close box), and Escape.
+        Press(p, "Close");
+        Ui.Pump();
+        Assert.Null(w.Modeler.Print);
+        Assert.Empty(w.OwnedWindows.OfType<PrintWindow>());
+        w.Modeler.Execute("3D Print");
+        Ui.Pump();
+        var again = Assert.Single(w.OwnedWindows.OfType<PrintWindow>());
+        again.KeyPressQwerty(Avalonia.Input.PhysicalKey.Escape, Avalonia.Input.RawInputModifiers.None);
         Ui.Pump();
         Assert.Null(w.Modeler.Print);
     }

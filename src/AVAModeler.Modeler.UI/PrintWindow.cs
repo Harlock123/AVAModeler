@@ -64,6 +64,29 @@ public sealed class PrintWindow : Window
     public TextBlock Status { get; } = new() { Foreground = Look.Text, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     public Button SliceButton { get; }
     public Button SaveButton { get; }
+    /// <summary>Closes the window: there's always one, as a tiling window manager may draw no close box.</summary>
+    public Button CloseButton { get; }
+
+    /// <summary>
+    /// Shrinks the window to fit the screen it's on (its working area, less a margin) and keeps it inside, so it opens
+    /// usable however small or scaled the screen is. The settings scroll, so a smaller window loses nothing.
+    /// </summary>
+    public void FitToScreen()
+    {
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        if (screen == null) return;
+        double scale = screen.Scaling > 0 ? screen.Scaling : 1;
+        var area = screen.WorkingArea;
+        double maxW = area.Width / scale - 40, maxH = area.Height / scale - 40;
+        if (maxW < MinWidth || maxH < MinHeight) return;
+        Width = Math.Min(Width, maxW);
+        Height = Math.Min(Height, maxH);
+        // Back inside the working area if it opened (centred on a large owner) partly off it.
+        int w = (int)(Width * scale), h = (int)(Height * scale);
+        int x = Math.Clamp(Position.X, area.X, Math.Max(area.X, area.Right - w));
+        int y = Math.Clamp(Position.Y, area.Y, Math.Max(area.Y, area.Bottom - h));
+        if (x != Position.X || y != Position.Y) Position = new PixelPoint(x, y);
+    }
     /// <summary>A slice is running.</summary>
     public bool Busy { get; private set; }
 
@@ -75,7 +98,20 @@ public sealed class PrintWindow : Window
         Title = "3D Print";
         Width = 1040;
         Height = 720;
+        MinWidth = 520;
+        MinHeight = 360;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Look.Panel;
+        // A tiling window manager may give the window no title bar or close box: Close and Escape always work.
+        KeyDown += (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Escape)
+            {
+                Close();
+                e.Handled = true;
+            }
+        };
+        Opened += (_, _) => FitToScreen();
 
         SliceButton = Look.MakeButton("Slice", () => _ = Slice(), "Slice the foreground layers with these settings and show the layers.", 100);
         SaveButton = Look.MakeButton("Save G-code…", () => _ = SaveGCode(), "Slice if need be, then save the G-code for the printer.", 120);
@@ -115,11 +151,14 @@ public sealed class PrintWindow : Window
         };
         _topButton = Look.MakeButton("Layer", () => Show3D = false, "One layer from above.", 70);
         _threeDButton = Look.MakeButton("3D", () => Show3D = true, "The print in 3D up to the chosen layer: drag to turn, right-drag to move, scroll to zoom.", 50);
-        var buttons = new StackPanel
+        CloseButton = Look.MakeButton("Close", Close, "Close the 3D Print window (Esc). The settings are kept.", 70);
+        CloseButton.Name = "Close";
+        var row = new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 8,
             Children = { SliceButton, SaveButton, new Border { Width = 16 }, _topButton, _threeDButton, Look.MakeButton("Fit", () => Preview3D.Refit(), "Frame the print in the 3D view again.", 44) },
         };
+        var buttons = new DockPanel { Children = { Dock(CloseButton, Avalonia.Controls.Dock.Right), row } };
         var legend = new WrapPanel();
         foreach (var kind in Enum.GetValues<PathKind>())
             legend.Children.Add(new StackPanel

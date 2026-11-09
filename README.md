@@ -249,13 +249,13 @@ phases 0 to 7 and Layout phases L1 to L6.
     `rocket-blueprints.lua` puts a rocket's side, front and top blueprints behind the views (drawn by
     `make_blueprints.py` in `samples/images`, with nothing but Python's standard library) and lathes the body over them,
     leaving the fins to you.
-  - `checkmesh()` checks the foreground as Mesh Info does and returns a table (`verdict`, `printable`, `volume`,
-    `area`, `holes`, `boundary_edges`, `flipped_polygons` and the rest, and `report`, its lines of text), so a macro
-    can test its own result: `if not checkmesh().printable then tool("Align") end`.
   - `slice(path, options)` slices the foreground for 3D printing and saves the G-code, as File › 3D Print does, from
     its settings (`printer`, `material`, `layer`, `infill`, `walls`, `supports`, `bedonly`, `brim`, `scale`,
     `rotate`, `copies`, `gap` and `layflat` change them for that call), and returns what the print takes (`layers`,
     `time`, `grams`, `size` in mm, `warnings`…): `slice("part.gcode", {scale = 2, supports = true})`.
+  - `checkmesh()` checks the foreground as Mesh Info does and returns a table (`verdict`, `printable`, `volume`,
+    `area`, `holes`, `boundary_edges`, `flipped_polygons` and the rest, and `report`, its lines of text), so a macro
+    can test its own result: `if not checkmesh().printable then tool("Align") end`.
   ```lua
   tool("Box", { Size = {2, 1, 1}, SegmentsX = 4 })
   selmode("polygons"); selbox(-1, 0.4, -1, 1, 1, 1)

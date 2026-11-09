@@ -139,6 +139,7 @@ public sealed class ModelerWorkspace : DockPanel
             ["Export glTF"] = () => _ = Export(".glb"),
             ["Export STL"] = () => _ = Export(".stl"),
             ["Export STL ASCII"] = () => _ = Export(".stl", new SaveOptions { AsciiStl = true }),
+            ["Export 3MF"] = () => _ = Export(".3mf"),
             ["Export Plugin Format"] = () => _ = ExportPlugin(),
             ["3D Print"] = OpenPrint,
             ["Send to AVALightWave"] = () => { s.CommitTool(); SendToLightWave?.Invoke(); },
@@ -563,7 +564,7 @@ public sealed class ModelerWorkspace : DockPanel
             {
                 Group("_File", Item("_New", "New"), Item("_Open…", "Open"), _recent, "-", Item("_Save", "Save"), Item("Save _As…", "Save As"),
                     Item("Export _OBJ…", "Export OBJ"), Item("Export _GEO…", "Export GEO"),
-                    Item("Export gl_TF…", "Export glTF"), Item("Export S_TL…", "Export STL"), Item("Export STL (AS_CII)…", "Export STL ASCII"), Item("Export with a _Plugin…", "Export Plugin Format"), "-",
+                    Item("Export gl_TF…", "Export glTF"), Item("Export S_TL…", "Export STL"), Item("Export STL (AS_CII)…", "Export STL ASCII"), Item("Export _3MF…", "Export 3MF"), Item("Export with a _Plugin…", "Export Plugin Format"), "-",
                     Item("3D _Print (G-code)…", "3D Print"), "-",
                     Item("Send to AVA_LightWave", "Send to AVALightWave"), "-", Item("_Quit", "Quit")),
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",

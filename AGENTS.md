@@ -57,7 +57,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     map) for glTF's base colour texture.
   - `GltfBuilder.cs` builds glTF by hand (System.Text.Json and one binary buffer): meshes from LightWave meshes and
     surfaces, nodes, cameras, lights, animations, and .glb/.gltf packing. `Gltf.cs` writes and reads objects with it;
-    `Stl.cs` is STL, binary and ASCII.
+    `Stl.cs` is STL, binary and ASCII; `ThreeMf.cs` is 3MF (System.IO.Compression and XLinq: the model part, base
+    materials from surfaces, an object per layer, STL's axis swap and winding).
 - `src/AVAModeler.Geometry/`: triangulation (LibTessDotNet), BSP booleans and drills, subdivision, and the
   extrude, lathe and bevel family.
   - `MeshCheck.cs` is the mesh check (Mesh Info, `check_mesh`, Lua's `checkmesh()`): `MeshCheck.Document` gives a

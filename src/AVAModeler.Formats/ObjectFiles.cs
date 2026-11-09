@@ -22,10 +22,10 @@ public sealed record SaveOptions
 public static class ObjectFiles
 {
     /// <summary>Extensions that can be opened, for open dialogs.</summary>
-    public static readonly string[] LoadExtensions = [".lwo", ".lw", ".geo", ".obj", ".glb", ".gltf", ".stl"];
+    public static readonly string[] LoadExtensions = [".lwo", ".lw", ".geo", ".obj", ".glb", ".gltf", ".stl", ".3mf"];
 
     /// <summary>Extensions that can be saved, for save dialogs (the first is the native one).</summary>
-    public static readonly string[] SaveExtensions = [".lwo", ".obj", ".geo", ".glb", ".gltf", ".stl"];
+    public static readonly string[] SaveExtensions = [".lwo", ".obj", ".geo", ".glb", ".gltf", ".stl", ".3mf"];
 
     /// <summary>A short description of a format by extension, for dialog filters.</summary>
     public static string Describe(string extension) => extension.ToLowerInvariant() switch
@@ -36,6 +36,7 @@ public static class ObjectFiles
         ".glb" => "glTF 2.0 binary",
         ".gltf" => "glTF 2.0",
         ".stl" => "STL (3D printing)",
+        ".3mf" => "3MF (3D printing: millimetres, objects and colours)",
         _ => throw new NotSupportedException($"No object format uses {extension}."),
     };
 
@@ -78,6 +79,7 @@ public static class ObjectFiles
                 ".obj" => Obj.Read(Text(data), name => OpenBeside(path, name)),
                 ".gltf" or ".glb" => Gltf.Read(data, Path.GetDirectoryName(Path.GetFullPath(path)), Path.GetFileNameWithoutExtension(path)),
                 ".stl" => Stl.Read(data),
+                ".3mf" => ThreeMf.Read(data),
                 var ext => throw new NotSupportedException($"Can't open {ext} files."),
             };
         doc.FilePath = path;
@@ -175,6 +177,9 @@ public static class ObjectFiles
                 Replace(path, s => s.Write(gltf));
                 break;
             }
+            case ".3mf":
+                Replace(path, s => ThreeMf.Write(doc, s));
+                break;
             case ".stl":
                 Replace(path, s =>
                 {

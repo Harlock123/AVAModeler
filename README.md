@@ -182,6 +182,9 @@ phases 0 to 7 and Layout phases L1 to L6.
     stands on the ground in the Modeler, its front toward you, and the winding is reversed to keep faces outward. STL
     has no units, but slicers read it as millimetres, so metres are written × 1000 (a 2 cm cube prints 20 mm wide)
     and read back ÷ 1000.
+  - 3MF (File › Export 3MF…), the format slicers now prefer, and read back: a zip of XML in millimetres, Z up as STL
+    is, each layer an object with its name and each surface a base material with its colour. Read from elsewhere, any
+    unit is understood, objects made of components are placed, and the build's transforms applied.
   - 3D printing straight to G-code (File › 3D Print…, or 3D Print… in the Objects tab), with no slicer needed:
     - The printer (bed size, build height, nozzle, filament, start and end G-code with placeholders such as
       `{bed_temp}`) and the material (temperatures, retraction, fan, density) come from presets or your own, saved

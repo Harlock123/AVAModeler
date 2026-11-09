@@ -145,10 +145,10 @@ public sealed class Workspace(string root, ToolRegistry registry)
     /// </remarks>
     public IDisposable Confine(Commands commands, bool allowDiscard = false)
     {
-        var (loader, saver, baseDir, guard, text) = (commands.Loader, commands.Saver, commands.BaseDirectory, commands.ReplaceGuard, commands.TextSaver);
+        var (loader, saver, baseDir, guard, text) = (commands.Loader, commands.Saver, commands.BaseDirectory, commands.ReplaceGuard, commands.FileSaver);
         commands.Loader = Load;
         commands.Saver = (doc, path) => Save(doc, path, overwrite: false);
-        commands.TextSaver = (path, contents) =>
+        commands.FileSaver = (path, contents) =>
         {
             string full = Resolve(path);
             CheckWritable([full], overwrite: false);
@@ -159,7 +159,7 @@ public sealed class Workspace(string root, ToolRegistry registry)
         commands.ReplaceGuard = allowDiscard ? null : () => commands.Document.Modified
             ? "The document has changes that haven't been saved. Save it first, or call new or open with discard_changes set to throw them away."
             : null;
-        return new Scope(() => (commands.Loader, commands.Saver, commands.BaseDirectory, commands.ReplaceGuard, commands.TextSaver) = (loader, saver, baseDir, guard, text));
+        return new Scope(() => (commands.Loader, commands.Saver, commands.BaseDirectory, commands.ReplaceGuard, commands.FileSaver) = (loader, saver, baseDir, guard, text));
     }
 
     private sealed class Scope(Action end) : IDisposable

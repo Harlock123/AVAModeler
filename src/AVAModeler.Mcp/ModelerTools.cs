@@ -796,12 +796,12 @@ public sealed partial class ModelerTools(IModelerHost host)
     }
 
     /// <summary>The extensions a G-code file may have.</summary>
-    public static readonly string[] GCodeExtensions = [".gcode", ".gco", ".g"];
+    public static readonly string[] GCodeExtensions = [".gcode", ".gco", ".g", ".x3g"];
 
     [McpServerTool(Name = "slice_to_gcode")]
     [Description("Slices the object for 3D printing and saves the G-code, changing nothing in the object: the foreground layers' faces are put on the printer's bed (Y up becomes Z up; 1 m of the object is 1000 mm printed, times scale_percent), cut into layers, and printed as walls, solid top and bottom layers, sparse infill, an optional brim and supports, then written as Marlin-style G-code (G21, G90, M83 relative extrusion; heats and homes first; ;LAYER and ;TYPE comments for previewers). Returns the file, the print's size in mm, layers, an estimated time (moves only: a real print takes somewhat longer), filament in metres and grams, and warnings (it doesn't fit the bed, the mesh isn't printable, outlines left open by holes in the mesh). Run check_mesh first and fix what it finds: an open or inside-out mesh slices badly. Printers and materials are presets by name (the list is in the error if a name is wrong).")]
     public async Task<string> SliceToGCode(
-        [Description("The G-code file, relative to the working folder, e.g. \"part.gcode\" (.gcode, .gco or .g).")] string path,
+        [Description("The G-code file, relative to the working folder, e.g. \"part.gcode\" (.gcode, .gco or .g), or \"part.x3g\" for a Sailfish printer (the Flashforge Creator Pro), which reads .x3g rather than G-code.")] string path,
         [Description("The printer preset by name, any case: a generic size (default \"Generic 220 × 220\": a 220 × 220 mm bed, 250 mm tall, 0.4 mm nozzle, 1.75 mm filament) or a printer on the market with its bed, height, filament, retraction, origin and start G-code, such as \"Prusa MK4S\", \"Prusa MINI+\", \"Creality Ender 3 / 3 Pro / 3 V2\", \"Bambu Lab P1S / P1P\", \"Voron 2.4 (300)\", \"Flashforge Creator Pro\" or \"Ultimaker S5\" (a wrong name lists them all). Its notes, such as converting for Sailfish firmware, come back as a warning.")] string? printer = null,
         [Description("The material preset: PLA (default), PETG, ABS or TPU.")] string? material = null,
         [Description("Layer height in mm, 0.04 to 0.8 × the nozzle (default 0.2).")] double layer_height = 0.2,
@@ -854,6 +854,8 @@ public sealed partial class ModelerTools(IModelerHost host)
             string f = files.Resolve(path);
             if (!GCodeExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                 throw new ArgumentException($"A G-code file ends in {string.Join(", ", GCodeExtensions)}, such as \"{Path.GetFileNameWithoutExtension(f)}.gcode\".");
+            if (Path.GetExtension(f).Equals(".x3g", StringComparison.OrdinalIgnoreCase) && setup.Printer.X3gMachine == null)
+                throw new ArgumentException($"{setup.Printer.Name} doesn't read .x3g: save .gcode, or choose a Sailfish printer such as \"Flashforge Creator Pro\".");
             files.CheckWritable([f], overwrite);
             return (c.Document.Copy(), f);
         }, cancel).ConfigureAwait(false);
@@ -867,7 +869,10 @@ public sealed partial class ModelerTools(IModelerHost host)
                 string temp = full + ".tmp";
                 try
                 {
-                    File.WriteAllText(temp, job.GCode, new System.Text.UTF8Encoding(false));
+                    if (Path.GetExtension(full).Equals(".x3g", StringComparison.OrdinalIgnoreCase))
+                        File.WriteAllBytes(temp, X3g.Convert(job.GCode, SailfishMachine.ById[setup.Printer.X3gMachine!], Path.GetFileNameWithoutExtension(full)));
+                    else
+                        File.WriteAllText(temp, job.GCode, new System.Text.UTF8Encoding(false));
                     File.Move(temp, full, overwrite: true);
                 }
                 finally

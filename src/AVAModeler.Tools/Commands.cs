@@ -140,10 +140,10 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
     public Action<Document, string>? Saver { get; set; } = Formats.ObjectFiles.Save;
 
     /// <summary>
-    /// How a text file a macro makes (G-code from <see cref="Slice"/>) is written: in full to a temporary file, then
+    /// How a file a macro makes (G-code or .x3g from <see cref="Slice"/>) is written: in full to a temporary file, then
     /// moved into place, unless something else is set (the MCP server keeps it inside its working folder).
     /// </summary>
-    public Action<string, string>? TextSaver { get; set; } = WriteWhole;
+    public Action<string, byte[]>? FileSaver { get; set; } = WriteWhole;
 
     /// <summary>The print setup <see cref="Slice"/> starts from: the app gives it the 3D Print window's, kept in the preferences.</summary>
     public Slicing.PrintSetup PrintSetup { get; set; } = new();
@@ -371,22 +371,29 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("slice needs a file to save the G-code in, such as \"part.gcode\".");
         var ext = Path.GetExtension(path).ToLowerInvariant();
-        if (ext is not (".gcode" or ".gco" or ".g")) throw new ArgumentException($"A G-code file ends in .gcode, .gco or .g, such as \"{Path.GetFileNameWithoutExtension(path)}.gcode\".");
-        var job = Slicing.PrintJob.Run(Document, (setup ?? PrintSetup).Checked());
+        if (ext is not (".gcode" or ".gco" or ".g" or ".x3g"))
+            throw new ArgumentException($"A G-code file ends in .gcode, .gco or .g (or .x3g for a Sailfish printer), such as \"{Path.GetFileNameWithoutExtension(path)}.gcode\".");
+        setup = (setup ?? PrintSetup).Checked();
+        if (ext == ".x3g" && setup.Printer.X3gMachine == null)
+            throw new ArgumentException($"{setup.Printer.Name} doesn't read .x3g: save .gcode, or choose a Sailfish printer such as the Flashforge Creator Pro.");
+        var job = Slicing.PrintJob.Run(Document, setup);
         if (job.Model.Triangles.Count == 0) throw new InvalidOperationException("There's nothing to print: the foreground layers have no faces.");
-        string full = !Path.IsPathRooted(path) && BaseDirectory != null && TextSaver == WriteWhole ? Path.Combine(BaseDirectory, path) : path;
-        (TextSaver ?? throw new InvalidOperationException("No file saver is set up."))(full, job.GCode);
+        var bytes = ext == ".x3g"
+            ? Slicing.X3g.Convert(job.GCode, Slicing.SailfishMachine.ById[setup.Printer.X3gMachine!], Path.GetFileNameWithoutExtension(path))
+            : new System.Text.UTF8Encoding(false).GetBytes(job.GCode);
+        string full = !Path.IsPathRooted(path) && BaseDirectory != null && FileSaver == WriteWhole ? Path.Combine(BaseDirectory, path) : path;
+        (FileSaver ?? throw new InvalidOperationException("No file saver is set up."))(full, bytes);
         return job;
     }
 
-    /// <summary>Writes a text file in full to a temporary file first, so a failure leaves the old one.</summary>
-    public static void WriteWhole(string path, string text)
+    /// <summary>Writes a file in full to a temporary file first, so a failure leaves the old one.</summary>
+    public static void WriteWhole(string path, byte[] contents)
     {
         if (Path.GetDirectoryName(Path.GetFullPath(path)) is { } dir) Directory.CreateDirectory(dir);
         string temp = path + ".tmp";
         try
         {
-            File.WriteAllText(temp, text, new System.Text.UTF8Encoding(false));
+            File.WriteAllBytes(temp, contents);
             File.Move(temp, path, overwrite: true);
         }
         finally

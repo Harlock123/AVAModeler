@@ -35,6 +35,7 @@ public sealed class PrintWindow : Window
     /// <summary>The chosen printer's notes (its firmware's quirks), under its name.</summary>
     public TextBlock PrinterNotes { get; } = new() { Foreground = Brushes.Khaki, FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private string _notes = "";
+    private string? _x3gMachine;
     private readonly CheckBox _gapFill = new() { Content = "Fill gaps between walls", Foreground = Look.Text };
     private readonly CheckBox _bridging = new() { Content = "Bridge spans over air", Foreground = Look.Text };
     private readonly CheckBox _combing = new() { Content = "Keep travel inside the object", Foreground = Look.Text };
@@ -287,12 +288,24 @@ public sealed class PrintWindow : Window
             Status.Foreground = Brushes.Orange;
             return false;
         }
+        bool x3g = Path.GetExtension(path).Equals(".x3g", StringComparison.OrdinalIgnoreCase);
+        if (x3g && job.Setup.Printer.X3gMachine == null)
+        {
+            Status.Text = $"{job.Setup.Printer.Name} doesn't read .x3g: save .gcode, or choose a Sailfish printer such as the Flashforge Creator Pro.";
+            Status.Foreground = Brushes.Orange;
+            return false;
+        }
         try
         {
             string temp = path + ".tmp";
             try
             {
-                await File.WriteAllTextAsync(temp, job.GCode, new UTF8Encoding(false));
+                if (x3g)
+                {
+                    var bytes = X3g.Convert(job.GCode, SailfishMachine.ById[job.Setup.Printer.X3gMachine!], Path.GetFileNameWithoutExtension(path));
+                    await File.WriteAllBytesAsync(temp, bytes);
+                }
+                else await File.WriteAllTextAsync(temp, job.GCode, new UTF8Encoding(false));
                 File.Move(temp, path, overwrite: true);
             }
             finally
@@ -303,7 +316,7 @@ public sealed class PrintWindow : Window
             _session.SetStatus($"Saved the G-code {Path.GetFileName(path)} ({job.Stats.Time}, {job.Stats.Grams:0.0} g).");
             return true;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException)
         {
             Status.Text = $"Can't save {Path.GetFileName(path)}: {e.Message}";
             Status.Foreground = Brushes.Orange;
@@ -312,12 +325,23 @@ public sealed class PrintWindow : Window
     }
 
     public static readonly FilePickerFileType GCodeFile = new("G-code") { Patterns = ["*.gcode", "*.gco", "*.g"] };
+    public static readonly FilePickerFileType X3gFile = new("Sailfish .x3g (MakerBot-style printers)") { Patterns = ["*.x3g"] };
 
     private async Task SaveGCode()
     {
-        string name = Path.GetFileNameWithoutExtension(_session.Document.FilePath ?? "untitled") + ".gcode";
-        var path = await Dialogs.Save(this, "Save G-code", name, GCodeFile);
+        // A Sailfish printer reads .x3g: offer it first.
+        bool sailfish = _setup.Printer.X3gMachine != null || ReadPrinterOrNull()?.X3gMachine != null;
+        string name = Path.GetFileNameWithoutExtension(_session.Document.FilePath ?? "untitled") + (sailfish ? ".x3g" : ".gcode");
+        var path = sailfish
+            ? await Dialogs.Save(this, "Save for the printer", name, X3gFile, GCodeFile)
+            : await Dialogs.Save(this, "Save G-code", name, GCodeFile);
         if (path != null) await SaveTo(path);
+    }
+
+    private PrinterProfile? ReadPrinterOrNull()
+    {
+        try { return ReadPrinter(); }
+        catch (ArgumentException) { return null; }
     }
 
     // ───────────────────────────── the settings ─────────────────────────────
@@ -373,6 +397,8 @@ public sealed class PrintWindow : Window
         _originCentre.IsChecked = p.OriginAtCentre;
         _roundBed.IsChecked = p.RoundBed;
         _notes = p.Notes;
+        _x3gMachine = p.X3gMachine;
+        SaveButton.Content = p.X3gMachine != null ? "Save .x3g…" : "Save G-code…";
         PrinterNotes.Text = p.Notes;
         PrinterNotes.IsVisible = p.Notes.Length > 0;
         _start.Text = p.StartGCode;
@@ -420,7 +446,7 @@ public sealed class PrintWindow : Window
 
     private PrinterProfile ReadPrinter() => new PrinterProfile
     {
-        Name = (_fields["printer.name"].Text ?? "").Trim(), BedWidth = Num("printer.width", "The bed width"), BedDepth = Num("printer.depth", "The bed depth"),
+        X3gMachine = _x3gMachine, Name = (_fields["printer.name"].Text ?? "").Trim(), BedWidth = Num("printer.width", "The bed width"), BedDepth = Num("printer.depth", "The bed depth"),
         MaxHeight = Num("printer.height", "The build height"), NozzleDiameter = Num("printer.nozzle", "The nozzle"), FilamentDiameter = Num("printer.filament", "The filament"),
         StartGCode = _start.Text ?? "", EndGCode = _end.Text ?? "",
         RetractLength = string.IsNullOrWhiteSpace(_fields["printer.retract"].Text) ? null : Num("printer.retract", "The printer's retraction"),

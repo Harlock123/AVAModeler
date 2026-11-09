@@ -172,6 +172,11 @@ public sealed class PrintWindowTests : IDisposable
         Assert.Equal("Flashforge Creator Pro", w.Session.Preferences.Print.Printer.Name);
         Assert.True(w.Session.Preferences.Print.Printer.OriginAtCentre);
         Assert.Contains("G162 X Y", p.Job!.GCode);
+        // It saves .x3g, which its Sailfish firmware reads.
+        Assert.Equal("Save .x3g…", p.SaveButton.Content);
+        string x3g = Path.Combine(_dir, "cube.x3g");
+        Assert.True(Wait(p.SaveTo(x3g)));
+        Assert.Equal(153, File.ReadAllBytes(x3g)[0]);
         // A delta: round, and its round bed drawn.
         p.Printers.SelectedIndex = names.IndexOf("FLSUN Q5");
         Assert.Equal("200", p.FieldBox("printer.width").Text);
@@ -183,6 +188,9 @@ public sealed class PrintWindowTests : IDisposable
         // A generic one has no notes; a blank retraction keeps the material's.
         p.Printers.SelectedIndex = 0;
         Assert.False(p.PrinterNotes.IsVisible);
+        Assert.Equal("Save G-code…", p.SaveButton.Content);
+        Assert.False(Wait(p.SaveTo(Path.Combine(_dir, "generic.x3g"))));
+        Assert.Contains("doesn't read .x3g", p.Status.Text);
         Assert.Equal("", p.FieldBox("printer.retract").Text);
         p.Close();
     }

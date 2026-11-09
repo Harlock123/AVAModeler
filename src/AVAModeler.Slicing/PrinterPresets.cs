@@ -109,8 +109,8 @@ public static class PrinterPresets
         G161 Z F100 ; home Z again, slowly
         M132 X Y Z A B ; recall the stored home offsets
         G92 A0 B0
-        G1 Z5 F900
-        G1 X-{bed_width_half} Y-{bed_depth_half} Z0.3 F3000 ; to the front-left corner
+        G1 X-{bed_width_half} Y-{bed_depth_half} Z5 F3000 ; over the front-left corner (every axis: the first move after recalling)
+        G1 Z0.3 F900
         G1 X0 Y-{bed_depth_half} E10 F1200 ; prime a line along the front
         G92 A0 B0
         """;
@@ -222,8 +222,8 @@ public static class PrinterPresets
         // Flashforge
         new PrinterProfile
         {
-            Name = "Flashforge Creator Pro", BedWidth = 227, BedDepth = 148, MaxHeight = 150, OriginAtCentre = true, RetractLength = 1.0,
-            Notes = "Sailfish firmware reads .x3g, not G-code: convert the saved file with GPX (gpx -m fcp part.gcode part.x3g). Origin at the bed's middle; prints with the right extruder.",
+            Name = "Flashforge Creator Pro", BedWidth = 227, BedDepth = 148, MaxHeight = 150, OriginAtCentre = true, RetractLength = 1.0, X3gMachine = "fcp",
+            Notes = "Sailfish firmware reads .x3g, not G-code: save .x3g here (or convert the G-code with GPX: gpx -m fcp part.gcode part.x3g). Origin at the bed's middle; prints with the right extruder.",
             StartGCode = SailfishStart, EndGCode = SailfishEnd,
         },
         Marlin("Flashforge Adventurer 3", 150, 150, 150, DirectDrive, notes: "Its own firmware: it may want Flashforge's .gx file from FlashPrint rather than plain G-code."),

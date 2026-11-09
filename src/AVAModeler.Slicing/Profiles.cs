@@ -31,6 +31,11 @@ public sealed record PrinterProfile
     /// several millimetres where a direct drive needs under one. Null keeps the material's.
     /// </summary>
     public double? RetractLength { get; init; }
+    /// <summary>
+    /// The Sailfish machine (<see cref="SailfishMachine.ById"/>, e.g. "fcp") whose .x3g this printer reads, if it's a
+    /// MakerBot-style printer: then the Print window and slice() can save .x3g as well as G-code.
+    /// </summary>
+    public string? X3gMachine { get; init; }
     /// <summary>What to know before printing from this profile (its firmware's quirks), shown under the printer's name.</summary>
     public string Notes { get; init; } = "";
 
@@ -70,6 +75,8 @@ public sealed record PrinterProfile
         Range(NozzleDiameter, 0.1, 2, "The nozzle diameter");
         Range(FilamentDiameter, 1, 3.5, "The filament diameter");
         if (RetractLength is { } r) Range(r, 0, 15, "The printer's retraction");
+        if (X3gMachine != null && !SailfishMachine.ById.ContainsKey(X3gMachine))
+            throw new ArgumentException($"There's no Sailfish machine \"{X3gMachine}\" for .x3g: {string.Join(", ", SailfishMachine.ById.Keys)}.");
         if (RoundBed && Math.Abs(BedWidth - BedDepth) > 1e-9) throw new ArgumentException("A round bed is as deep as it's wide: give its diameter as both.");
         Placeholders.Check(StartGCode, "The start G-code");
         Placeholders.Check(EndGCode, "The end G-code");

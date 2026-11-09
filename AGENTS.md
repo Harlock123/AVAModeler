@@ -115,6 +115,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     speeds, filament, grams). `FilamentPerMm` is the one extrusion rule. `Save` writes through a temporary file.
     `PrintJob.Run(doc, setup)` runs every stage and gives the `Warnings` (doesn't fit, not printable, open outlines):
     the UI and the MCP tool go through it.
+  - `X3g.cs`: `X3g.Convert` turns this slicer's G-code (a Sailfish start and end) into .x3g for a `SailfishMachine`
+    (`PrinterProfile.X3gMachine`, "fcp" for the Creator Pro: GPX's Replicator 1 Dual numbers), command by command as
+    GPX encodes them (155 moves with the extruder negative and its rounding carried, 139 after homing, 131/132,
+    140, 144, 136, 135/141 with no timeout, 137, 153/154). It refuses what Sailfish lacks (G28) with the line.
+    `X3gTests` reads the bytes back. `Commands.FileSaver` (bytes) is how a macro's G-code or .x3g is written.
   - `tests/AVAModeler.Slicing.Tests`: `Playback` plays G-code back as a printer would; `SafetyTests` runs it over
     shapes and settings (on the bed, under the height, hot before printing, layers rising, retractions put back);
     `ReferenceTests` compares a small print with `Reference/tube-10mm.gcode`, numbers within a unit in their last
@@ -128,8 +133,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     names the existing tool that fixes each kind (Fill Hole, Align, Merge Points, Remove Degenerate). Don't add a second
     tool for a fix one of those already makes.
   - `Commands.Slice` (Lua's `slice()`) runs `PrintJob` from `Commands.PrintSetup` (the app sets it from the 3D
-    Print window's) and writes through `Commands.TextSaver`, which the MCP `Workspace.Confine` keeps inside the
-    working folder as it does `Saver`: a new kind of file a macro writes goes through a hook like it.
+    Print window's) and writes through `Commands.FileSaver`, which the MCP `Workspace.Confine` keeps inside the
+    working folder as it does `Saver` (`Commands.FileSaver`, bytes, so .x3g too): a new kind of file a macro writes goes through a hook like it.
   - `LuaSandbox.cs`: the macro sandbox for any Lua (`Create`, `Run` with a caller's globals, print sink and time
     limit; `ToArgs`, `List`, `Indices`, `Numbers`, `Strings`). `Macros.Run` is built on it; another app's Lua
     (AVALightWave's scene macros) goes through it, never a bare MoonSharp `Script`.

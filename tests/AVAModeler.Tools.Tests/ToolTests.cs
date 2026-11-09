@@ -542,6 +542,10 @@ public class CommandTests
             Assert.Contains("nothing to print", Assert.Throws<MacroException>(() => Macros.Run("new(); slice('a.gcode')", cmd)).Message);
             Assert.False(File.Exists(Path.Combine(dir, "a.gcode")));
             Assert.Contains("slice(path [, options])", Macros.Reference.Select(r => r.Signature));
+            // .x3g for a Sailfish printer; refused for one that reads G-code.
+            Macros.Run("tool('Box'); slice('box.x3g', {scale = 2, printer = 'Flashforge Creator Pro'})", cmd);
+            Assert.Equal(153, File.ReadAllBytes(Path.Combine(dir, "box.x3g"))[0]);
+            Assert.Contains("doesn't read .x3g", Assert.Throws<MacroException>(() => Macros.Run("slice('g.x3g', {scale = 2})", cmd)).Message);
         }
         finally { Directory.Delete(dir, true); }
     }

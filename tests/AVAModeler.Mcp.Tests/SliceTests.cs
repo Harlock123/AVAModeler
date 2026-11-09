@@ -35,6 +35,10 @@ public class SliceTests
         var fcp = await Parse(b.Tools.SliceToGCode("prints/fcp.gcode", printer: "flashforge creator pro", scale_percent: 2, cancel: Cancel));
         Assert.Equal("Flashforge Creator Pro", (string?)fcp["printer"]);
         Assert.Contains(((JsonArray)fcp["warnings"]!).Select(w => (string)w!), w => w.Contains("GPX"));
+        // .x3g for the Creator Pro, which its Sailfish firmware reads; not for a G-code printer.
+        await b.Tools.SliceToGCode("prints/fcp.x3g", printer: "Flashforge Creator Pro", scale_percent: 2, cancel: Cancel);
+        Assert.Equal(153, File.ReadAllBytes(b.Folder.File(Path.Combine("prints", "fcp.x3g")))[0]);
+        Assert.Contains("doesn't read .x3g", await Error(b.Tools.SliceToGCode("prints/no.x3g", scale_percent: 2, cancel: Cancel)));
         // Slicing is no undo step.
         Assert.Equal(steps, b.Doc.Undo.Count);
     }

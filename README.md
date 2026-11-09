@@ -194,7 +194,7 @@ phases 0 to 7 and Layout phases L1 to L6.
       - Creality: Ender 3 / 3 Pro / 3 V2, Ender 3 V3 SE, Ender 3 S1 / S1 Pro, Ender 5 Plus, CR-10, CR-10 S5, K1 and K1 Max.
       - Bambu Lab: X1 Carbon, P1S / P1P, A1 and A1 mini (their sizes: they want Bambu Studio's own start G-code).
       - Anycubic: i3 Mega, Vyper, Kobra 2 and Kobra 2 Max; Elegoo: Neptune 3 Pro, Neptune 4 Pro and Neptune 4 Max.
-      - Flashforge: Creator Pro (Sailfish: convert the G-code to .x3g with GPX), Adventurer 3 and Adventurer 5M.
+      - Flashforge: Creator Pro (Sailfish firmware: the window saves .x3g for it), Adventurer 3 and Adventurer 5M.
       - Ultimaker: 2+, S3 and S5 (2.85 mm filament); LulzBot: TAZ 6 and Mini 2 (2.85 mm).
       - Voron: 2.4 (250, 300 and 350) and Trident (300); Sovol: SV06, SV07 and SV08; Artillery: Genius Pro and
         Sidewinder X2; QIDI: X-Plus 3 and Q1 Pro; Raise3D Pro2 (one head); Snapmaker 2.0 A350.
@@ -218,6 +218,8 @@ phases 0 to 7 and Layout phases L1 to L6.
       material's shortest layer time is slowed to take it (no slower than its slowest speed), so small parts cool.
       Travel stays inside the object where it can (combing: round holes and notches along the inside of the walls),
       so it needn't retract or cross a wall.
+    - For Sailfish printers (MakerBot-style: the Flashforge Creator Pro) it also saves .x3g, the binary file their
+      firmware prints from, as GPX would convert the G-code: Save .x3g…, `slice("part.x3g")` or `slice_to_gcode`.
     - The G-code is Marlin-style (Marlin, Klipper and RepRapFirmware read it), with relative extrusion, heating and
       homing first, retraction and an optional Z hop on long moves, the fan from its layer, and Cura-style comments
       (`;LAYER:n`, `;TYPE:WALL-OUTER`…) so G-code previewers show it. The window shows each layer's lines on the bed

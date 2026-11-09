@@ -67,7 +67,7 @@ public class PresetTests
         Assert.Contains(";MINX:-10\n", job.GCode);
         // Its start G-code homes the Sailfish way and primes along the front of its own bed.
         Assert.Contains("G162 X Y F2000", job.GCode);
-        Assert.Contains("G1 X-113.5 Y-74 Z0.3 F3000", job.GCode);
+        Assert.Contains("G1 X-113.5 Y-74 Z5 F3000", job.GCode);
     }
 
     [Fact]

@@ -231,6 +231,8 @@ phases 0 to 7 and Layout phases L1 to L6.
       by its own density.
     - For Sailfish printers (MakerBot-style: the Flashforge Creator Pro) it also saves .x3g, the binary file their
       firmware prints from, as GPX would convert the G-code: Save .x3g…, `slice("part.x3g")` or `slice_to_gcode`.
+    - Print profiles set the way it's laid down in one go: Standard 0.20, Draft 0.28, Fine 0.12, Strong (four
+      walls, 40% gyroid) or your own (Save as my profile), keeping the object's supports, brim, skirt and extruders.
     - The G-code is Marlin-style (Marlin, Klipper and RepRapFirmware read it), with relative extrusion, heating and
       homing first, retraction and an optional Z hop on long moves, the fan from its layer, and Cura-style comments
       (`;LAYER:n`, `;TYPE:WALL-OUTER`…) so G-code previewers show it. The window shows each layer's lines on the bed

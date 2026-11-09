@@ -47,6 +47,10 @@ public class SliceTests
         Assert.Contains("M109 T1 S210", File.ReadAllText(b.Folder.File(Path.Combine("prints", "dual.gcode"))));
         Assert.Contains("wood", await Error(b.Tools.SliceToGCode("prints/no.gcode", printer: "Flashforge Creator Pro", support_material: "wood", cancel: Cancel)));
         Assert.Contains("one extruder", await Error(b.Tools.SliceToGCode("prints/no.gcode", scale_percent: 2, extruder: 2, cancel: Cancel)));
+        var draft = await Parse(b.Tools.SliceToGCode("prints/draft.gcode", scale_percent: 2, profile: "Draft 0.28", cancel: Cancel));
+        // 20 mm in 0.28 mm layers: 71, the last 0.12 mm under half a layer left off.
+        Assert.Equal(71, (int)draft["layers"]!);
+        Assert.Contains("Fine 0.12", await Error(b.Tools.SliceToGCode("prints/x.gcode", profile: "Ultra", cancel: Cancel)));
         // Slicing is no undo step.
         Assert.Equal(steps, b.Doc.Undo.Count);
     }

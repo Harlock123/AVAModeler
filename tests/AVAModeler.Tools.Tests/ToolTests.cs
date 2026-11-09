@@ -546,6 +546,9 @@ public class CommandTests
             Macros.Run("tool('Box'); slice('box.x3g', {scale = 2, printer = 'Flashforge Creator Pro'})", cmd);
             Assert.Equal(153, File.ReadAllBytes(Path.Combine(dir, "box.x3g"))[0]);
             Assert.Contains("doesn't read .x3g", Assert.Throws<MacroException>(() => Macros.Run("slice('g.x3g', {scale = 2})", cmd)).Message);
+            // A profile, then a setting over it.
+            Macros.Run("print(slice('fine.gcode', {scale = 2, profile = 'Fine 0.12', walls = 2}).layers)", cmd);
+            Assert.Equal("166", cmd.Output[^1]);
             // A dual printer's second extruder, from a macro.
             Macros.Run("slice('dual.gcode', {scale = 2, printer = 'Flashforge Creator Pro', extruder = 2})", cmd);
             Assert.Contains("M109 T1 S210", File.ReadAllText(Path.Combine(dir, "dual.gcode")));

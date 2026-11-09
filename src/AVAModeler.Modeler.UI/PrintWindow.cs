@@ -21,6 +21,8 @@ public sealed class PrintWindow : Window
 {
     private readonly ModelerSession _session;
     private PrintSetup _setup;
+    private readonly ComboBox _profiles = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    public ComboBox Profiles => _profiles;
     private readonly ComboBox _printers = new() { HorizontalAlignment = HorizontalAlignment.Stretch, MaxDropDownHeight = 480 };
     private readonly ComboBox _materials = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Dictionary<string, TextBox> _fields = [];
@@ -54,6 +56,8 @@ public sealed class PrintWindow : Window
     /// <summary>The chosen printer's notes (its firmware's quirks), under its name.</summary>
     public TextBlock PrinterNotes { get; } = new() { Foreground = Brushes.Khaki, FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private string _notes = "";
+    private TextBox? _profileNameBox;
+    public TextBox ProfileNameBox => _profileNameBox!;
     private string _materialNotes = "";
     /// <summary>The chosen material's notes (what it needs), under its name.</summary>
     public TextBlock MaterialNotes { get; } = new() { Foreground = Brushes.Khaki, FontSize = 11, TextWrapping = TextWrapping.Wrap };
@@ -152,6 +156,33 @@ public sealed class PrintWindow : Window
         var saveMaterial = Look.MakeButton("Save as my material", SaveMaterial, "Keep these material settings under the name above, beside the presets.");
 
         _printers.SelectionChanged += (_, _) => { if (!_filling && _printers.SelectedIndex >= 0) FillPrinter(_setup.AllPrinters.ElementAt(_printers.SelectedIndex)); };
+        _profiles.SelectionChanged += (_, _) =>
+        {
+            if (_filling || _profiles.SelectedItem is not string name) return;
+            // Over what's in the fields now, keeping this object's supports, brim, skirt and extruders.
+            PrintSetup current;
+            try { current = Read(); }
+            catch (ArgumentException) { current = _setup; }
+            try
+            {
+                _setup = current.WithProfile(name);
+                Fill(_setup);
+                Status.Text = $"The {name} profile: change any setting, or Save as my profile.";
+                Status.Foreground = Look.Text;
+            }
+            catch (ArgumentException e) { Complain(e.Message); }
+        };
+        var profileName = new TextBox { Width = 150, FontSize = 12, Name = "profile.name", PlaceholderText = "My profile's name" };
+        _profileNameBox = profileName;
+        var saveProfile = Look.MakeButton("Save as my profile", () =>
+        {
+            try
+            {
+                _setup = Read().SaveProfile(profileName.Text ?? "");
+                Remember($"Saved the print profile \"{_setup.ProfileName}\".");
+            }
+            catch (ArgumentException e) { Complain(e.Message); }
+        }, "Keep these print settings under the name beside it, among the profiles.");
         _materials.SelectionChanged += (_, _) => { if (!_filling && _materials.SelectedIndex >= 0) FillMaterial(_setup.AllMaterials.ElementAt(_materials.SelectedIndex)); };
         _layer.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) ShowLayer(); };
 
@@ -166,7 +197,7 @@ public sealed class PrintWindow : Window
             Field("material.retract", "Retraction (mm)"), Field("material.retractSpeed", "Retraction speed (mm/s)"), Field("material.fan", "Fan (%)"),
             Field("material.fanFrom", "Fan from layer"), Field("material.density", "Density (g/cm³)"),
             Field("material.minLayer", "Shortest layer time (s)"), Field("material.minSpeed", "Slowest cooling speed (mm/s)"), saveMaterial);
-        var print = Section("Print", null,
+        var print = Section("Print", _profiles, Row("", profileName), saveProfile,
             Field("layer", "Layer height (mm)"), Field("first", "First layer (mm)"), Field("width", "Line width (mm)"), Field("walls", "Walls"),
             Field("top", "Top layers"), Field("bottom", "Bottom layers"), Field("infill", "Infill (%)"), Row("Infill pattern", _pattern), Field("angle", "Infill angle (°)"),
             Row("Seam", _seam), _gapFill, _bridging, _combing, Field("skirt", "Skirt loops"), Field("brim", "Brim lines"), _supports, Field("supportAngle", "Support angle (°)"),
@@ -436,6 +467,8 @@ public sealed class PrintWindow : Window
         _filling = true;
         try
         {
+            _profiles.ItemsSource = setup.AllProfiles.Select(p => p.Name).ToList();
+            _profiles.SelectedIndex = setup.ProfileName == null ? -1 : setup.AllProfiles.ToList().FindIndex(p => p.Name == setup.ProfileName);
             _printers.ItemsSource = setup.AllPrinters.Select(p => p.Name).ToList();
             _materials.ItemsSource = setup.AllMaterials.Select(m => m.Name).ToList();
             _printers.SelectedIndex = Math.Max(0, setup.AllPrinters.ToList().FindIndex(p => p.Name == setup.Printer.Name));

@@ -44,7 +44,7 @@ public static class Macros
         ("texture(surface, image, {Option = value, ...})", "gives a surface an image texture; options: Channel (\"color\", \"diffuse\", \"specular\", \"luminosity\", \"reflection\", \"transparency\", \"bump\"), Projection (\"planar\", \"cylindrical\", \"spherical\", \"cubic\", \"uv\"), Axis, UVMap, Center, Size, Fit (automatic sizing), WidthTiling/HeightTiling (\"reset\", \"repeat\", \"mirror\", \"edge\"), WidthWrap/HeightWrap, Opacity, Blend, Amplitude. With a procedural's name in place of the image (\"checkerboard\", no extension) it does what proctex() does"),
         ("proctex(surface, kind, {Option = value, ...})", "gives a surface a LightWave 5 procedural texture (no image needed): kind is " + ProceduralKinds + "; it sets the channel's first layer of that kind (NewLayer = true adds another). Options: Channel, Color ({r, g, b}, 0 to 255: the texture colour, for the colour channel), Value (0 to 1: the texture value, for the other channels), Size (one pattern unit, e.g. a check's width, in metres), Center, Axis, Fit, Falloff ({x, y, z}, fraction per metre), Opacity, Blend, Amplitude (bump), Negative, World (world coordinates), and the kind's settings by name: Frequencies, Contrast, SmallPower, Turbulence, VeinSpacing, VeinSharpness, RingSpacing, RingSharpness, LineThickness, DotDiameter, Fuzziness, WaveSources, Wavelength, WaveSpeed, BandSharpness, BumpRadius, BumpSpacing"),
         ("notexture(surface, channel)", "removes a surface's textures (for one channel, or all)"),
-        ("slice(path [, options])", "slices the foreground layers for 3D printing and saves the G-code (.gcode, or .x3g for a Sailfish printer such as the Flashforge Creator Pro), changing nothing in the object; options: printer and material (by name), layer (mm), infill (%), pattern (\"lines\", \"grid\" or \"gyroid\"), walls, supports, bedonly, extruder and supportextruder (1 or 2, for a dual printer), supportmaterial (the other extruder's), brim (lines), scale (%), rotate (°), copies, gap (mm), layflat (\"modelled\", \"largest\" or \"selected\"); the rest as the 3D Print window has them. Returns a table: file, layers, time, minutes, grams, filament_m, size {x, y, z} in mm, printable, warnings"),
+        ("slice(path [, options])", "slices the foreground layers for 3D printing and saves the G-code (.gcode, or .x3g for a Sailfish printer such as the Flashforge Creator Pro), changing nothing in the object; options: profile, printer and material (by name: Draft 0.28, Standard 0.20, Fine 0.12, Strong or your own; the rest change it), layer (mm), infill (%), pattern (\"lines\", \"grid\" or \"gyroid\"), walls, supports, bedonly, extruder and supportextruder (1 or 2, for a dual printer), supportmaterial (the other extruder's), brim (lines), scale (%), rotate (°), copies, gap (mm), layflat (\"modelled\", \"largest\" or \"selected\"); the rest as the 3D Print window has them. Returns a table: file, layers, time, minutes, grams, filament_m, size {x, y, z} in mm, printable, warnings"),
         ("checkmesh()", "checks the foreground layers as Mesh Info does, changing nothing; returns a table: verdict, printable, watertight, points, polygons, faces, area (m²), volume (m³, nil unless closed), center (centre of mass {x, y, z}), size, min, max, shells, holes, boundary_edges, nonmanifold_edges, inconsistent_edges, flipped_polygons, inward_shells, cavities, degenerate_polygons, nonplanar_polygons, duplicate_points, unused_points, points_and_lines, and report (the lines of text). tool(\"Select Problems\", {Problem = \"BoundaryEdges\"}) selects them"),
         ("backdrop(view, image, {Option = value, ...})", "puts a reference image (a blueprint or photo) behind the \"top\", \"front\" or \"side\" view, in world space, so it pans and zooms with the view and lines up across views; not saved in the object or undone (the app remembers it per object). Options: Center ({a, b}: the image's centre in metres on the view's two axes, top X and Z, front X and Y, side Z and Y), Size (its width in metres; its height follows the image's shape), Height (metres, to stretch it), Fit (true: sized round the foreground), PixelSize (metres a pixel covers: the width from the image's pixels), Brightness (-1 to 1), Contrast (0 to 4, 1 leaves it), Opacity (0 to 1, default 0.5), Invert, Visible. With nil as the image it changes the view's backdrop settings. Returns a note if the image can't be found (a magenta checker shows)"),
         ("nobackdrop(view)", "takes the backdrop from a view (\"top\", \"front\" or \"side\"), or from every view with none given; returns how many went"),
@@ -286,6 +286,9 @@ public static class Macros
         int Whole(string key, object? v) => Num(key, v) is var d && d == Math.Floor(d) ? (int)d : throw new ArgumentException($"slice's {key} must be a whole number.");
         bool Yes(string key, object? v) => v is bool b ? b : throw new ArgumentException($"slice's {key} must be true or false.");
         string Text(string key, object? v) => v is string t ? t : throw new ArgumentException($"slice's {key} must be text.");
+        // A profile first, so the other options change it.
+        if (o.FirstOrDefault(kv => kv.Key.Equals("profile", StringComparison.OrdinalIgnoreCase)) is { Key: not null } prof)
+            setup = setup.WithProfile(Text("profile", prof.Value));
         var s = setup.Settings;
         var p = setup.Placement;
         foreach (var (key, v) in o)
@@ -301,6 +304,7 @@ public static class Macros
                     setup = setup with { Material = setup.AllMaterials.FirstOrDefault(x => string.Equals(x.Name, mn, StringComparison.OrdinalIgnoreCase))
                         ?? throw new ArgumentException($"There's no material \"{mn}\": {string.Join(", ", setup.AllMaterials.Select(x => x.Name))}.") };
                     break;
+                case "profile": break;
                 case "layer": s = s with { LayerHeight = Num(key, v) }; break;
                 case "infill": s = s with { InfillPercent = Num(key, v) }; break;
                 case "pattern":
@@ -333,7 +337,7 @@ public static class Macros
                         },
                     };
                     break;
-                default: throw new ArgumentException($"slice has no option \"{key}\": printer, material, layer, infill, pattern, walls, supports, bedonly, extruder, supportextruder, supportmaterial, brim, scale, rotate, copies, gap, layflat.");
+                default: throw new ArgumentException($"slice has no option \"{key}\": profile, printer, material, layer, infill, pattern, walls, supports, bedonly, extruder, supportextruder, supportmaterial, brim, scale, rotate, copies, gap, layflat.");
             }
         return setup with { Settings = s, Placement = p };
     }

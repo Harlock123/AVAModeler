@@ -804,10 +804,11 @@ public sealed partial class ModelerTools(IModelerHost host)
         [Description("The G-code file, relative to the working folder, e.g. \"part.gcode\" (.gcode, .gco or .g), or \"part.x3g\" for a Sailfish printer (the Flashforge Creator Pro), which reads .x3g rather than G-code.")] string path,
         [Description("The printer preset by name, any case: a generic size (default \"Generic 220 × 220\": a 220 × 220 mm bed, 250 mm tall, 0.4 mm nozzle, 1.75 mm filament) or a printer on the market with its bed, height, filament, retraction, origin and start G-code, such as \"Prusa MK4S\", \"Prusa MINI+\", \"Creality Ender 3 / 3 Pro / 3 V2\", \"Bambu Lab P1S / P1P\", \"Voron 2.4 (300)\", \"Flashforge Creator Pro\" or \"Ultimaker S5\" (a wrong name lists them all). Its notes, such as converting for Sailfish firmware, come back as a warning.")] string? printer = null,
         [Description("The material preset by name, any case: PLA (default), PETG, ABS, TPU, PLA+, Silk PLA, Wood-fill PLA, ASA, Nylon (PA), Polycarbonate (PC) or CF-PETG. Its notes (an enclosure, a dry spool, a hardened nozzle) come back as a warning.")] string? material = null,
-        [Description("Layer height in mm, 0.04 to 0.8 × the nozzle (default 0.2).")] double layer_height = 0.2,
-        [Description("Sparse infill, 0 to 100% (default 20).")] double infill_percent = 20,
-        [Description("The infill's pattern: lines (default, turned 90° each layer), grid (both ways every layer) or gyroid (wavy curves that shift with height: about as strong every way).")] string infill_pattern = "lines",
-        [Description("Wall loops round each outline and hole, 1 to 20 (default 2).")] int walls = 2,
+        [Description("A print profile to start from: Standard 0.20, Draft 0.28, Fine 0.12 or Strong (4 walls, 40% gyroid). The other settings given change it; leave them out to keep the profile's.")] string? profile = null,
+        [Description("Layer height in mm, 0.04 to 0.8 × the nozzle (default 0.2, or the profile's).")] double? layer_height = null,
+        [Description("Sparse infill, 0 to 100% (default 20, or the profile's).")] double? infill_percent = null,
+        [Description("The infill's pattern: lines (default, turned 90° each layer), grid (both ways every layer) or gyroid (wavy curves that shift with height: about as strong every way).")] string? infill_pattern = null,
+        [Description("Wall loops round each outline and hole, 1 to 20 (default 2, or the profile's).")] int? walls = null,
         [Description("Build supports under overhangs steeper than 50° from vertical (default false), topped by two dense interface layers that come away cleanly.")] bool supports = false,
         [Description("With supports: only columns that stand on the bed, none on the object (default false).")] bool supports_bed_only = false,
         [Description("A dual printer (the Creator Pro): the extruder that prints the part, 1 (default, its right one) or 2.")] int extruder = 1,
@@ -845,9 +846,14 @@ public sealed partial class ModelerTools(IModelerHost host)
                         _ => throw new ArgumentException($"lay_flat is as_modelled, largest_face or selected_face, not \"{lay_flat}\"."),
                     },
                 },
-                Settings = new SliceSettings { LayerHeight = layer_height, InfillPercent = infill_percent,
-                    Infill = Enum.TryParse<InfillPattern>(infill_pattern, ignoreCase: true, out var ip) ? ip : throw new ArgumentException($"infill_pattern is lines, grid or gyroid, not \"{infill_pattern}\"."), Walls = walls, Supports = supports, BrimLines = brim_lines, SupportOn = supports_bed_only ? SupportPlacement.BedOnly : SupportPlacement.Everywhere,
-                    ModelExtruder = extruder - 1, SupportExtruder = (support_extruder ?? extruder) - 1 == extruder - 1 ? -1 : (support_extruder ?? extruder) - 1 },
+                Settings = (profile == null ? new SliceSettings() : new PrintSetup().WithProfile(profile).Settings) is var b ? b with
+                {
+                    LayerHeight = layer_height ?? b.LayerHeight, InfillPercent = infill_percent ?? b.InfillPercent, Walls = walls ?? b.Walls,
+                    Infill = infill_pattern == null ? b.Infill : Enum.TryParse<InfillPattern>(infill_pattern, ignoreCase: true, out var ip) ? ip : throw new ArgumentException($"infill_pattern is lines, grid or gyroid, not \"{infill_pattern}\"."),
+                    Supports = supports, BrimLines = brim_lines, SupportOn = supports_bed_only ? SupportPlacement.BedOnly : SupportPlacement.Everywhere,
+                    ModelExtruder = extruder - 1, SupportExtruder = (support_extruder ?? extruder) - 1 == extruder - 1 ? -1 : (support_extruder ?? extruder) - 1,
+                } : null!,
+                ProfileName = profile,
                 SupportMaterial = support_material == null ? Presets.Materials[0] : Presets.Materials.FirstOrDefault(x => string.Equals(x.Name, support_material, StringComparison.OrdinalIgnoreCase))
                     ?? throw new ArgumentException($"There's no material preset \"{support_material}\". Choose one of: {string.Join(", ", Presets.Materials.Select(x => x.Name))}."),
             }.Checked();

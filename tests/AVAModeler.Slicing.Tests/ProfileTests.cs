@@ -243,3 +243,39 @@ public class LayFlatAndCopiesTests
             }
     }
 }
+
+public class PrintProfileTests
+{
+    [Fact]
+    public void The_profiles_check_out_on_a_04_nozzle_and_keep_the_objects_own_choices()
+    {
+        Assert.Equal(["Standard 0.20", "Draft 0.28", "Fine 0.12", "Strong"], PrintProfile.Presets.Select(p => p.Name));
+        foreach (var p in PrintProfile.Presets) p.Checked(new PrinterProfile());
+        var mine = new PrintSetup { Settings = new SliceSettings { Supports = true, BrimLines = 5, SupportOn = SupportPlacement.BedOnly } };
+        var fine = mine.WithProfile("fine 0.12");
+        Assert.Equal("Fine 0.12", fine.ProfileName);
+        Assert.Equal(0.12, fine.Settings.LayerHeight);
+        Assert.Equal(3, fine.Settings.Walls);
+        // Supports, brim and where supports stand are the object's, kept.
+        Assert.True(fine.Settings.Supports);
+        Assert.Equal(5, fine.Settings.BrimLines);
+        Assert.Equal(SupportPlacement.BedOnly, fine.Settings.SupportOn);
+        Assert.Equal(InfillPattern.Gyroid, mine.WithProfile("Strong").Settings.Infill);
+        Assert.Contains("Draft 0.28", Assert.Throws<ArgumentException>(() => mine.WithProfile("Ultra")).Message);
+    }
+
+    [Fact]
+    public void Your_own_profiles_are_saved_beside_them_and_round_trip()
+    {
+        var setup = new PrintSetup { Settings = new SliceSettings { LayerHeight = 0.16, Walls = 3 } }.SaveProfile(" Mine 0.16 ");
+        Assert.Equal("Mine 0.16", setup.ProfileName);
+        Assert.Equal(5, setup.AllProfiles.Count());
+        var back = PrintSetup.FromJson(setup.ToJson());
+        Assert.Equal(0.16, back.WithProfile("Mine 0.16").Settings.LayerHeight);
+        // Saving again replaces it; a preset's name is refused, as is a profile the printer can't print.
+        Assert.Single(back.SaveProfile("Mine 0.16").MyProfiles);
+        Assert.Throws<ArgumentException>(() => back.SaveProfile("Strong"));
+        var small = back with { Printer = new PrinterProfile { NozzleDiameter = 0.25 }, Settings = new SliceSettings { LayerHeight = 0.28, LineWidth = 0.3 } };
+        Assert.Throws<ArgumentException>(() => small.SaveProfile("Too thick"));
+    }
+}

@@ -80,6 +80,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     is the printers on the market, built by firmware (`Marlin`, `Prusa`, `Klipper`, `Bambu`, `Delta`, Sailfish for
     the Creator Pro) from start and end templates; `PresetTests` slices a cube on every one of them, so a new preset is
     checked by adding it there.
+    `PrintProfiles.cs` is `PrintProfile` (a named `SliceSettings`; `ApplyTo` keeps supports, brim, skirt and
+    extruders) and its presets; `PrintSetup.WithProfile` and `SaveProfile` choose and keep them.
     `PrintSetup.cs` is what the preferences keep (the chosen profiles, the person's own, the placement) as JSON.
   - `Placement.cs`: `Placement.Place` turns the foreground layers into a `PrintModel`, triangles in the printer's space
     (through `Stl.Triangles` and `Stl.ToStl`, so millimetres and Z up as STL export has them) welded into shared

@@ -253,6 +253,30 @@ public sealed class PrintWindowTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void A_print_profile_fills_in_its_settings_and_your_own_is_kept()
+    {
+        var (w, p) = Open();
+        Assert.Equal(PrintProfile.Presets.Select(x => x.Name), p.Profiles.ItemsSource!.Cast<string>());
+        p.SupportsBox.IsChecked = true;
+        p.Profiles.SelectedIndex = 2;
+        Assert.Equal("0.12", p.FieldBox("layer").Text);
+        Assert.Equal("3", p.FieldBox("walls").Text);
+        // The scale and supports typed in before are kept.
+        Assert.Equal("2", p.FieldBox("scale").Text);
+        Assert.True(p.SupportsBox.IsChecked);
+        p.FieldBox("infill").Text = "35";
+        p.ProfileNameBox.Text = "Fine and full";
+        Press(p, "Save as my profile");
+        Assert.Equal("Saved the print profile \"Fine and full\".", p.Status.Text);
+        Assert.Equal("Fine and full", p.Profiles.SelectedItem);
+        Assert.Equal(35, Assert.Single(w.Session.Preferences.Print.MyProfiles).Settings.InfillPercent);
+        p.ProfileNameBox.Text = "Strong";
+        Press(p, "Save as my profile");
+        Assert.Contains("preset's name", p.Status.Text);
+        p.Close();
+    }
+
+    [AvaloniaFact]
     public void Bad_settings_say_what_is_wrong_and_slice_nothing()
     {
         var (_, p) = Open();

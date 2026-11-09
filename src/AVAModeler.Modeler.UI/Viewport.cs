@@ -88,11 +88,21 @@ public sealed class GlSurface : OpenGlControlBase
         _presentation = null;
     }
 
+    private GL? _api;
+
+    /// <summary>
+    /// The size of the framebuffer the last frame drew into, as OpenGL reported it (or as worked out from the bounds
+    /// and scaling when it couldn't say), with the control's bounds and the scaling then: shown in the status line's
+    /// renderer description, to tell a framebuffer sized differently from the control at a glance.
+    /// </summary>
+    public (int Width, int Height, string From)? LastFramebuffer { get; private set; }
+
     protected override void OnOpenGlInit(GlInterface gl)
     {
         try
         {
             var api = GL.GetApi(gl.GetProcAddress);
+            _api = api;
             bool es = gl.ContextInfo.Version.Type == GlProfileType.OpenGLES;
             _renderer = new GlRenderer(api, es);
             Description = $"{_renderer.Name} ({gl.Renderer})";
@@ -108,6 +118,7 @@ public sealed class GlSurface : OpenGlControlBase
     {
         _renderer?.Dispose();
         _renderer = null;
+        _api = null;
     }
 
     protected override void OnOpenGlRender(GlInterface gl, int fb)
@@ -116,8 +127,16 @@ public sealed class GlSurface : OpenGlControlBase
         try
         {
             var camera = CameraSource?.Invoke() ?? Camera;
-            double scale = FramebufferScaling;
-            camera.Resize(Math.Max(1, (int)(Bounds.Width * scale)), Math.Max(1, (int)(Bounds.Height * scale)));
+            // Sized from the framebuffer itself, not the bounds times a scaling that can disagree with it (at 2× on
+            // Wayland the picture filled only the bottom-left of each view).
+            var size = GlFramebuffer.Choose(GlFramebuffer.AttachmentSize(_api!), GlFramebuffer.ViewportSize(_api!), Bounds.Width, Bounds.Height, FramebufferScaling);
+            if (LastFramebuffer != size)
+            {
+                LastFramebuffer = size;
+                Description = $"{_renderer.Name} ({gl.Renderer}) · {size.Width}×{size.Height} from the {size.From} for {Bounds.Width:0}×{Bounds.Height:0} at {FramebufferScaling:0.##}×";
+            }
+            double scale = Bounds.Width > 0 ? size.Width / Bounds.Width : FramebufferScaling;
+            camera.Resize(size.Width, size.Height);
             // The camera works in device pixels here; the overlay and input work in layout units, so scale them.
             camera.PixelsPerUnit *= scale;
             try { _renderer.Render(Scene(), camera); }

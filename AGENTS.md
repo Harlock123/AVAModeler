@@ -421,6 +421,10 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   folds a step into the one before when it has the same label, the last thing that happened to the history was that
   step being recorded, the scene is exactly as that step left it, and it isn't the saved state: for repeated updates
   such as AVALightWave applying `object_changed`. Use it for nothing a person would want to undo piece by piece.
+- **OpenGL views size from the framebuffer.** `GlSurface` asks `GlFramebuffer` (Rendering) for the bound
+  framebuffer's colour attachment size, then the viewport, and only then the bounds times the scaling
+  (`GlFramebuffer.Choose`), and sizes the camera from that: the toolkit's framebuffer can differ from bounds × scaling
+  (at 2× on Wayland the picture filled only the bottom-left). `LastFramebuffer` and `Description` say which it used.
 - **SceneView's OpenGL hook.** `SceneView.DrawsScene` false leaves the scene to a surface beneath it (`CurrentView()`
   gives what it would draw, `Redrawn` says when); it still draws its guides and label and takes the mouse. `GlSurface`
   has `CameraSource`, `Ready` and `Initialised`; where OpenGL can't start, Avalonia never calls `OnOpenGlInit` (no

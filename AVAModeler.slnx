@@ -3,6 +3,7 @@
     <Project Path="src/AVAModeler.Core/AVAModeler.Core.csproj" />
     <Project Path="src/AVAModeler.Formats/AVAModeler.Formats.csproj" />
     <Project Path="src/AVAModeler.Geometry/AVAModeler.Geometry.csproj" />
+    <Project Path="src/AVAModeler.Slicing/AVAModeler.Slicing.csproj" />
     <Project Path="src/AVAModeler.Tools/AVAModeler.Tools.csproj" />
     <Project Path="src/AVAModeler.Rendering/AVAModeler.Rendering.csproj" />
     <Project Path="src/AVAModeler.Scene/AVAModeler.Scene.csproj" />
@@ -25,6 +26,7 @@
     <Project Path="tests/AVAModeler.Scene.Tests/AVAModeler.Scene.Tests.csproj" />
     <Project Path="tests/AVAModeler.Layout.Tests/AVAModeler.Layout.Tests.csproj" />
     <Project Path="tests/AVAModeler.Rendering.Tests/AVAModeler.Rendering.Tests.csproj" />
+    <Project Path="tests/AVAModeler.Slicing.Tests/AVAModeler.Slicing.Tests.csproj" />
     <Project Path="tests/AVAModeler.Tools.Tests/AVAModeler.Tools.Tests.csproj" />
     <Project Path="tests/AVAModeler.Mcp.Tests/AVAModeler.Mcp.Tests.csproj" />
     <Project Path="tests/AVAModeler.Hub.Tests/AVAModeler.Hub.Tests.csproj" />

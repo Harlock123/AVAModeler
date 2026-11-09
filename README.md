@@ -179,7 +179,9 @@ phases 0 to 7 and Layout phases L1 to L6.
   - STL (File › Export STL…, binary, or ASCII) for 3D printing, and read back (binary or ASCII, told apart by size,
     with duplicate points merged into a joined mesh). Every face becomes triangles with facet normals. STL is Z up, as
     slicers expect, so LightWave's axes go X → X, Y (up) → Z, Z (away) → Y: the model stands on the bed the way it
-    stands on the ground in the Modeler, its front toward you, and the winding is reversed to keep faces outward.
+    stands on the ground in the Modeler, its front toward you, and the winding is reversed to keep faces outward. STL
+    has no units, but slicers read it as millimetres, so metres are written × 1000 (a 2 cm cube prints 20 mm wide)
+    and read back ÷ 1000.
   - Image paths are stored relative to the object file where they can be, and looked for from it (and LightWave's
     Images folders beside it), then from the working folder.
   - Recent files, auto-save, and crash recovery: if the app didn't close cleanly, it offers the auto-save back.

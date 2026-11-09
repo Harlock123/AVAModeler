@@ -70,6 +70,14 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     faces or holes), `Inset.cs` (`Insets.Apply`, individual or group, the group bevel) and `Chamfer.cs` (edge bevel,
     closing corners with `Holes.Fill`). New UVs come from `UVTransfer.Interpolant` (a face's UVs as a function of
     position) or from interpolating along edges, face by face so seams stay seams.
+- `src/AVAModeler.Slicing/`: 3D printing, from the object to G-code (Clipper2 for the 2D polygon work). No UI.
+  - `Profiles.cs`: `PrinterProfile` (bed, height, nozzle, filament, flavour, start and end G-code with `Placeholders`)
+    and `MaterialProfile` (temperatures, retraction, fan, density), immutable with `Checked()`, and the `Presets`.
+    `PrintSetup.cs` is what the preferences keep (the chosen profiles, the person's own, the placement) as JSON.
+  - `Placement.cs`: `Placement.Place` turns the foreground layers into a `PrintModel`, triangles in the printer's space
+    (through `Stl.Triangles` and `Stl.ToStl`, so millimetres and Z up as STL export has them) welded into shared
+    points, dropped on the bed and centred (or the origin at the bed's centre), with what doesn't fit and the mesh
+    check's verdict.
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
   - `Tool.cs` is the base class and `[Param]`. `Commands.cs` has the `ToolRegistry` and the command API.
   - `Macros.cs` runs Lua; the other files hold the tools, grouped by kind (`ModifyTools.cs`, `UVTools.cs` and so on).
@@ -295,7 +303,7 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
   edit is one undo step and the selection is pruned.
 - **LightWave conventions.** The space is left-handed with clockwise winding. Keep LWOB round trips byte-identical:
   `AVAModeler.Formats.Tests` checks this. Right-handed formats convert at the file's edge, never inside: OBJ and glTF
-  negate Z (`GltfBuilder.ToGltf`/`FromGltf`), STL swaps Y and Z for Z up (`Stl.ToStl`/`FromStl`), and each reverses
+  negate Z (`GltfBuilder.ToGltf`/`FromGltf`), STL swaps Y and Z for Z up and writes millimetres (`Stl.ToStl`/`FromStl`, × and ÷ 1000), and each reverses
   every face's winding, since both are mirrorings. A transform goes over as `F · M · F` with F the Z flip
   (`GltfBuilder.Decompose`). Tests check a known triangle faces the same way after each conversion.
 - **Edge and face tools leave a valid mesh.** New faces wind against the faces beside them (LightWave's clockwise way),

@@ -11,24 +11,31 @@ namespace AVAModeler.Formats;
 /// surfaces, UVs or layers. Its space is right-handed with Z up, as slicers expect, so LightWave's (X right, Y up, Z
 /// away) maps to STL's X = X, Y = Z, Z = Y: the model stands on the print bed the way it stands on the ground in the
 /// Modeler, its front toward the viewer. Swapping two axes mirrors the space, so each triangle's winding is reversed
-/// to keep it facing out (anticlockwise seen from outside, as STL wants).
+/// to keep it facing out (anticlockwise seen from outside, as STL wants). STL has no units, but slicers read it as
+/// millimetres, so the Modeler's metres are written × 1000 and read back ÷ 1000: a 2 cm cube prints 20 mm wide.
 /// </summary>
 public static class Stl
 {
-    /// <summary>LightWave's space to STL's (Z up): (x, y, z) → (x, z, y).</summary>
-    public static Vec3 ToStl(Vec3 p) => new(p.X, p.Z, p.Y);
+    /// <summary>Millimetres to the metre: STL's unit, as slicers take it, against the Modeler's.</summary>
+    public const double MillimetresPerMetre = 1000;
 
-    /// <summary>STL's space to LightWave's: the same swap.</summary>
-    public static Vec3 FromStl(Vec3 p) => new(p.X, p.Z, p.Y);
+    /// <summary>LightWave's space to STL's (Z up, millimetres): (x, y, z) → (x, z, y) × 1000.</summary>
+    public static Vec3 ToStl(Vec3 p) => new Vec3(p.X, p.Z, p.Y) * MillimetresPerMetre;
+
+    /// <summary>STL's space to LightWave's: the same swap, millimetres back to metres.</summary>
+    public static Vec3 FromStl(Vec3 p) => new Vec3(p.X, p.Z, p.Y) / MillimetresPerMetre;
 
     /// <summary>Every face of every layer as triangles in STL's space, wound for it, with their facet normals.</summary>
-    public static List<(Vec3 Normal, Vec3 A, Vec3 B, Vec3 C)> Triangles(Document doc)
+    public static List<(Vec3 Normal, Vec3 A, Vec3 B, Vec3 C)> Triangles(Document doc) => Triangles(doc.Layers.Select(l => l.Mesh));
+
+    /// <summary>Every face of these meshes as triangles in STL's space, wound for it, with their facet normals.</summary>
+    public static List<(Vec3 Normal, Vec3 A, Vec3 B, Vec3 C)> Triangles(IEnumerable<Mesh> meshes)
     {
         var result = new List<(Vec3, Vec3, Vec3, Vec3)>();
-        foreach (var layer in doc.Layers)
-            foreach (var t in Triangulator.TriangulateMesh(layer.Mesh))
+        foreach (var mesh in meshes)
+            foreach (var t in Triangulator.TriangulateMesh(mesh))
             {
-                var pts = layer.Mesh.Points;
+                var pts = mesh.Points;
                 // Reversed: (a, c, b), as the axis swap mirrors the space.
                 Vec3 a = ToStl(pts[t.A]), b = ToStl(pts[t.C]), c = ToStl(pts[t.B]);
                 var n = Vec3.Cross(b - a, c - a).Normalized();

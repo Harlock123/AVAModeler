@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 3D printing: printer and material profiles, placing the object on the bed, slicing it into layers, toolpaths and G-code. -->
+  <PropertyGroup>
+    <RootNamespace>AVAModeler.Slicing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
+    <ProjectReference Include="..\AVAModeler.Geometry\AVAModeler.Geometry.csproj" />
+    <ProjectReference Include="..\AVAModeler.Formats\AVAModeler.Formats.csproj" />
+  </ItemGroup>
+</Project>

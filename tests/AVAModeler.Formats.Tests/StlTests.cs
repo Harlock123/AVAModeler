@@ -62,8 +62,9 @@ public class StlTests
         Assert.Equal(new Vec3(0, 1, 0), doc.Layers[0].Mesh.Normal(0));
         var tri = Assert.Single(Stl.Triangles(doc));
         Assert.Equal(new Vec3(0, 0, 1), tri.Normal);        // up is STL's +Z
-        Assert.All([tri.A, tri.B, tri.C], v => Assert.Equal(2, v.Z));
-        Assert.Contains(tri.A, (Vec3[])[new(0, 0, 2), new(0, 1, 2), new(1, 0, 2)]);
+        // In millimetres, as slicers read STL: 2 m up is 2000.
+        Assert.All([tri.A, tri.B, tri.C], v => Assert.Equal(2000, v.Z));
+        Assert.Contains(tri.A, (Vec3[])[new(0, 0, 2000), new(0, 1000, 2000), new(1000, 0, 2000)]);
         // Right-hand rule in STL's right-handed space: the winding agrees with the facet normal.
         Assert.Equal(tri.Normal, Vec3.Cross(tri.B - tri.A, tri.C - tri.A).Normalized());
 
@@ -115,6 +116,8 @@ public class StlTests
             """);
         var mesh = ObjectFiles.Load(dir.File("hand.stl")).Layers[0].Mesh;
         Assert.Equal(4, mesh.Points.Count);
+        // Millimetres in the file, metres in the Modeler: the 1 mm square is 0.001 m across.
+        Assert.Contains(new Vec3(0.001, 0, 0.001), mesh.Points);
         Assert.Equal(2, mesh.Polygons.Count);
         // Facing STL's +Z (up) is LightWave's +Y.
         Assert.All(mesh.Polygons, p => Assert.Equal(new Vec3(0, 1, 0), mesh.Normal(p)));

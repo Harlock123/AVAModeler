@@ -36,6 +36,10 @@ public sealed record PrinterProfile
     /// MakerBot-style printer: then the Print window and slice() can save .x3g as well as G-code.
     /// </summary>
     public string? X3gMachine { get; init; }
+    /// <summary>How fast the printer speeds up and slows down (mm/s²), for the print's time.</summary>
+    public double Acceleration { get; init; } = 1000;
+    /// <summary>The speed it takes a 90° corner at (mm/s: Klipper's square corner velocity, much like Marlin's jerk), for the print's time.</summary>
+    public double CornerSpeed { get; init; } = 8;
     /// <summary>What to know before printing from this profile (its firmware's quirks), shown under the printer's name.</summary>
     public string Notes { get; init; } = "";
 
@@ -75,6 +79,8 @@ public sealed record PrinterProfile
         Range(NozzleDiameter, 0.1, 2, "The nozzle diameter");
         Range(FilamentDiameter, 1, 3.5, "The filament diameter");
         if (RetractLength is { } r) Range(r, 0, 15, "The printer's retraction");
+        Range(Acceleration, 50, 100000, "The acceleration", " mm/s²");
+        Range(CornerSpeed, 0.5, 100, "The corner speed", " mm/s");
         if (X3gMachine != null && !SailfishMachine.ById.ContainsKey(X3gMachine))
             throw new ArgumentException($"There's no Sailfish machine \"{X3gMachine}\" for .x3g: {string.Join(", ", SailfishMachine.ById.Keys)}.");
         if (RoundBed && Math.Abs(BedWidth - BedDepth) > 1e-9) throw new ArgumentException("A round bed is as deep as it's wide: give its diameter as both.");

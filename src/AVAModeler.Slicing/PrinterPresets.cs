@@ -143,43 +143,43 @@ public static class PrinterPresets
         M84 ; motors off
         """;
 
-    private static PrinterProfile Marlin(string name, double w, double d, double h, double retract, bool probe = false, string notes = "") => new()
+    private static PrinterProfile Marlin(string name, double w, double d, double h, double retract, bool probe = false, string notes = "", double accel = 500) => new()
     {
-        Name = name, BedWidth = w, BedDepth = d, MaxHeight = h, RetractLength = retract, Notes = notes,
+        Name = name, Acceleration = accel, BedWidth = w, BedDepth = d, MaxHeight = h, RetractLength = retract, Notes = notes,
         StartGCode = probe ? MarlinProbeStart : MarlinStart, EndGCode = MarlinEnd,
     };
 
-    private static PrinterProfile Klipper(string name, double w, double d, double h, string notes = "") => new()
+    private static PrinterProfile Klipper(string name, double w, double d, double h, string notes = "", double accel = 5000) => new()
     {
-        Name = name, BedWidth = w, BedDepth = d, MaxHeight = h, RetractLength = DirectDrive,
+        Name = name, Acceleration = accel, CornerSpeed = 5, BedWidth = w, BedDepth = d, MaxHeight = h, RetractLength = DirectDrive,
         Notes = "Klipper. If your printer's configuration has a PRINT_START macro, its start G-code can call that instead." + (notes.Length > 0 ? " " + notes : ""),
         StartGCode = KlipperStart, EndGCode = KlipperEnd,
     };
 
     private static PrinterProfile Prusa(string name, double w, double d, double h, double retract, bool mesh) => new()
     {
-        Name = name, BedWidth = w, BedDepth = d, MaxHeight = h, RetractLength = retract,
+        Name = name, Acceleration = mesh ? 1250 : 4000, BedWidth = w, BedDepth = d, MaxHeight = h, RetractLength = retract,
         Notes = "Prusa firmware. It may ask to confirm the G-code is for this printer: PrusaSlicer adds a printer check this doesn't.",
         StartGCode = mesh ? PrusaMeshStart : PrusaProbeStart, EndGCode = PrusaEnd,
     };
 
     private static PrinterProfile Bambu(string name, double size) => new()
     {
-        Name = name, BedWidth = size, BedDepth = size, MaxHeight = size, RetractLength = DirectDrive,
+        Name = name, Acceleration = 10000, CornerSpeed = 9, BedWidth = size, BedDepth = size, MaxHeight = size, RetractLength = DirectDrive,
         Notes = "Bambu Lab printers expect Bambu Studio's own start G-code and a .gcode.3mf; plain G-code from here is for the sizes, and may need their start and end G-code pasted in.",
         StartGCode = KlipperStart, EndGCode = KlipperEnd,
     };
 
     private static PrinterProfile Delta(string name, double diameter, double h, string notes = "") => new()
     {
-        Name = name, BedWidth = diameter, BedDepth = diameter, MaxHeight = h, RoundBed = true, OriginAtCentre = true,
+        Name = name, Acceleration = 1500, BedWidth = diameter, BedDepth = diameter, MaxHeight = h, RoundBed = true, OriginAtCentre = true,
         RetractLength = Bowden, Notes = "A delta: round bed, origin at its middle." + (notes.Length > 0 ? " " + notes : ""),
         StartGCode = DeltaStart, EndGCode = DeltaEnd,
     };
 
     private static PrinterProfile Ultimaker(string name, double w, double d, double h, string notes) => new()
     {
-        Name = name, BedWidth = w, BedDepth = d, MaxHeight = h, FilamentDiameter = 2.85, RetractLength = 6.5, Notes = notes,
+        Name = name, Acceleration = 3000, CornerSpeed = 20, BedWidth = w, BedDepth = d, MaxHeight = h, FilamentDiameter = 2.85, RetractLength = 6.5, Notes = notes,
         StartGCode = MarlinStart, EndGCode = MarlinEnd,
     };
 
@@ -199,8 +199,8 @@ public static class PrinterPresets
         Marlin("Creality Ender 5 Plus", 350, 350, 400, Bowden, probe: true),
         Marlin("Creality CR-10", 300, 300, 400, Bowden),
         Marlin("Creality CR-10 S5", 500, 500, 500, Bowden),
-        Klipper("Creality K1", 220, 220, 250),
-        Klipper("Creality K1 Max", 300, 300, 300),
+        Klipper("Creality K1", 220, 220, 250, accel: 12000),
+        Klipper("Creality K1 Max", 300, 300, 300, accel: 12000),
 
         // Bambu Lab
         Bambu("Bambu Lab X1 Carbon", 256),

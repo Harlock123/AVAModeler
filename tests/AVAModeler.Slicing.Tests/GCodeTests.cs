@@ -258,3 +258,44 @@ public class PrintJobTests
         Assert.Throws<ArgumentException>(() => PrintJob.Run(doc, new PrintSetup { Settings = new SliceSettings { LayerHeight = 5 } }));
     }
 }
+
+public class MotionTimeTests
+{
+    [Fact]
+    public void A_straight_line_adds_the_time_to_speed_up_and_slow_down()
+    {
+        // 100 mm at 50 mm/s and 1000 mm/s²: 2 s cruising plus 50/1000 s lost speeding up and slowing down.
+        Assert.Equal(2.05, MotionTime.Line(100, 50, 1000), 9);
+        // Too short to reach 50: up and down in a triangle peaking at √(1000 × 1) ≈ 31.6 mm/s.
+        Assert.Equal(2 * Math.Sqrt(1000) / 1000, MotionTime.Line(1, 50, 1000), 9);
+        // A run broken into collinear pieces takes as long as one line.
+        Assert.Equal(MotionTime.Line(30, 50, 1000), MotionTime.Path([new(0, 0), new(10, 0), new(20, 0), new(30, 0)], 50, 1000, 5), 9);
+    }
+
+    [Fact]
+    public void Corners_slow_a_path_and_sharper_ones_more()
+    {
+        Vec2[] square = [new(0, 0), new(10, 0), new(10, 10), new(0, 10), new(0, 0)];
+        double slow = MotionTime.Path(square, 50, 1000, 5), fast = MotionTime.Path(square, 50, 1000, 50);
+        Assert.True(slow > 40 / 50.0 + 4 * 0.01, $"{slow} s");
+        Assert.True(slow > fast);
+        // A gentle bend costs less than a right angle.
+        double bend = MotionTime.Path([new(0, 0), new(10, 0), new(20, 1)], 50, 1000, 5);
+        double right = MotionTime.Path([new(0, 0), new(10, 0), new(10, 10)], 50, 1000, 5);
+        Assert.True(bend < right);
+        // A faster printer is quicker on the same path.
+        Assert.True(MotionTime.Path(square, 50, 10000, 5) < slow);
+    }
+
+    [Fact]
+    public void A_print_on_a_slow_printer_is_estimated_longer_than_on_a_fast_one()
+    {
+        var doc = Shapes.Cube(0.02);
+        double slow = PrintJob.Run(doc, new PrintSetup { Printer = new PrinterProfile { Acceleration = 300 } }).Stats.Seconds;
+        double fast = PrintJob.Run(doc, new PrintSetup { Printer = new PrinterProfile { Acceleration = 10000 } }).Stats.Seconds;
+        Assert.True(slow > fast * 1.1, $"{slow} against {fast}");
+        Assert.Throws<ArgumentException>(() => new PrinterProfile { Acceleration = 0 }.Checked());
+        // The presets have their own: a K1 is quicker than an Ender 3.
+        Assert.True(Presets.Printers.Single(p => p.Name == "Creality K1").Acceleration > Presets.Printers.Single(p => p.Name.StartsWith("Creality Ender 3 /")).Acceleration);
+    }
+}

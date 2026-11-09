@@ -8,7 +8,7 @@ namespace AVAModeler.Slicing;
 public sealed record PrintStats
 {
     public int Layers { get; init; }
-    /// <summary>Seconds, from the moves' lengths and speeds alone: acceleration and heating aren't counted, so a real print takes somewhat longer.</summary>
+    /// <summary>Seconds, with each move speeding up and slowing down at the printer's acceleration and corners taken at its corner speed; heating isn't counted.</summary>
     public double Seconds { get; init; }
     /// <summary>Filament pushed through the nozzle, in mm of filament.</summary>
     public double FilamentMm { get; init; }
@@ -104,6 +104,8 @@ public static class GCode
         double ox = printer.OriginAtCentre ? printer.BedWidth / 2 : 0, oy = printer.OriginAtCentre ? printer.BedDepth / 2 : 0;
         // The printer's own retraction (a Bowden tube needs more) over the material's.
         double retractLength = printer.RetractLength ?? material.RetractLength;
+        // How the printer speeds up and takes corners, for the time it'll take.
+        double accel = printer.Acceleration, corner = printer.CornerSpeed;
         int fanNow = 0;
 
         void Retract()
@@ -122,10 +124,10 @@ public static class GCode
             // Inside the object: round what's in the way, without retracting.
             if (s.Combing && d >= s.RetractMinTravel && double.IsFinite(d) && Combing.Route(comb, pos, to, 1.5 * s.LineWidth) is { } route)
             {
+                seconds += MotionTime.Path([pos, .. route], s.TravelSpeed, accel, corner);
                 foreach (var q in route)
                 {
                     w.Line($"G0 X{F(q.X - ox, 3)} Y{F(q.Y - oy, 3)} F{F(s.TravelSpeed * 60, 0)}");
-                    seconds += (q - pos).Length / s.TravelSpeed;
                     pos = q;
                 }
                 travels++;
@@ -142,7 +144,7 @@ public static class GCode
             }
             if (hop) w.Line($"G1 Z{F(z + s.ZHop, 3)} F600");
             w.Line($"G0 X{F(to.X - ox, 3)} Y{F(to.Y - oy, 3)} F{F(s.TravelSpeed * 60, 0)}");
-            if (double.IsFinite(d)) seconds += d / s.TravelSpeed;
+            if (double.IsFinite(d)) seconds += MotionTime.Line(d, s.TravelSpeed, accel);
             travels++;
             if (hop) w.Line($"G1 Z{F(z, 3)} F600");
             pos = to;
@@ -181,7 +183,8 @@ public static class GCode
                 _ => s.PrintSpeed,
             };
             // Cooling: a layer quicker than the material's shortest layer time is slowed to take it (down to its slowest speed).
-            double layerSeconds = layer.Paths.Sum(p => p.Length / Speed(p));
+            double PathSeconds(Extrusion p, double speed) => MotionTime.Path(p.Closed ? [.. p.Points, p.Points[0]] : p.Points, speed, accel, corner);
+            double layerSeconds = layer.Paths.Sum(p => PathSeconds(p, Speed(p)));
             double slow = material.MinLayerSeconds > 0 && layerSeconds > 0 && layerSeconds < material.MinLayerSeconds ? layerSeconds / material.MinLayerSeconds : 1;
             if (slow < 1)
             {
@@ -204,6 +207,7 @@ public static class GCode
                 double perMm = FilamentPerMm(path.Width > 0 ? path.Width : s.LineWidth, layer.Layer.Height, printer.FilamentDiameter);
                 Travel(path.Points[0], layer.Comb);
                 Unretract();
+                seconds += PathSeconds(path, speed);
                 string feed = $" F{F(speed * 60, 0)}";
                 IEnumerable<Vec2> points = path.Closed ? path.Points.Skip(1).Append(path.Points[0]) : path.Points.Skip(1);
                 foreach (var p in points)
@@ -214,7 +218,6 @@ public static class GCode
                     w.Line($"G1 X{F(p.X - ox, 3)} Y{F(p.Y - oy, 3)} E{F(e, 5)}{feed}");
                     feed = "";
                     filament += e;
-                    seconds += d / speed;
                     extrusions++;
                     pos = p;
                 }

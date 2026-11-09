@@ -148,7 +148,8 @@ public sealed class PrintWindow : Window
         var printer = Section("Printer", _printers,
             Field("printer.name", "Name"), Field("printer.width", "Bed width (mm)"), Field("printer.depth", "Bed depth (mm)"), Field("printer.height", "Build height (mm)"),
             PrinterNotes, Field("printer.nozzle", "Nozzle (mm)"), Field("printer.filament", "Filament (mm)"),
-            Field("printer.retract", "Retraction (mm, blank: the material's)"), _originCentre, _roundBed,
+            Field("printer.retract", "Retraction (mm, blank: the material's)"), Field("printer.accel", "Acceleration (mm/s²)"),
+            Field("printer.corner", "Corner speed (mm/s)"), _originCentre, _roundBed,
             Label("Start G-code ({bed_temp}, {nozzle_temp}… filled in)"), _start, Label("End G-code"), _end, savePrinter);
         var material = Section("Material", _materials,
             Field("material.name", "Name"), Field("material.nozzle", "Nozzle (°C)"), Field("material.first", "First layer nozzle (°C)"), Field("material.bed", "Bed (°C)"),
@@ -458,6 +459,7 @@ public sealed class PrintWindow : Window
         Set("printer.width", p.BedWidth); Set("printer.depth", p.BedDepth); Set("printer.height", p.MaxHeight);
         Set("printer.nozzle", p.NozzleDiameter); Set("printer.filament", p.FilamentDiameter);
         _fields["printer.retract"].Text = p.RetractLength is { } r ? r.ToString("0.###", CultureInfo.InvariantCulture) : "";
+        Set("printer.accel", p.Acceleration); Set("printer.corner", p.CornerSpeed);
         _originCentre.IsChecked = p.OriginAtCentre;
         _roundBed.IsChecked = p.RoundBed;
         _notes = p.Notes;
@@ -516,6 +518,7 @@ public sealed class PrintWindow : Window
         StartGCode = _start.Text ?? "", EndGCode = _end.Text ?? "",
         RetractLength = string.IsNullOrWhiteSpace(_fields["printer.retract"].Text) ? null : Num("printer.retract", "The printer's retraction"),
         OriginAtCentre = _originCentre.IsChecked == true, RoundBed = _roundBed.IsChecked == true, Notes = _notes,
+        Acceleration = Num("printer.accel", "The acceleration"), CornerSpeed = Num("printer.corner", "The corner speed"),
     }.Checked();
 
     private MaterialProfile ReadMaterial() => new MaterialProfile

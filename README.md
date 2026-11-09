@@ -227,8 +227,8 @@ phases 0 to 7 and Layout phases L1 to L6.
       homing first, retraction and an optional Z hop on long moves, the fan from its layer, and Cura-style comments
       (`;LAYER:n`, `;TYPE:WALL-OUTER`…) so G-code previewers show it. The window shows each layer's lines on the bed
       with a slider through the layers, or (3D) the print stacked up to the chosen layer, to turn, move and zoom
-      with the mouse, and the print's time (from the moves alone: a real print takes somewhat
-      longer), filament and weight. AI agents slice with `slice_to_gcode`.
+      with the mouse, and the print's time (each move speeding up and slowing down at the printer's
+      acceleration, corners at its corner speed, as Klipper plans them), filament and weight. AI agents slice with `slice_to_gcode`.
 
 ![The 3D Print window: the print settings down the left, one layer of the spiral stairs on the bed with supports in blue under a tread, and the print's layers, time, filament and weight above](Images/AVAModeler-print.png)
 
@@ -997,7 +997,7 @@ Layout reuses them.
   layer heights or pressure advance; gap fill lays straight pieces a few millimetres long (not one line along a curve),
   bridges are found only over air (not over sparse infill), and combing keeps to one island (travel between islands
   retracts). Supports are columns of straight lines under overhangs (no tree supports), with
-  interface layers on top but not under them where they stand on the object. The time is from the moves' lengths and speeds alone, so real prints take somewhat longer. Copies are all the same
+  interface layers on top but not under them where they stand on the object. The time follows the printer's acceleration and corner speed but not firmware that plans further ahead or limits its own speeds, so it's close rather than exact. Copies are all the same
   way up and turned alike, laid out in a grid rather than packed. The 3D view draws lines (not
   shaded plastic), later layers over earlier ones, and only the outer walls of layers more than 40 below the chosen
   one. For anything beyond this, export STL for a dedicated slicer.

@@ -112,7 +112,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - `GCode.cs`: `GCode.Write` turns a plan into Marlin-style G-code (G21, G90, M83 relative extrusion; heating and
     homing first, the start and end G-code with placeholders filled, `;LAYER:n` and `;TYPE:` comments, retraction
     before long travel and layer changes, Z hop, the fan from its layer) and `PrintStats` (time from lengths and
-    speeds, filament, grams). `FilamentPerMm` is the one extrusion rule. `Save` writes through a temporary file.
+    speeds, filament, grams; `MotionTime` plans each polyline's speeds through its corners with the printer's
+    `Acceleration` and `CornerSpeed`, as Klipper's square corner velocity does). `FilamentPerMm` is the one extrusion rule. `Save` writes through a temporary file.
     `PrintJob.Run(doc, setup)` runs every stage and gives the `Warnings` (doesn't fit, not printable, open outlines):
     the UI and the MCP tool go through it.
   - `PrintHost.cs`: `PrintHost` (OctoPrint or Moonraker, address, start printing; kept in `PrintSetup.Host`),

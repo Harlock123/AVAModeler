@@ -60,6 +60,7 @@ public static class GCode
         PathKind.Skirt or PathKind.Brim => "SKIRT",
         PathKind.GapFill => "FILL",
         PathKind.Bridge => "SKIN",
+        PathKind.Ironing => "IRONING",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -212,6 +213,7 @@ public static class GCode
                 PathKind.Infill => s.InfillSpeed,
                 PathKind.Bridge => s.BridgeSpeed,
                 PathKind.GapFill => s.GapFillSpeed,
+                PathKind.Ironing => s.IroningSpeed,
                 _ => s.PrintSpeed,
             };
             // Cooling: a layer quicker than the material's shortest layer time is slowed to take it (down to its slowest speed).
@@ -237,7 +239,7 @@ public static class GCode
                 }
                 double normal = Speed(path);
                 double speed = slow < 1 ? Math.Max(normal * slow, Math.Min(normal, material.MinSpeed)) : normal;
-                double perMm = FilamentPerMm(path.Width > 0 ? path.Width : s.LineWidth, layer.Layer.Height, printer.FilamentDiameter);
+                double perMm = FilamentPerMm(path.Width > 0 ? path.Width : s.LineWidth, layer.Layer.Height, printer.FilamentDiameter) * path.Flow;
                 Travel(path.Points[0], layer.Comb);
                 Unretract();
                 seconds += PathSeconds(path, speed);

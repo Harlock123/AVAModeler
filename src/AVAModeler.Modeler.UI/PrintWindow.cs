@@ -64,6 +64,8 @@ public sealed class PrintWindow : Window
     private string? _x3gMachine;
     private readonly CheckBox _gapFill = new() { Content = "Fill gaps between walls", Foreground = Look.Text };
     private readonly CheckBox _bridging = new() { Content = "Bridge spans over air", Foreground = Look.Text };
+    private readonly CheckBox _ironing = new() { Content = "Iron top surfaces", Foreground = Look.Text };
+    public CheckBox IroningBox => _ironing;
     private readonly CheckBox _combing = new() { Content = "Keep travel inside the object", Foreground = Look.Text };
     private readonly TextBox _start = Script();
     private readonly TextBox _end = Script();
@@ -200,7 +202,7 @@ public sealed class PrintWindow : Window
         var print = Section("Print", _profiles, Row("", profileName), saveProfile,
             Field("layer", "Layer height (mm)"), Field("first", "First layer (mm)"), Field("width", "Line width (mm)"), Field("walls", "Walls"),
             Field("top", "Top layers"), Field("bottom", "Bottom layers"), Field("infill", "Infill (%)"), Row("Infill pattern", _pattern), Field("angle", "Infill angle (°)"),
-            Row("Seam", _seam), _gapFill, _bridging, _combing, Field("skirt", "Skirt loops"), Field("brim", "Brim lines"), _supports, Field("supportAngle", "Support angle (°)"),
+            Row("Seam", _seam), _gapFill, _bridging, _ironing, Field("ironFlow", "Ironing flow (%)"), _combing, Field("skirt", "Skirt loops"), Field("brim", "Brim lines"), _supports, Field("supportAngle", "Support angle (°)"),
             Row("Supports stand", _supportOn), (_dualRows = new StackPanel
             {
                 Spacing = 3,
@@ -487,6 +489,8 @@ public sealed class PrintWindow : Window
         _gapFill.IsChecked = s.GapFill;
         _bridging.IsChecked = s.Bridging;
         _combing.IsChecked = s.Combing;
+        _ironing.IsChecked = s.Ironing;
+        Set("ironFlow", s.IroningFlowPercent);
         _pattern.SelectedIndex = (int)s.Infill;
         _seam.SelectedIndex = (int)s.Seam;
         _supports.IsChecked = s.Supports;
@@ -556,6 +560,7 @@ public sealed class PrintWindow : Window
             FirstLayerSpeed = Num("firstSpeed", "The first layer speed"), TravelSpeed = Num("travel", "The travel speed"), ZHop = Num("zhop", "The Z hop"),
             BridgeSpeed = Num("bridgeSpeed", "The bridge speed"), GapFillSpeed = Num("gapSpeed", "The gap fill speed"),
             GapFill = _gapFill.IsChecked == true, Bridging = _bridging.IsChecked == true, Combing = _combing.IsChecked == true,
+            Ironing = _ironing.IsChecked == true, IroningFlowPercent = Num("ironFlow", "The ironing flow"),
         };
         var placement = new PlacementOptions
         {
@@ -740,6 +745,7 @@ public sealed class LayerPreview : Control
         [PathKind.GapFill] = new SolidColorBrush(Color.FromRgb(240, 120, 200)),
         [PathKind.Bridge] = new SolidColorBrush(Color.FromRgb(70, 130, 255)),
         [PathKind.SupportInterface] = new SolidColorBrush(Color.FromRgb(40, 230, 230)),
+        [PathKind.Ironing] = new SolidColorBrush(Color.FromRgb(255, 255, 200)),
     };
 
     public static IBrush BrushFor(PathKind kind) => Colours[kind];
@@ -756,6 +762,7 @@ public sealed class LayerPreview : Control
         PathKind.GapFill => "Gap fill",
         PathKind.Bridge => "Bridge",
         PathKind.SupportInterface => "Support top",
+        PathKind.Ironing => "Ironing",
         _ => kind.ToString(),
     };
 

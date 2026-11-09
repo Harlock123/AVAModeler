@@ -231,6 +231,8 @@ phases 0 to 7 and Layout phases L1 to L6.
       by its own density.
     - For Sailfish printers (MakerBot-style: the Flashforge Creator Pro) it also saves .x3g, the binary file their
       firmware prints from, as GPX would convert the G-code: Save .x3g…, `slice("part.x3g")` or `slice_to_gcode`.
+    - Ironing smooths top surfaces (the very top and each step's): a last slow pass of lines 0.1 mm apart crossways
+      to the top layer, laying a tenth of the plastic (Fine 0.12 irons).
     - Print profiles set the way it's laid down in one go: Standard 0.20, Draft 0.28, Fine 0.12, Strong (four
       walls, 40% gyroid) or your own (Save as my profile), keeping the object's supports, brim, skirt and extruders.
     - The G-code is Marlin-style (Marlin, Klipper and RepRapFirmware read it), with relative extrusion, heating and
@@ -1003,8 +1005,7 @@ Layout reuses them.
 
 - **3D printing** is a straightforward slicer, not a match for a dedicated one. It prints one extruder with
   Marlin-style G-code (no other flavours, no arcs, no firmware retraction), uses one line width and one speed per
-  kind of line, and fills with lines, a grid or a gyroid (no honeycomb or adaptive infill). There's no ironing, variable
-  layer heights or pressure advance; gap fill lays straight pieces a few millimetres long (not one line along a curve),
+  kind of line, and fills with lines, a grid or a gyroid (no honeycomb or adaptive infill). There's no pressure advance; gap fill lays straight pieces a few millimetres long (not one line along a curve),
   bridges are found only over air (not over sparse infill), and combing keeps to one island (travel between islands
   retracts). Supports are columns of straight lines under overhangs (no tree supports), with
   interface layers on top but not under them where they stand on the object. The time follows the printer's acceleration and corner speed but not firmware that plans further ahead or limits its own speeds, so it's close rather than exact. Copies are all the same

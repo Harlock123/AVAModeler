@@ -110,7 +110,9 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     (cut into 3 mm pieces, lines along each piece's long axis, `Extrusion.Width` narrower); `Bridges` takes the solid
     over air (beyond the layer below by a line) and picks the angle that anchors most length at both ends. Each
     `ToolpathLayer.Comb` is the islands a line in from their walls, for `Combing.Route` (travel round holes inside one
-    island, stepping in from a wall; null means straight with a retraction). The writer slows a layer quicker than
+    island, stepping in from a wall; null means straight with a retraction). Ironing (`SliceSettings.Ironing`) fills each island's top (its solid
+    not under the next layer) with `PathKind.Ironing` lines at `IroningSpacing`, `Extrusion.Flow` the
+    `IroningFlowPercent`. The writer slows a layer quicker than
     `MaterialProfile.MinLayerSeconds` and runs the fan full for bridges.
   - `GCode.cs`: `GCode.Write` turns a plan into Marlin-style G-code (G21, G90, M83 relative extrusion; heating and
     homing first, the start and end G-code with placeholders filled, `;LAYER:n` and `;TYPE:` comments, retraction

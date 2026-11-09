@@ -37,7 +37,7 @@ public sealed record PrintProfile(string Name, SliceSettings Settings)
         new("Fine 0.12", new SliceSettings
         {
             LayerHeight = 0.12, FirstLayerHeight = 0.2, Walls = 3, TopLayers = 7, BottomLayers = 5, InfillPercent = 20,
-            PrintSpeed = 40, OuterWallSpeed = 25, InfillSpeed = 50,
+            PrintSpeed = 40, OuterWallSpeed = 25, InfillSpeed = 50, Ironing = true,
         }),
         new("Strong", new SliceSettings
         {

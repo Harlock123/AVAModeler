@@ -229,3 +229,51 @@ public class GyroidTests
         Assert.True(job.Plan.Lengths[PathKind.Infill] > 100);
     }
 }
+
+public class IroningTests
+{
+    private static IEnumerable<Extrusion> Ironed(ToolpathLayer l) => l.Paths.Where(p => p.Kind == PathKind.Ironing);
+
+    [Fact]
+    public void Only_the_top_surface_is_ironed_with_close_crossways_lines_and_a_trickle_of_plastic()
+    {
+        var plan = PlannerTests.Plan(Shapes.Cube(0.02), new SliceSettings { Ironing = true });
+        Assert.All(plan.Layers.SkipLast(1), l => Assert.Empty(Ironed(l)));
+        var top = plan.Layers[^1];
+        var lines = Ironed(top).ToList();
+        Assert.NotEmpty(lines);
+        Assert.All(lines, e => Assert.Equal(0.1, e.Flow, 9));
+        // Lines 0.1 mm apart over the ~17.5 mm square inside the walls: about 3000 mm of them.
+        Assert.InRange(lines.Sum(e => e.Length), 2500, 3300);
+        // Ironing comes after the top layer's own skin, crossways to it.
+        int lastSkin = top.Paths.ToList().FindLastIndex(p => p.Kind == PathKind.Skin), firstIron = top.Paths.ToList().FindIndex(p => p.Kind == PathKind.Ironing);
+        Assert.True(lastSkin < firstIron);
+        Vec2 Dir(Extrusion e) => (e.Points[^1] - e.Points[0]).Normalized();
+        var skinDir = Dir(top.Paths.Where(p => p.Kind == PathKind.Skin).MaxBy(p => p.Length)!);
+        Assert.InRange(Math.Abs(Vec2.Dot(skinDir, Dir(lines.MaxBy(p => p.Length)!))), 0, 0.01);
+
+        // A step's top is ironed where it is, not just the very top: a 10 mm block beside a 20 mm one.
+        var doc = Shapes.Cube(0.02);
+        Shapes.Box(doc.Layers[0].Mesh, new Vec3(0.01, 0, -0.01), new Vec3(0.03, 0.01, 0.01));
+        doc.Layers[0].Mesh.Touch();
+        var step = PlannerTests.Plan(doc, new SliceSettings { Ironing = true });
+        // The block's top layer: the last cut through it.
+        var stepTop = step.Layers.Last(l => l.Layer.CutAt < 10);
+        Assert.Contains(Ironed(stepTop), e => e.Points.All(p => p.X > 120));
+        Assert.Empty(PlannerTests.Plan(Shapes.Cube(0.02)).Layers.SelectMany(Ironed));
+    }
+
+    [Fact]
+    public void Ironing_uses_a_tenth_of_the_plastic_slowly()
+    {
+        var job = PrintJob.Run(Shapes.Cube(0.02), new PrintSetup { Settings = new SliceSettings { Ironing = true } });
+        Assert.Contains(";TYPE:IRONING", job.GCode);
+        var ironing = job.GCode[job.GCode.IndexOf(";TYPE:IRONING")..job.GCode.IndexOf(";TYPE:END")];
+        Assert.Contains("F900", ironing);
+        double perMm = GCode.FilamentPerMm(0.45, job.Plan.Layers[^1].Layer.Height, 1.75) * 0.1;
+        var first = ironing.Split('\n').First(l => l.StartsWith("G1 X") && l.Contains(" E"));
+        double e = double.Parse(first[(first.IndexOf(" E") + 2)..].Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(e < 1.0 * perMm * 30, $"{e}");
+        Assert.Equal("Fine 0.12", PrintProfile.Presets.Single(p => p.Settings.Ironing).Name);
+    }
+}

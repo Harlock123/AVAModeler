@@ -4,13 +4,14 @@ using Clipper2Lib;
 namespace AVAModeler.Slicing;
 
 /// <summary>What a printed line is part of: it decides the speed, and G-code previewers colour by it.</summary>
-public enum PathKind { OuterWall, InnerWall, Skin, Infill, Support, Skirt, Brim, GapFill, Bridge, SupportInterface }
+public enum PathKind { OuterWall, InnerWall, Skin, Infill, Support, Skirt, Brim, GapFill, Bridge, SupportInterface, Ironing }
 
 /// <summary>
 /// One printed line: a polyline the nozzle extrudes along, closed (back to its start) or open. <see cref="Width"/> is
-/// its own width when it isn't the print's line width (gap fill is narrower), else 0.
+/// its own width when it isn't the print's line width (gap fill is narrower), else 0. <see cref="Flow"/> scales the
+/// plastic it lays (ironing lays a trickle).
 /// </summary>
-public sealed record Extrusion(PathKind Kind, IReadOnlyList<Vec2> Points, bool Closed, double Width = 0)
+public sealed record Extrusion(PathKind Kind, IReadOnlyList<Vec2> Points, bool Closed, double Width = 0, double Flow = 1)
 {
     public double Length => Geometry2D.Perimeter(Points, Closed);
 }
@@ -114,6 +115,17 @@ public static class Planner
                     mySolid = rest;
                 }
                 foreach (var e in Order(Fill(mySolid, spacing[i], [s.InfillAngle + turn], PathKind.Skin), at)) Add(e);
+                if (s.Ironing)
+                {
+                    // The tops of things: this layer's solid not covered by the next, ironed crossways to its skin.
+                    var top = i + 1 < n ? Polygons2D.Difference(own, region[i + 1]) : own;
+                    // Within the walls; strips thinner than a line (the edge of a slope) aren't worth ironing.
+                    var iron = Polygons2D.Intersect(inside[i], top);
+                    iron = Polygons2D.Offset(Polygons2D.Offset(iron, -w / 2), w / 4);
+                    if (iron.Count > 0)
+                        foreach (var e in Order(Fill(iron, s.IroningSpacing, [s.InfillAngle + turn + 90], PathKind.Ironing), at))
+                            Add(e with { Flow = s.IroningFlowPercent / 100 });
+                }
                 if (s.InfillPercent > 0)
                 {
                     var mySparse = Polygons2D.Intersect(sparse[i], own);

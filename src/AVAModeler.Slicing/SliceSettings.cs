@@ -63,6 +63,13 @@ public sealed record SliceSettings
     public bool GapFill { get; init; } = true;
     /// <summary>Print solid areas over air as bridges: straight lines across at the best-anchored angle, slower, the fan full.</summary>
     public bool Bridging { get; init; } = true;
+    /// <summary>Iron top surfaces: a last pass over them, close lines with a trickle of plastic, to smooth them.</summary>
+    public bool Ironing { get; init; }
+    /// <summary>Ironing's lines, this far apart (mm).</summary>
+    public double IroningSpacing { get; init; } = 0.1;
+    /// <summary>The plastic ironing lays, as a percentage of a line's.</summary>
+    public double IroningFlowPercent { get; init; } = 10;
+    public double IroningSpeed { get; init; } = 15;
     /// <summary>Keep travel inside the object where it can (no wall crossed, no retraction).</summary>
     public bool Combing { get; init; } = true;
 
@@ -132,6 +139,9 @@ public sealed record SliceSettings
             PrinterProfile.Range(v, 1, 1000, what, " mm/s");
         PrinterProfile.Range(RetractMinTravel, 0, 100, "The shortest retracted travel");
         PrinterProfile.Range(ZHop, 0, 10, "The Z hop");
+        PrinterProfile.Range(IroningSpacing, 0.02, LineWidth, "The ironing spacing");
+        PrinterProfile.Range(IroningFlowPercent, 0, 50, "The ironing flow", "%");
+        PrinterProfile.Range(IroningSpeed, 1, 1000, "The ironing speed", " mm/s");
         if (ModelExtruder < 0 || ModelExtruder >= printer.Extruders)
             throw new ArgumentException(printer.Extruders == 1 ? $"{printer.Name} has one extruder: print with it." : $"{printer.Name}'s extruders are 1 to {printer.Extruders}.");
         if (SupportExtruder < -1 || SupportExtruder >= printer.Extruders)

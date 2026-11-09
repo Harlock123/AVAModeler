@@ -310,19 +310,66 @@ public sealed class RailExtrudeTool : Tool
 {
     public override string Name => "Rail Extrude";
     public override string Tab => "Multiply";
-    public override string Summary => "Extrudes the selected faces along a rail held in a background layer (a chain of 2-point lines), resampled into Segments even steps.";
+    public override string Summary => "Extrudes the selected faces along a rail held in a background layer (a chain of 2-point lines), resampled into Segments even steps; Smooth rail runs along a smooth curve through the rail's points.";
     public override ToolKind Kind => ToolKind.Requester;
     public override string Help => "Put the rail (a chain of lines) in a background layer.";
 
     [Param("Segments", Min = 1, Max = 1000, Step = 1)] public int Segments { get; set; } = 12;
     [Param("Follow the rail")] public bool Orient { get; set; }
     [Param("Keep the base")] public bool CapBase { get; set; }
+    [Param("Smooth rail", Description = "Run along a smooth curve through the rail's points, not straight from point to point.")] public bool SmoothRail { get; set; }
 
     protected override void Apply()
     {
         var rail = BackgroundPath.Of(Doc);
         if (rail.Count < 2) throw new InvalidOperationException("Rail Extrude needs a rail of two or more points in a background layer.");
+        if (SmoothRail) rail = Curves.Smooth(rail, 16);
         foreach (var (_, mesh, polys) in ActivePolygons()) Multiply.RailExtrude(mesh, polys.ToList(), rail, Segments, Orient, CapBase);
+    }
+}
+
+/// <summary>Spline Patch: a grid of quads across a closed loop of lines in 3 or 4 sides.</summary>
+public sealed class SplinePatchTool : Tool
+{
+    public override string Name => "Spline Patch";
+    public override string Tab => "Polygon";
+    public override string Summary => "Fills a closed loop of 2-point lines (the selected lines, or all in the foreground) with a grid of quads, Across by Along, split into Sides (3 or 4) at the corners: the points where it turns most sharply, or the points selected (in Points mode, as many as there are sides). The patch meets every side exactly (a Coons patch); Smooth sides runs each side as a curve through its points.";
+    public override ToolKind Kind => ToolKind.Requester;
+    public override string Help => "Draw a closed loop of lines (Make Polygon on two points makes one), then Apply.";
+
+    [Param("Sides", Min = 3, Max = 4, Step = 1, Description = "3 for a triangular patch, 4 for a four-sided one.")] public int Sides { get; set; } = 4;
+    [Param("Across", Min = 1, Max = 200, Step = 1, Description = "Pieces along the first and third sides.")] public int Across { get; set; } = 10;
+    [Param("Along", Min = 1, Max = 200, Step = 1, Description = "Pieces along the second and fourth sides.")] public int Along { get; set; } = 10;
+    [Param("Smooth sides")] public bool SmoothSides { get; set; } = true;
+    [Param("Flip", Description = "Face the patch the other way.")] public bool Flip { get; set; }
+    [Param("Keep the curves")] public bool KeepCurves { get; set; } = true;
+
+    protected override void Apply()
+    {
+        bool made = false;
+        foreach (var (layer, mesh, polys) in ActivePolygons())
+        {
+            // Points chosen as corners: every line in the layer makes the loop.
+            var lines = (Doc.Selection.Mode == SelectionMode.Points ? Enumerable.Range(0, mesh.Polygons.Count) : polys)
+                .Where(i => mesh.Polygons[i].Count == 2).ToList();
+            if (lines.Count == 0) continue;
+            var loops = Curves.Chains(mesh, lines).Where(c => c.Closed).ToList();
+            if (loops.Count == 0) throw new InvalidOperationException("Spline Patch needs the lines to close into a loop: the end of the last meeting the start of the first.");
+            var (chain, _) = loops.MaxBy(c => c.Points.Count);
+            var loop = chain.Select(i => mesh.Points[i]).ToList();
+            // Corners: the points chosen, if as many as there are sides and on the loop; else where it turns most.
+            var chosen = Doc.Selection.PointsIn(layer).Select(p => chain.IndexOf(p)).Where(i => i >= 0).Order().ToArray();
+            var corners = chosen.Length == Sides ? chosen : Curves.SharpestCorners(loop, Sides);
+            if (corners.Length < Sides) throw new InvalidOperationException($"The loop needs at least {Sides} points for {Sides} sides.");
+            int surface = Doc.SurfaceIndex(Doc.Surfaces.Count > 0 ? Doc.Surfaces[0].Name : "Default");
+            var faces = Curves.SplinePatch(mesh, loop, corners, Across, Along, SmoothSides, surface);
+            if (Flip) foreach (int f in faces) mesh.Polygons[f].Points.Reverse();
+            if (!KeepCurves)
+                foreach (int i in lines.OrderDescending()) mesh.Polygons.RemoveAt(i);
+            mesh.Touch();
+            made = true;
+        }
+        if (!made) throw new InvalidOperationException("Spline Patch needs a closed loop of 2-point lines in the foreground: select them in Polygons mode.");
     }
 }
 

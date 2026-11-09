@@ -265,16 +265,33 @@ public sealed class BendTool : Tool
 }
 
 /// <summary>Magnet: pulls the points near a centre by an offset, fading to nothing at a radius.</summary>
+/// <summary>How Magnet's pull fades from its centre (1) to its radius (0).</summary>
+public enum MagnetFalloff { Smooth, Linear, Sharp, Dome }
+
 public sealed class MagnetTool : Tool
 {
+    /// <summary>The pull at <paramref name="r"/> (0 at the centre, 1 at the radius), from 1 down to 0.</summary>
+    public static double Weight(MagnetFalloff falloff, double r)
+    {
+        r = Math.Clamp(r, 0, 1);
+        return falloff switch
+        {
+            MagnetFalloff.Linear => 1 - r,
+            MagnetFalloff.Sharp => (1 - r) * (1 - r) * (1 - r),
+            MagnetFalloff.Dome => Math.Sqrt(1 - r * r),
+            _ => (1 - r * r) * (1 - r * r),
+        };
+    }
+
     public override string Name => "Magnet";
     public override string Tab => "Modify";
-    public override string Summary => "Pulls the points within Radius (per axis, an ellipsoid) of Center by Offset, fully at the centre and fading smoothly to nothing at the radius.";
+    public override string Summary => "Pulls the points within Radius (per axis, an ellipsoid) of Center by Offset, fully at the centre and fading to nothing at the radius, by the Falloff's shape (Smooth, Linear, Sharp or Dome).";
     public override string Help => "Drag from where the pull should be strongest.";
 
     [Param("Offset", Distance = true)] public Vec3 Offset { get; set; }
     [Param("Center", Distance = true)] public Vec3 Center { get; set; }
     [Param("Radius", Distance = true, Min = 0, Description = "How far the pull reaches along X, Y and Z.")] public Vec3 Radius { get; set; }
+    [Param("Falloff", Description = "How the pull fades toward the radius: Smooth (gently, the default), Linear (evenly), Sharp (a spike at the centre) or Dome (strong across most of it, dropping at the edge).")] public MagnetFalloff Falloff { get; set; } = MagnetFalloff.Smooth;
 
     protected override void OnBegin()
     {
@@ -296,8 +313,7 @@ public sealed class MagnetTool : Tool
             double rx = Math.Max(Radius.X, 1e-12), ry = Math.Max(Radius.Y, 1e-12), rz = Math.Max(Radius.Z, 1e-12);
             double r = Math.Sqrt(v.X * v.X / (rx * rx) + v.Y * v.Y / (ry * ry) + v.Z * v.Z / (rz * rz));
             if (r >= 1) return p;
-            double w = (1 - r * r) * (1 - r * r);
-            return p + Offset * w;
+            return p + Offset * Weight(Falloff, r);
         });
     }
 }

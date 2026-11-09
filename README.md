@@ -46,13 +46,15 @@ phases 0 to 7 and Layout phases L1 to L6.
 - **The classic tabs**:
   - **Objects**: Box, Ball (globe or tessellated), Disc, Cone, Points, Make Polygon, and Text (font outlines, with
     the letters' holes cut in).
-  - **Modify**: Move, Rotate, Size, Stretch, Shear, Bend, Twist, Taper, Magnet, Drag, Jitter, Smooth, Center and
-    Quantize.
-  - **Multiply**: Extrude, Lathe, Mirror, Clone, Array (rectangular and radial), Path Extrude, Rail Extrude, Bevel,
-    Smooth Shift, Inset, Chamfer and Bridge.
+  - **Modify**: Move, Rotate, Size, Stretch, Shear, Bend, Twist, Taper, Magnet (its pull fading Smooth, Linear,
+    Sharp or Dome), Drag, Jitter, Smooth, Center and Quantize.
+  - **Multiply**: Extrude, Lathe, Mirror, Clone, Array (rectangular and radial), Path Extrude, Rail Extrude (along a
+    background rail of lines, straight from point to point or smoothed into a curve), Bevel, Smooth Shift, Inset,
+    Chamfer and Bridge.
   - **Polygon**: Flip, Triple, Merge Points, Align, Unify, Remove Degenerate, Select Problems, Subdivide (faceted or
-    smooth), Metaform, Surface, Make UVs, Merge Polygons, Split, Loop Cut, Fill Hole and Remove; and Select Loop and
-    Select Ring.
+    smooth), Metaform, Surface, Make UVs, Merge Polygons, Split, Loop Cut, Fill Hole, Spline Patch (a grid of quads across a closed loop of lines in 3
+    or 4 sides, cornered where it turns most or at the points chosen, meeting every side exactly) and Remove; and
+    Select Loop and Select Ring.
   - **Tools**:
     - Boolean against the background layers: Union, Subtract, Intersect and Add.
     - Drill with the background's outline: Core, Tunnel, Stencil and Slice.

@@ -61,6 +61,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     materials from surfaces, an object per layer, STL's axis swap and winding).
 - `src/AVAModeler.Geometry/`: triangulation (LibTessDotNet), BSP booleans and drills, subdivision, and the
   extrude, lathe and bevel family.
+  - `Curves.cs`: curves as chains of 2-point lines (`Chains`), smoothing them (`Smooth`, centripetal Catmull–Rom),
+    and `SplinePatch` (a Coons patch across a closed loop in 3 or 4 sides; `SharpestCorners` finds the corners).
   - `MeshCheck.cs` is the mesh check (Mesh Info, `check_mesh`, Lua's `checkmesh()`): `MeshCheck.Document` gives a
     `MeshReport` of `LayerCheck`s (counts, bounds, area, shells, holes, boundary, non-manifold and inconsistent edges,
     the faces Align would turn, cavities, degenerate and non-planar polygons, duplicate and unused points, volume and

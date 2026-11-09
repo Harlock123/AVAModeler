@@ -21,9 +21,10 @@ public class PlannerTests
             var outer = Assert.Single(Of(layer, PathKind.OuterWall));
             var inner = Assert.Single(Of(layer, PathKind.InnerWall));
             Assert.True(outer.Closed);
-            // The outer wall's middle is half a line in from the edge: a 19.55 mm square; the inner one a line further in.
+            // The outer wall's middle is half a line in from the edge: a 19.55 mm square; the inner one a spacing further in.
+            double sp = Planner.Spacing(0.45, layer.Layer.Height);
             Assert.Equal(4 * 19.55, outer.Length, 3);
-            Assert.Equal(4 * 18.65, inner.Length, 3);
+            Assert.Equal(4 * (19.55 - 2 * sp), inner.Length, 2); // Clipper works to 0.1 µm a corner
             // Inner wall before the outer one, then skin or infill.
             Assert.True(layer.Paths.ToList().IndexOf(inner) < layer.Paths.ToList().IndexOf(outer));
         }
@@ -49,16 +50,19 @@ public class PlannerTests
     public void Skin_lines_are_a_line_apart_and_infill_is_spaced_by_its_percentage()
     {
         var plan = Plan(Shapes.Cube(0.02));
-        // Solid: the inside (inset by 2 lines + half a line, less the overlap) filled with lines 0.45 mm apart covers
-        // about its area divided by the width.
-        double side = 20 - 2 * (2 * 0.45 + 0.45 / 2 - 0.15 * 0.45);
+        // Solid: the inside (inset by half a line and 2 spacings, less the overlap) filled with lines a spacing apart
+        // covers about its area divided by the spacing.
+        double sp0 = Planner.Spacing(0.45, 0.24), sp = Planner.Spacing(0.45, 0.2);
+        double side0 = 20 - 2 * (0.45 / 2 + 2 * sp0 - 0.15 * 0.45), side = 20 - 2 * (0.45 / 2 + 2 * sp - 0.15 * 0.45);
         double skin = Of(plan.Layers[0], PathKind.Skin).Sum(e => e.Length);
-        Assert.InRange(skin, side * side / 0.45 * 0.95, side * side / 0.45 * 1.05);
+        Assert.InRange(skin, side0 * side0 / sp0 * 0.95, side0 * side0 / sp0 * 1.05);
+        // Sparse at 20%: five spacings apart.
         double sparse = Of(plan.Layers[50], PathKind.Infill).Sum(e => e.Length);
-        Assert.InRange(sparse, side * side / 2.25 * 0.85, side * side / 2.25 * 1.15);
+        Assert.InRange(sparse, side * side / (5 * sp) * 0.85, side * side / (5 * sp) * 1.15);
+        Assert.Equal(0.45 - 0.2 * (1 - Math.PI / 4), sp, 12);
         // Every skin and infill point stays inside the walls.
         foreach (var p in plan.Layers.SelectMany(l => l.Paths).Where(e => e.Kind is PathKind.Skin or PathKind.Infill).SelectMany(e => e.Points))
-            Assert.True(p.X > 100 + 1.0 && p.X < 120 - 1.0 && p.Y > 100 + 1.0 && p.Y < 120 - 1.0, $"{p} inside");
+            Assert.True(p.X > 100 + 0.9 && p.X < 120 - 0.9 && p.Y > 100 + 0.9 && p.Y < 120 - 0.9, $"{p} inside");
     }
 
     [Fact]

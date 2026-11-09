@@ -136,6 +136,9 @@ public class GCodeTests
         Assert.Equal(stats.FilamentMm * 2.4052819 / 1000 * 1.24, stats.Grams, 3);
         Assert.Contains($";Filament used: ", text);
         Assert.StartsWith(";FLAVOR:Marlin\n;TIME:", text);
+        // Plain ASCII throughout, the printer's name included.
+        Assert.All(text, c => Assert.True(c < 128, $"'{c}' is ASCII"));
+        Assert.Contains("for Generic 220 x 220 and PLA", text);
         Assert.Contains(";LAYER_COUNT:100\n", text);
         Assert.Contains(";MAXZ:20\n", text);
     }

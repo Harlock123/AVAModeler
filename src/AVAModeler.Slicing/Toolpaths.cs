@@ -24,8 +24,8 @@ public sealed record PrintPlan(SlicedModel Sliced, PrinterProfile Printer, Slice
 }
 
 /// <summary>
-/// Turns sliced layers into toolpaths. Per layer: walls are the region shrunk by half a line, then a line more for each
-/// further loop; the inside left within the walls (reaching <see cref="SliceSettings.InfillOverlap"/> into them) is
+/// Turns sliced layers into toolpaths. Per layer: walls are the region shrunk by half a line, then a
+/// <see cref="Spacing"/> more for each further loop; the inside left within the walls (reaching <see cref="SliceSettings.InfillOverlap"/> into them) is
 /// solid skin where the layers above or below don't cover it (top and bottom surfaces, within that many layers) and
 /// sparse infill elsewhere. Lines are laid on one grid for the whole print, so each layer's sit on the one below.
 /// Supports fill, a layer below an overhang down to the bed or the object, what the layer below doesn't hold up,
@@ -43,8 +43,11 @@ public static class Planner
 
         var region = layers.Select(l => Polygons2D.Region(l.Islands)).ToArray();
         // The inside each layer leaves for skin and infill: within the walls, by a half line for the lines' own width.
-        double inset = s.Walls * w + w / 2 - s.InfillOverlap * w;
-        var inside = region.Select(r => Polygons2D.Offset(r, -inset)).ToArray();
+        // Lines side by side sit a spacing apart, a little under their width, so their rounded sides meet.
+        var spacing = layers.Select(l => Spacing(w, l.Height)).ToArray();
+        // The inside each layer leaves for skin and infill: where the middles of lines next to the innermost wall go,
+        // reaching InfillOverlap into it.
+        var inside = region.Select((r, i) => Polygons2D.Offset(r, -(w / 2 + s.Walls * spacing[i] - s.InfillOverlap * w))).ToArray();
         // Solid where a surface is near: the inside not covered by every one of the layers above (or below) it.
         var solid = new PathsD[n];
         var sparse = new PathsD[n];
@@ -70,9 +73,9 @@ public static class Planner
                 paths.Add(placed);
                 at = placed.Closed ? placed.Points[0] : placed.Points[^1];
             }
-            if (i == 0) foreach (var e in Order(FirstLayerExtras(Polygons2D.Paths(layers[0].Islands.Select(isl => isl.Outline.Points)), support[0], s), at)) Add(e);
+            if (i == 0) foreach (var e in Order(FirstLayerExtras(Polygons2D.Paths(layers[0].Islands.Select(isl => isl.Outline.Points)), support[0], s, spacing[0]), at)) Add(e);
             if (support[i] is { Count: > 0 } sup)
-                foreach (var e in Order(Fill(sup, w * 100 / s.SupportPercent, [0], PathKind.Support), at)) Add(e);
+                foreach (var e in Order(Fill(sup, spacing[i] * 100 / s.SupportPercent, [0], PathKind.Support), at)) Add(e);
 
             var islands = layers[i].Islands.ToList();
             while (islands.Count > 0)
@@ -81,23 +84,29 @@ public static class Planner
                 var island = islands.MinBy(isl => isl.Outline.Points.Min(p => (p - here).LengthSquared))!;
                 islands.Remove(island);
                 var own = Polygons2D.Region(island);
-                foreach (var e in Walls(own, s)) Add(e);
+                foreach (var e in Walls(own, s, spacing[i])) Add(e);
                 double turn = i % 2 == 0 ? 0 : 90;
                 var mySolid = Polygons2D.Intersect(solid[i], own);
-                foreach (var e in Order(Fill(mySolid, w, [s.InfillAngle + turn], PathKind.Skin), at)) Add(e);
+                foreach (var e in Order(Fill(mySolid, spacing[i], [s.InfillAngle + turn], PathKind.Skin), at)) Add(e);
                 if (s.InfillPercent > 0)
                 {
                     var mySparse = Polygons2D.Intersect(sparse[i], own);
-                    var (spacing, angles) = s.Infill == InfillPattern.Grid
-                        ? (2 * w * 100 / s.InfillPercent, new[] { s.InfillAngle, s.InfillAngle + 90 })
-                        : (w * 100 / s.InfillPercent, new[] { s.InfillAngle + turn });
-                    foreach (var e in Order(Fill(mySparse, spacing, angles, PathKind.Infill), at)) Add(e);
+                    var (apart, angles) = s.Infill == InfillPattern.Grid
+                        ? (2 * spacing[i] * 100 / s.InfillPercent, new[] { s.InfillAngle, s.InfillAngle + 90 })
+                        : (spacing[i] * 100 / s.InfillPercent, new[] { s.InfillAngle + turn });
+                    foreach (var e in Order(Fill(mySparse, apart, angles, PathKind.Infill), at)) Add(e);
                 }
             }
             result.Add(new ToolpathLayer(layers[i], paths));
         }
         return new PrintPlan(sliced, printer, s, result);
     }
+
+    /// <summary>
+    /// How far apart the middles of two lines side by side are: a squashed line's sides are rounded, so for its
+    /// cross-section, (w − h)·h + π(h/2)², to fill the space between them they sit w − h(1 − π/4) apart.
+    /// </summary>
+    public static double Spacing(double width, double height) => width - height * (1 - Math.PI / 4);
 
     /// <summary>
     /// The area every layer from <paramref name="from"/> to <paramref name="to"/> covers: none past the print's ends (so
@@ -113,12 +122,12 @@ public static class Planner
     }
 
     /// <summary>The walls of one island, innermost first and the outer wall last, so the outside is laid against something.</summary>
-    private static IEnumerable<Extrusion> Walls(PathsD own, SliceSettings s)
+    private static IEnumerable<Extrusion> Walls(PathsD own, SliceSettings s, double spacing)
     {
         var loops = new List<Extrusion>();
         for (int k = 0; k < s.Walls; k++)
         {
-            var ring = Polygons2D.Offset(own, -(s.LineWidth / 2 + k * s.LineWidth));
+            var ring = Polygons2D.Offset(own, -(s.LineWidth / 2 + k * spacing));
             if (ring.Count == 0) break;
             var kind = k == 0 ? PathKind.OuterWall : PathKind.InnerWall;
             loops.AddRange(ring.Select(p => new Extrusion(kind, Polygons2D.Points(p), true)));
@@ -128,19 +137,19 @@ public static class Planner
     }
 
     /// <summary>The brim's lines round the first layer's outsides (not in its holes), innermost first, or else the skirt's loops a gap away from it and its support.</summary>
-    private static IEnumerable<Extrusion> FirstLayerExtras(PathsD first, PathsD? support, SliceSettings s)
+    private static IEnumerable<Extrusion> FirstLayerExtras(PathsD first, PathsD? support, SliceSettings s, double spacing)
     {
         double w = s.LineWidth;
         if (s.BrimLines > 0)
         {
             for (int k = 0; k < s.BrimLines; k++)
-                foreach (var p in Polygons2D.Offset(first, w / 2 + k * w, Polygons2D.Corners.Round))
+                foreach (var p in Polygons2D.Offset(first, w / 2 + k * spacing, Polygons2D.Corners.Round))
                     if (Clipper.Area(p) > 0) yield return new Extrusion(PathKind.Brim, Polygons2D.Points(p), true);
             yield break;
         }
         var footprint = support is { Count: > 0 } ? Polygons2D.Union(first, support) : first;
         for (int k = 0; k < s.SkirtLoops; k++)
-            foreach (var p in Polygons2D.Offset(footprint, s.SkirtDistance + w / 2 + k * w, Polygons2D.Corners.Round))
+            foreach (var p in Polygons2D.Offset(footprint, s.SkirtDistance + w / 2 + k * spacing, Polygons2D.Corners.Round))
                 if (Clipper.Area(p) > 0) yield return new Extrusion(PathKind.Skirt, Polygons2D.Points(p), true);
     }
 

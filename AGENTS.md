@@ -22,6 +22,7 @@ AVAMODELER_SHOTS=$PWD/Images dotnet test tests/AVAModeler.UI.Tests --filter Scre
 python3 samples/images/make_textures.py           # redraws the sample texture images
 python3 samples/images/make_environment.py        # redraws the sample environment, studio.hdr
 python3 samples/images/make_blueprints.py         # redraws the rocket blueprints (rocket-side/front/top.png)
+AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the reference G-code after a meant change
 ```
 
 `Directory.Build.props` sets `TreatWarningsAsErrors`, nullable reference types, implicit usings and
@@ -101,6 +102,11 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     speeds, filament, grams). `FilamentPerMm` is the one extrusion rule. `Save` writes through a temporary file.
     `PrintJob.Run(doc, setup)` runs every stage and gives the `Warnings` (doesn't fit, not printable, open outlines):
     the UI and the MCP tool go through it.
+  - `tests/AVAModeler.Slicing.Tests`: `Playback` plays G-code back as a printer would; `SafetyTests` runs it over
+    shapes and settings (on the bed, under the height, hot before printing, layers rising, retractions put back);
+    `ReferenceTests` compares a small print with `Reference/tube-10mm.gcode`, numbers within a unit in their last
+    place. A change to what the slicer writes that's meant: `AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests`,
+    then read the difference before committing it.
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
   - `Tool.cs` is the base class and `[Param]`. `Commands.cs` has the `ToolRegistry` and the command API.
   - `Macros.cs` runs Lua; the other files hold the tools, grouped by kind (`ModifyTools.cs`, `UVTools.cs` and so on).
@@ -279,6 +285,10 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     mouse modes, axis buttons and edit modes; it never picks or drags a `SceneItem.Locked` item.
   - `MeshInfoPanel.cs` is Mesh Info (W), docked beside the numeric panel and hidden until asked for: a thin view of
     `MeshCheck`, checking again (on the dispatcher, after a burst of changes) whenever the document changes while it's open.
+  - `PrintWindow.cs` is File › 3D Print (and the Objects tab's 3D Print…): a thin window over `PrintJob` (the settings
+    read into a `PrintSetup` and kept in `Preferences.Print`, slicing a `Document.Copy` on a worker, `LayerPreview`
+    drawing one layer on the bed, Save G-code). Agents slice with `slice_to_gcode` in `ModelerTools.cs`, which works
+    the same way (copy on the host, slice and write off it, inside the working folder).
   - `BackdropPanel.cs` is Backdrop (D), docked the same way: a view chooser, Browse, the numbers and check boxes,
     Fit to Object, Size from Pixels, and Save and Load Setup, each change going straight to `ModelerSession.SetBackdrop`.
     `ModelerSession` keeps backdrops across New, gives an opened object the ones `BackdropMemory` has for its file, and

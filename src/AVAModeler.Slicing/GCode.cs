@@ -105,7 +105,8 @@ public static class GCode
             double d = double.IsNaN(pos.X) ? double.PositiveInfinity : (to - pos).Length;
             if (d < 1e-6) return;
             bool hop = false;
-            if (d >= s.RetractMinTravel)
+            // The first move of all comes straight from the start G-code's prime line: nothing to pull back from.
+            if (d >= s.RetractMinTravel && !double.IsNaN(pos.X))
             {
                 Retract();
                 hop = retracted && s.ZHop > 0;
@@ -242,7 +243,14 @@ public static class GCode
     private static IEnumerable<string> Lines(string text) =>
         text.Replace("\r\n", "\n").Split('\n').Select(l => l.TrimEnd()).Where(l => l.Length > 0);
 
-    private static string Comment(string text) => text.Replace('\n', ' ').Replace('\r', ' ').Replace(';', ',');
+    /// <summary>Text for a comment: one line, plain ASCII (some firmware and SD-card readers trip on anything else).</summary>
+    private static string Comment(string text)
+    {
+        var sb = new StringBuilder();
+        foreach (char c in text.Replace("×", "x"))
+            sb.Append(c is '\n' or '\r' ? ' ' : c == ';' ? ',' : c is >= ' ' and <= '~' ? c : '?');
+        return sb.ToString();
+    }
 
     /// <summary>A number to so many decimal places, trailing zeros dropped, never "-0".</summary>
     public static string F(double v, int places)

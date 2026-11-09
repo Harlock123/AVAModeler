@@ -78,6 +78,11 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     (through `Stl.Triangles` and `Stl.ToStl`, so millimetres and Z up as STL export has them) welded into shared
     points, dropped on the bed and centred (or the origin at the bed's centre), with what doesn't fit and the mesh
     check's verdict.
+  - `Slicer.cs`: `Slicer.Slice` cuts a `PrintModel` into `SliceLayer`s halfway up each layer (`SliceSettings`: layer
+    and first-layer height). A point at or above the plane counts as above, so no point lies on it; each edge's cut
+    point is worked out once and shared, so segments join edge to edge with no tolerance (outsides anticlockwise, holes
+    clockwise). Chains that don't close (holes in the mesh) are counted in `OpenChains` and left out. `Geometry2D` has
+    the plain 2D sums (area, containment, `Clean`).
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
   - `Tool.cs` is the base class and `[Param]`. `Commands.cs` has the `ToolRegistry` and the command API.
   - `Macros.cs` runs Lua; the other files hold the tools, grouped by kind (`ModifyTools.cs`, `UVTools.cs` and so on).

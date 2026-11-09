@@ -13,6 +13,7 @@ public sealed record PrintSetup
     public PrinterProfile Printer { get; init; } = Presets.Printers[0];
     public MaterialProfile Material { get; init; } = Presets.Materials[0];
     public PlacementOptions Placement { get; init; } = new();
+    public SliceSettings Settings { get; init; } = new();
     /// <summary>Printers the person saved, shown after the presets.</summary>
     public IReadOnlyList<PrinterProfile> MyPrinters { get; init; } = [];
     /// <summary>Materials the person saved, shown after the presets.</summary>
@@ -28,6 +29,7 @@ public sealed record PrintSetup
         Printer.Checked();
         Material.Checked();
         Placement.Checked();
+        Settings.Checked(Printer);
         foreach (var p in MyPrinters) p.Checked();
         foreach (var m in MyMaterials) m.Checked();
         return this;

@@ -87,6 +87,14 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     `Intersect`, `Offset` (sharp or round corners), `ClipLines` (open lines inside a region) and `Islands` (a region
     as outsides with their holes, through a PolyTree, specks dropped). The slicer's loops become islands through it,
     so overlapping shells merge. Don't hand-roll offsets or clipping elsewhere.
+  - `SliceSettings.cs` (layer heights, line width, walls, top and bottom layers, infill and its pattern and angle,
+    seam, skirt or brim, supports, speeds, retraction travel, Z hop; `Checked(printer)`) and `Toolpaths.cs`:
+    `Planner.Plan` makes a `PrintPlan` of `ToolpathLayer`s, each a list of `Extrusion`s (`PathKind`, points, closed)
+    in print order. Walls are offsets of each island; skin is the inside not covered by every layer within
+    `TopLayers` above or `BottomLayers` below; lines are on one grid fixed to the bed so layers stack; support is
+    carried down from each overhang (one layer of air under it, `SupportGap` from the object) until it meets the
+    object or the bed. Islands go nearest first; inner walls, outer wall, skin, infill; `Order` and `Seam` place the
+    lines.
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
   - `Tool.cs` is the base class and `[Param]`. `Commands.cs` has the `ToolRegistry` and the command API.
   - `Macros.cs` runs Lua; the other files hold the tools, grouped by kind (`ModifyTools.cs`, `UVTools.cs` and so on).

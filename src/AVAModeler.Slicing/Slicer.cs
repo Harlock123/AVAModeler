@@ -36,24 +36,6 @@ public sealed record SliceLayer
     public int OpenChains { get; init; }
 }
 
-/// <summary>The settings that decide how a print is sliced (spec of each in its own summary). Lengths in mm.</summary>
-public sealed record SliceSettings
-{
-    /// <summary>The height of each layer after the first.</summary>
-    public double LayerHeight { get; init; } = 0.2;
-    /// <summary>The first layer's height: a little thicker sticks better to the bed.</summary>
-    public double FirstLayerHeight { get; init; } = 0.24;
-
-    /// <summary>The settings, or an <see cref="ArgumentException"/> saying what's wrong (some limits depend on the nozzle).</summary>
-    public SliceSettings Checked(PrinterProfile printer)
-    {
-        double most = Math.Round(printer.NozzleDiameter * 0.8, 3);
-        PrinterProfile.Range(LayerHeight, 0.04, most, "The layer height");
-        PrinterProfile.Range(FirstLayerHeight, 0.04, most, "The first layer's height");
-        return this;
-    }
-}
-
 /// <summary>The object cut into layers.</summary>
 public sealed record SlicedModel(PrintModel Model, SliceSettings Settings, IReadOnlyList<SliceLayer> Layers)
 {

@@ -853,6 +853,7 @@ Layout reuses them.
 | `AVAModeler.Core` | Double-precision math, the mesh (indexed points and n-gon polygons, with lazy edge and adjacency maps, and UV maps), layers, surfaces and their texture layers, the projections, the procedural textures and their noise, texture images (PNG and BMP read here) and Radiance HDR pictures, selection, undo (copy-on-write snapshots of the layers an edit changes), the document, the backdrops' settings, placing maths and setup files, PNG writing |
 | `AVAModeler.Formats` | LWOB/LWLO read and write, LWO2 read, VideoScape GEO, OBJ, glTF 2.0 (written by hand with System.Text.Json, colour procedurals baked into images) and STL |
 | `AVAModeler.Geometry` | Triangulation (LibTessDotNet), BSP booleans and drills, Catmull–Clark subdivision, the extrude/lathe/bevel family, the mesh check (Mesh Info and `check_mesh`) |
+| `AVAModeler.Slicing` | 3D printing: printer and material profiles, placing the object on the bed, slicing it into layers, polygon offsetting and clipping (Clipper2) |
 | `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp) and their sandbox for other apps, plugins, SkiaSharp image reading |
 | `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing (backdrops included), the view cameras, picking |
 | `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones and their inverse kinematics, path following, LWS and JSON scenes, the ray tracer and its render effects (ambient occlusion, soft and area lights, environment pictures, depth of field, motion blur, lens flares, volumetric lights, shadow maps, object dissolve, compositing), key spans, motion modifiers, the image list and .mot motion files |
@@ -1054,5 +1055,6 @@ AVA Modeler © 2026 Lonnie Watson, under the [MIT License](LICENSE).
 
 LightWave is a trademark of its current owner, LightWave Digital. AVA Modeler is an independent project inspired by
 classic LightWave Modeler; it isn't affiliated with or endorsed by its owners. It reads and writes the classic object
-and scene formats for compatibility. Lua support uses MoonSharp; polygon triangulation uses LibTessDotNet; the views
+and scene formats for compatibility. Lua support uses MoonSharp; polygon triangulation uses LibTessDotNet; the slicer's polygon offsetting and clipping
+uses Clipper2 (Angus Johnson, Boost Software License); the views
 use Avalonia, SkiaSharp and Silk.NET.

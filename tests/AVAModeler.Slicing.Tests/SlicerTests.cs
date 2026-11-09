@@ -67,6 +67,17 @@ public class SlicerTests
     }
 
     [Fact]
+    public void Shells_that_overlap_are_sliced_as_one_solid()
+    {
+        var doc = Shapes.Cube(0.02);
+        Shapes.Box(doc.Layers[0].Mesh, new Vec3(0, 0, 0), new Vec3(0.02, 0.01, 0.02));
+        doc.Layers[0].Mesh.Touch();
+        var low = Slice(doc).Layers[0];
+        // A 20 mm square and another of 20 mm overlapping a quarter of it: 400 + 400 - 100.
+        Assert.Equal(700, Assert.Single(low.Islands).Area, 6);
+    }
+
+    [Fact]
     public void A_sloped_side_shrinks_layer_by_layer()
     {
         // A square pyramid 20 mm across and 10 mm tall: each layer's square is (1 - z/10) of the base.

@@ -67,7 +67,8 @@ public sealed record SlicedModel(PrintModel Model, SliceSettings Settings, IRead
 /// or not at all; the cut point on each edge is worked out once and shared by both triangles beside it, so the
 /// segments join exactly, edge to edge, with no tolerance. Each triangle (anticlockwise from outside) gives a segment
 /// from the edge it crosses going down to the edge it crosses going up, which makes outsides anticlockwise and holes
-/// clockwise seen from above.
+/// clockwise seen from above. The loops are then merged by the non-zero rule (<see cref="Polygons2D.Islands"/>), so
+/// shells that overlap print as one solid.
 /// </summary>
 public static class Slicer
 {
@@ -91,7 +92,7 @@ public static class Slicer
             while (next < order.Length && MinZ(model, order[next]) <= cut) active.Add(order[next++]);
             active.RemoveAll(t => MaxZ(model, t) < cut);
             var (loops, open) = Cut(model, active, cut);
-            layers.Add(new SliceLayer { Index = index, Bottom = bottom, Top = layerTop, Islands = Islands(loops), OpenChains = open });
+            layers.Add(new SliceLayer { Index = index, Bottom = bottom, Top = layerTop, Islands = Polygons2D.Islands(Polygons2D.Paths(loops.Select(l => l.Points))), OpenChains = open });
             bottom = layerTop;
         }
         return new SlicedModel(model, settings, layers);
@@ -175,19 +176,6 @@ public static class Slicer
             if (clean.Count >= 3 && Math.Abs(Geometry2D.SignedArea(clean)) > 1e-6) loops.Add(new Loop(clean));
         }
         return (loops, open);
-    }
-
-    /// <summary>Outsides (anticlockwise) with the holes (clockwise) that fall inside them, each hole in the smallest outside round it.</summary>
-    internal static List<Island> Islands(List<Loop> loops)
-    {
-        var outsides = loops.Where(l => !l.IsHole).OrderBy(l => l.Area).ToList();
-        var holes = outsides.ToDictionary(o => o, _ => new List<Loop>());
-        foreach (var hole in loops.Where(l => l.IsHole))
-        {
-            var owner = outsides.FirstOrDefault(o => Geometry2D.Contains(o.Points, hole.Points[0]));
-            if (owner != null) holes[owner].Add(hole);
-        }
-        return outsides.OrderByDescending(o => o.Area).Select(o => new Island(o, holes[o])).ToList();
     }
 }
 

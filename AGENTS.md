@@ -83,6 +83,10 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     point is worked out once and shared, so segments join edge to edge with no tolerance (outsides anticlockwise, holes
     clockwise). Chains that don't close (holes in the mesh) are counted in `OpenChains` and left out. `Geometry2D` has
     the plain 2D sums (area, containment, `Clean`).
+  - `Polygons2D.cs`: the region work on Clipper2 (non-zero fill, 4 decimal places): `Union`, `Difference`,
+    `Intersect`, `Offset` (sharp or round corners), `ClipLines` (open lines inside a region) and `Islands` (a region
+    as outsides with their holes, through a PolyTree, specks dropped). The slicer's loops become islands through it,
+    so overlapping shells merge. Don't hand-roll offsets or clipping elsewhere.
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
   - `Tool.cs` is the base class and `[Param]`. `Commands.cs` has the `ToolRegistry` and the command API.
   - `Macros.cs` runs Lua; the other files hold the tools, grouped by kind (`ModifyTools.cs`, `UVTools.cs` and so on).

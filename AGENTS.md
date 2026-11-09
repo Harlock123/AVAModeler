@@ -95,6 +95,12 @@ python3 samples/images/make_blueprints.py         # redraws the rocket blueprint
     carried down from each overhang (one layer of air under it, `SupportGap` from the object) until it meets the
     object or the bed. Islands go nearest first; inner walls, outer wall, skin, infill; `Order` and `Seam` place the
     lines.
+  - `GCode.cs`: `GCode.Write` turns a plan into Marlin-style G-code (G21, G90, M83 relative extrusion; heating and
+    homing first, the start and end G-code with placeholders filled, `;LAYER:n` and `;TYPE:` comments, retraction
+    before long travel and layer changes, Z hop, the fan from its layer) and `PrintStats` (time from lengths and
+    speeds, filament, grams). `FilamentPerMm` is the one extrusion rule. `Save` writes through a temporary file.
+    `PrintJob.Run(doc, setup)` runs every stage and gives the `Warnings` (doesn't fit, not printable, open outlines):
+    the UI and the MCP tool go through it.
 - `src/AVAModeler.Tools/`: the tools and the scripting around them.
   - `Tool.cs` is the base class and `[Param]`. `Commands.cs` has the `ToolRegistry` and the command API.
   - `Macros.cs` runs Lua; the other files hold the tools, grouped by kind (`ModifyTools.cs`, `UVTools.cs` and so on).

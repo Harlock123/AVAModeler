@@ -18,7 +18,9 @@ public class SlicerTests
         Assert.Equal(0.24, sliced.Layers[0].Top, 9);
         Assert.Equal(0.12, sliced.Layers[0].CutAt, 9);
         Assert.Equal(0.44, sliced.Layers[1].Top, 9);
-        Assert.True(sliced.Layers[^1].Top >= 20 - 1e-9);
+        // The last layer is thinner, ending at the top of the cube.
+        Assert.Equal(20, sliced.Layers[^1].Top, 9);
+        Assert.Equal(0.16, sliced.Layers[^1].Height, 9);
         Assert.Equal(0, sliced.OpenChains);
         foreach (var layer in sliced.Layers)
         {

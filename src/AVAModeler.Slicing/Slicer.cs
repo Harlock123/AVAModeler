@@ -69,7 +69,9 @@ public static class Slicer
         for (int index = 0; bottom < top - 1e-9; index++)
         {
             double height = index == 0 ? settings.FirstLayerHeight : settings.LayerHeight;
-            double layerTop = bottom + height;
+            // The last layer ends at the top of the object, thinner if need be; less than half a layer left isn't printed.
+            if (index > 0 && top - bottom < settings.LayerHeight / 2) break;
+            double layerTop = Math.Min(bottom + height, top);
             double cut = Math.Min((bottom + layerTop) / 2, top - 1e-6);
             while (next < order.Length && MinZ(model, order[next]) <= cut) active.Add(order[next++]);
             active.RemoveAll(t => MaxZ(model, t) < cut);

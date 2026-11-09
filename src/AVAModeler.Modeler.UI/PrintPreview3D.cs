@@ -57,10 +57,29 @@ public sealed class PrintPreview3D : Control
     {
         var lines = new List<OverlayLine>();
         const uint grid = 0xFF4A4A52, edge = 0xFF8C8C96;
-        for (double x = 10; x < printer.BedWidth; x += 10) lines.Add(new(ToScene(x, 0, 0), ToScene(x, printer.BedDepth, 0), grid));
-        for (double y = 10; y < printer.BedDepth; y += 10) lines.Add(new(ToScene(0, y, 0), ToScene(printer.BedWidth, y, 0), grid));
-        Vec3[] corners = [ToScene(0, 0, 0), ToScene(printer.BedWidth, 0, 0), ToScene(printer.BedWidth, printer.BedDepth, 0), ToScene(0, printer.BedDepth, 0)];
-        for (int i = 0; i < 4; i++) lines.Add(new(corners[i], corners[(i + 1) % 4], edge));
+        if (printer.RoundBed)
+        {
+            // A delta's round bed: its rim, and the grid inside it.
+            double r = printer.BedWidth / 2;
+            for (int i = 0; i < 96; i++)
+            {
+                double a0 = 2 * Math.PI * i / 96, a1 = 2 * Math.PI * (i + 1) / 96;
+                lines.Add(new(ToScene(r + r * Math.Cos(a0), r + r * Math.Sin(a0), 0), ToScene(r + r * Math.Cos(a1), r + r * Math.Sin(a1), 0), edge));
+            }
+            for (double x = 10; x < printer.BedWidth; x += 10)
+            {
+                double half = Math.Sqrt(Math.Max(0, r * r - (x - r) * (x - r)));
+                lines.Add(new(ToScene(x, r - half, 0), ToScene(x, r + half, 0), grid));
+                lines.Add(new(ToScene(r - half, x, 0), ToScene(r + half, x, 0), grid));
+            }
+        }
+        else
+        {
+            for (double x = 10; x < printer.BedWidth; x += 10) lines.Add(new(ToScene(x, 0, 0), ToScene(x, printer.BedDepth, 0), grid));
+            for (double y = 10; y < printer.BedDepth; y += 10) lines.Add(new(ToScene(0, y, 0), ToScene(printer.BedWidth, y, 0), grid));
+            Vec3[] corners = [ToScene(0, 0, 0), ToScene(printer.BedWidth, 0, 0), ToScene(printer.BedWidth, printer.BedDepth, 0), ToScene(0, printer.BedDepth, 0)];
+            for (int i = 0; i < 4; i++) lines.Add(new(corners[i], corners[(i + 1) % 4], edge));
+        }
         if (job == null || job.Plan.Layers.Count == 0) return lines;
         int top = Math.Clamp(upTo, 0, job.Plan.Layers.Count - 1);
         for (int i = 0; i <= top; i++)

@@ -33,12 +33,17 @@ internal sealed class Playback
             double? Arg(char k) => words.Skip(1).Where(w => w[0] == k).Select(w => (double?)double.Parse(w[1..], CultureInfo.InvariantCulture)).FirstOrDefault();
             switch (words[0])
             {
-                case "G21": case "M107": case "M84": case "G92": break;
+                case "G21": case "M107": case "M84": case "G92": case "M18": case "M132": case "G80": case "G29": break;
+                // Sailfish homes X and Y to their maximum (G162) and Z to its minimum (G161).
+                case "G161": case "G162": p.Homed = true; break;
                 case "G90": p.Absolute = true; break;
                 case "G91": p.Absolute = false; break;
                 case "M83": p.RelativeE = true; break;
                 case "M82": p.RelativeE = false; break;
                 case "G28": p.Homed = true; p.X = p.Y = 0; p.Z = 0; break;
+                case "M104" when line.Contains(" T"): case "M140" when line.Contains(" T"):
+                    if (words[0] == "M104") p.Nozzle = (int)Arg('S')!.Value; else p.Bed = (int)Arg('S')!.Value;
+                    break;
                 case "M104": case "M109": p.Nozzle = (int)Arg('S')!.Value; p.Order.Add(words[0]); break;
                 case "M140": case "M190": p.Bed = (int)Arg('S')!.Value; p.Order.Add(words[0]); break;
                 case "M106": p.Fan = (int)Arg('S')!.Value; break;

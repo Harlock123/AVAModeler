@@ -802,7 +802,7 @@ public sealed partial class ModelerTools(IModelerHost host)
     [Description("Slices the object for 3D printing and saves the G-code, changing nothing in the object: the foreground layers' faces are put on the printer's bed (Y up becomes Z up; 1 m of the object is 1000 mm printed, times scale_percent), cut into layers, and printed as walls, solid top and bottom layers, sparse infill, an optional brim and supports, then written as Marlin-style G-code (G21, G90, M83 relative extrusion; heats and homes first; ;LAYER and ;TYPE comments for previewers). Returns the file, the print's size in mm, layers, an estimated time (moves only: a real print takes somewhat longer), filament in metres and grams, and warnings (it doesn't fit the bed, the mesh isn't printable, outlines left open by holes in the mesh). Run check_mesh first and fix what it finds: an open or inside-out mesh slices badly. Printers and materials are presets by name (the list is in the error if a name is wrong).")]
     public async Task<string> SliceToGCode(
         [Description("The G-code file, relative to the working folder, e.g. \"part.gcode\" (.gcode, .gco or .g).")] string path,
-        [Description("The printer preset by name (default \"Generic 220 × 220\": a 220 × 220 mm bed, 250 mm tall, 0.4 mm nozzle, 1.75 mm filament).")] string? printer = null,
+        [Description("The printer preset by name, any case: a generic size (default \"Generic 220 × 220\": a 220 × 220 mm bed, 250 mm tall, 0.4 mm nozzle, 1.75 mm filament) or a printer on the market with its bed, height, filament, retraction, origin and start G-code, such as \"Prusa MK4S\", \"Prusa MINI+\", \"Creality Ender 3 / 3 Pro / 3 V2\", \"Bambu Lab P1S / P1P\", \"Voron 2.4 (300)\", \"Flashforge Creator Pro\" or \"Ultimaker S5\" (a wrong name lists them all). Its notes, such as converting for Sailfish firmware, come back as a warning.")] string? printer = null,
         [Description("The material preset: PLA (default), PETG, ABS or TPU.")] string? material = null,
         [Description("Layer height in mm, 0.04 to 0.8 × the nozzle (default 0.2).")] double layer_height = 0.2,
         [Description("Sparse infill, 0 to 100% (default 20).")] double infill_percent = 20,
@@ -891,7 +891,7 @@ public sealed partial class ModelerTools(IModelerHost host)
                 ["filament_m"] = Math.Round(st.FilamentMm / 1000, 3),
                 ["grams"] = Math.Round(st.Grams, 1),
                 ["printable"] = result.Model.Printable,
-                ["warnings"] = new JsonArray([.. result.Warnings.Select(w => (JsonNode)w)]),
+                ["warnings"] = new JsonArray([.. result.Warnings.Concat(setup.Printer.Notes.Length > 0 ? [setup.Printer.Notes] : []).Select(w => (JsonNode)w)]),
             }.ToJsonString();
         }
         catch (Exception e) when (e is not McpException and not OperationCanceledException)

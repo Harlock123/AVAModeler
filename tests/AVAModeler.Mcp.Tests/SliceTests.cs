@@ -31,6 +31,10 @@ public class SliceTests
         Assert.Contains("Select a polygon", await Error(b.Tools.SliceToGCode("x.gcode", scale_percent: 2, lay_flat: "selected_face", cancel: Cancel)));
         await b.Tools.SliceToGCode("prints/held.gcode", scale_percent: 2, supports: true, supports_bed_only: true, cancel: Cancel);
         Assert.Contains(", supports", File.ReadAllText(b.Folder.File(Path.Combine("prints", "held.gcode"))));
+        // A printer on the market by name, its notes coming back.
+        var fcp = await Parse(b.Tools.SliceToGCode("prints/fcp.gcode", printer: "flashforge creator pro", scale_percent: 2, cancel: Cancel));
+        Assert.Equal("Flashforge Creator Pro", (string?)fcp["printer"]);
+        Assert.Contains(((JsonArray)fcp["warnings"]!).Select(w => (string)w!), w => w.Contains("GPX"));
         // Slicing is no undo step.
         Assert.Equal(steps, b.Doc.Undo.Count);
     }

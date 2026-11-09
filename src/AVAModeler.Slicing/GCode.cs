@@ -80,6 +80,10 @@ public static class GCode
         ["nozzle_diameter"] = printer.NozzleDiameter,
         ["filament_diameter"] = printer.FilamentDiameter,
         ["layer_height"] = settings.LayerHeight,
+        ["bed_width_half"] = printer.BedWidth / 2,
+        ["bed_depth_half"] = printer.BedDepth / 2,
+        ["bed_width_third"] = Math.Round(printer.BedWidth / 3, 1),
+        ["prime_end"] = Math.Min(200, printer.BedDepth - 20),
     };
 
     /// <summary>The G-code for a plan, and what the print will take.</summary>
@@ -96,13 +100,17 @@ public static class GCode
         double z = 0;
         bool retracted = false;
         int fan = (int)Math.Round(255 * material.FanPercent / 100.0);
+        // The firmware's origin: the bed's front-left corner, or its middle (deltas, Sailfish machines).
+        double ox = printer.OriginAtCentre ? printer.BedWidth / 2 : 0, oy = printer.OriginAtCentre ? printer.BedDepth / 2 : 0;
+        // The printer's own retraction (a Bowden tube needs more) over the material's.
+        double retractLength = printer.RetractLength ?? material.RetractLength;
         int fanNow = 0;
 
         void Retract()
         {
-            if (retracted || material.RetractLength <= 0) return;
-            w.Line($"G1 E{F(-material.RetractLength, 5)} F{F(material.RetractSpeed * 60, 0)}");
-            seconds += material.RetractLength / material.RetractSpeed;
+            if (retracted || retractLength <= 0) return;
+            w.Line($"G1 E{F(-retractLength, 5)} F{F(material.RetractSpeed * 60, 0)}");
+            seconds += retractLength / material.RetractSpeed;
             retractions++;
             retracted = true;
         }
@@ -116,7 +124,7 @@ public static class GCode
             {
                 foreach (var q in route)
                 {
-                    w.Line($"G0 X{F(q.X, 3)} Y{F(q.Y, 3)} F{F(s.TravelSpeed * 60, 0)}");
+                    w.Line($"G0 X{F(q.X - ox, 3)} Y{F(q.Y - oy, 3)} F{F(s.TravelSpeed * 60, 0)}");
                     seconds += (q - pos).Length / s.TravelSpeed;
                     pos = q;
                 }
@@ -133,7 +141,7 @@ public static class GCode
                 hop = retracted && s.ZHop > 0;
             }
             if (hop) w.Line($"G1 Z{F(z + s.ZHop, 3)} F600");
-            w.Line($"G0 X{F(to.X, 3)} Y{F(to.Y, 3)} F{F(s.TravelSpeed * 60, 0)}");
+            w.Line($"G0 X{F(to.X - ox, 3)} Y{F(to.Y - oy, 3)} F{F(s.TravelSpeed * 60, 0)}");
             if (double.IsFinite(d)) seconds += d / s.TravelSpeed;
             travels++;
             if (hop) w.Line($"G1 Z{F(z, 3)} F600");
@@ -143,8 +151,8 @@ public static class GCode
         void Unretract()
         {
             if (!retracted) return;
-            w.Line($"G1 E{F(material.RetractLength, 5)} F{F(material.RetractSpeed * 60, 0)}");
-            seconds += material.RetractLength / material.RetractSpeed;
+            w.Line($"G1 E{F(retractLength, 5)} F{F(material.RetractSpeed * 60, 0)}");
+            seconds += retractLength / material.RetractSpeed;
             retracted = false;
         }
 
@@ -203,7 +211,7 @@ public static class GCode
                     double d = (p - pos).Length;
                     if (d < 1e-4) continue;
                     double e = d * perMm;
-                    w.Line($"G1 X{F(p.X, 3)} Y{F(p.Y, 3)} E{F(e, 5)}{feed}");
+                    w.Line($"G1 X{F(p.X - ox, 3)} Y{F(p.Y - oy, 3)} E{F(e, 5)}{feed}");
                     feed = "";
                     filament += e;
                     seconds += d / speed;
@@ -239,11 +247,11 @@ public static class GCode
         h.Line($";LAYER_COUNT:{plan.Layers.Count}");
         if (!bounds.IsEmpty)
         {
-            h.Line($";MINX:{F(bounds.Min.X, 3)}");
-            h.Line($";MINY:{F(bounds.Min.Y, 3)}");
+            h.Line($";MINX:{F(bounds.Min.X - ox, 3)}");
+            h.Line($";MINY:{F(bounds.Min.Y - oy, 3)}");
             h.Line($";MINZ:{F(bounds.Min.Z, 3)}");
-            h.Line($";MAXX:{F(bounds.Max.X, 3)}");
-            h.Line($";MAXY:{F(bounds.Max.Y, 3)}");
+            h.Line($";MAXX:{F(bounds.Max.X - ox, 3)}");
+            h.Line($";MAXY:{F(bounds.Max.Y - oy, 3)}");
             h.Line($";MAXZ:{F(bounds.Max.Z, 3)}");
         }
         h.Line($";Generated with AVA Modeler for {Comment(printer.Name)} and {Comment(material.Name)}");

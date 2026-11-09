@@ -74,6 +74,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
 - `src/AVAModeler.Slicing/`: 3D printing, from the object to G-code (Clipper2 for the 2D polygon work). No UI.
   - `Profiles.cs`: `PrinterProfile` (bed, height, nozzle, filament, flavour, start and end G-code with `Placeholders`)
     and `MaterialProfile` (temperatures, retraction, fan, density), immutable with `Checked()`, and the `Presets`.
+    A printer may have its own `RetractLength` (over the material's), `OriginAtCentre` (the writer shifts every move
+    by half the bed), `RoundBed` (Placement checks the circle; the previews draw it) and `Notes`. `PrinterPresets.cs`
+    is the printers on the market, built by firmware (`Marlin`, `Prusa`, `Klipper`, `Bambu`, `Delta`, Sailfish for
+    the Creator Pro) from start and end templates; `PresetTests` slices a cube on every one of them, so a new preset is
+    checked by adding it there.
     `PrintSetup.cs` is what the preferences keep (the chosen profiles, the person's own, the placement) as JSON.
   - `Placement.cs`: `Placement.Place` turns the foreground layers into a `PrintModel`, triangles in the printer's space
     (through `Stl.Triangles` and `Stl.ToStl`, so millimetres and Z up as STL export has them) welded into shared

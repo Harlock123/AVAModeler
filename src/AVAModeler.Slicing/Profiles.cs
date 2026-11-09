@@ -8,8 +8,10 @@ public enum GCodeFlavor { Marlin }
 
 /// <summary>
 /// A printer: its build volume, nozzle and filament, and the G-code it starts and ends a print with. Sizes are in
-/// millimetres, as printers and slicers use them. The bed's origin (0, 0) is its front-left corner, X to the right and
-/// Y to the back, Z up from the bed. Immutable: change one with <c>with</c>, then <see cref="Checked"/> it.
+/// millimetres, as printers and slicers use them. The slicer works with the bed's front-left corner at (0, 0), X to the
+/// right and Y to the back, Z up from the bed; a printer whose firmware puts (0, 0) at the middle of the bed
+/// (<see cref="OriginAtCentre"/>: deltas, MakerBot-style machines) gets its moves shifted to that as they're written.
+/// Immutable: change one with <c>with</c>, then <see cref="Checked"/> it.
 /// </summary>
 public sealed record PrinterProfile
 {
@@ -20,6 +22,17 @@ public sealed record PrinterProfile
     public double NozzleDiameter { get; init; } = 0.4;
     public double FilamentDiameter { get; init; } = 1.75;
     public GCodeFlavor Flavor { get; init; } = GCodeFlavor.Marlin;
+    /// <summary>The firmware's (0, 0) is the middle of the bed, not its front-left corner.</summary>
+    public bool OriginAtCentre { get; init; }
+    /// <summary>A round bed (a delta's), <see cref="BedWidth"/> across; the object must fit inside the circle.</summary>
+    public bool RoundBed { get; init; }
+    /// <summary>
+    /// How far this printer's extruder pulls the filament back (mm), in place of the material's: a Bowden tube needs
+    /// several millimetres where a direct drive needs under one. Null keeps the material's.
+    /// </summary>
+    public double? RetractLength { get; init; }
+    /// <summary>What to know before printing from this profile (its firmware's quirks), shown under the printer's name.</summary>
+    public string Notes { get; init; } = "";
 
     /// <summary>
     /// The G-code before the print, after the temperatures are set. Placeholders in braces are filled in (see
@@ -56,6 +69,8 @@ public sealed record PrinterProfile
         Range(MaxHeight, 10, 2000, "The build height");
         Range(NozzleDiameter, 0.1, 2, "The nozzle diameter");
         Range(FilamentDiameter, 1, 3.5, "The filament diameter");
+        if (RetractLength is { } r) Range(r, 0, 15, "The printer's retraction");
+        if (RoundBed && Math.Abs(BedWidth - BedDepth) > 1e-9) throw new ArgumentException("A round bed is as deep as it's wide: give its diameter as both.");
         Placeholders.Check(StartGCode, "The start G-code");
         Placeholders.Check(EndGCode, "The end G-code");
         return this;
@@ -113,12 +128,14 @@ public sealed record MaterialProfile
 /// <summary>The printers and materials the app starts with; the person's own are kept in the preferences.</summary>
 public static class Presets
 {
+    /// <summary>The generic sizes, then the printers on the market (<see cref="PrinterPresets"/>), maker by maker.</summary>
     public static readonly IReadOnlyList<PrinterProfile> Printers =
     [
         new PrinterProfile(),
         new PrinterProfile { Name = "Generic 250 × 210", BedWidth = 250, BedDepth = 210, MaxHeight = 210 },
         new PrinterProfile { Name = "Generic 300 × 300", BedWidth = 300, BedDepth = 300, MaxHeight = 400 },
         new PrinterProfile { Name = "Generic 180 × 180", BedWidth = 180, BedDepth = 180, MaxHeight = 180 },
+        .. PrinterPresets.All,
     ];
 
     public static readonly IReadOnlyList<MaterialProfile> Materials =
@@ -134,7 +151,8 @@ public static class Presets
 public static class Placeholders
 {
     public static readonly IReadOnlyList<string> Names =
-        ["nozzle_temp", "first_layer_nozzle_temp", "bed_temp", "bed_width", "bed_depth", "max_height", "nozzle_diameter", "filament_diameter", "layer_height"];
+        ["nozzle_temp", "first_layer_nozzle_temp", "bed_temp", "bed_width", "bed_depth", "max_height", "nozzle_diameter", "filament_diameter", "layer_height",
+         "bed_width_half", "bed_depth_half", "bed_width_third", "prime_end"];
 
     private static readonly Regex Brace = new(@"\{([A-Za-z_]+)\}", RegexOptions.CultureInvariant);
 

@@ -21,7 +21,7 @@ public sealed class PrintWindow : Window
 {
     private readonly ModelerSession _session;
     private PrintSetup _setup;
-    private readonly ComboBox _printers = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _printers = new() { HorizontalAlignment = HorizontalAlignment.Stretch, MaxDropDownHeight = 480 };
     private readonly ComboBox _materials = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Dictionary<string, TextBox> _fields = [];
     private readonly ComboBox _pattern = Choice(Enum.GetNames<InfillPattern>());
@@ -30,6 +30,11 @@ public sealed class PrintWindow : Window
     private readonly ComboBox _layFlat = Choice(["As modelled", "Largest face down", "Selected face down"]);
     private readonly ComboBox _supportOn = Choice(["On the bed or the object", "On the bed only"]);
     private readonly CheckBox _supports = new() { Content = "Supports under overhangs", Foreground = Look.Text };
+    private readonly CheckBox _originCentre = new() { Content = "Origin at the bed's middle", Foreground = Look.Text };
+    private readonly CheckBox _roundBed = new() { Content = "Round bed (a delta: width is its diameter)", Foreground = Look.Text };
+    /// <summary>The chosen printer's notes (its firmware's quirks), under its name.</summary>
+    public TextBlock PrinterNotes { get; } = new() { Foreground = Brushes.Khaki, FontSize = 11, TextWrapping = TextWrapping.Wrap };
+    private string _notes = "";
     private readonly CheckBox _gapFill = new() { Content = "Fill gaps between walls", Foreground = Look.Text };
     private readonly CheckBox _bridging = new() { Content = "Bridge spans over air", Foreground = Look.Text };
     private readonly CheckBox _combing = new() { Content = "Keep travel inside the object", Foreground = Look.Text };
@@ -126,7 +131,8 @@ public sealed class PrintWindow : Window
 
         var printer = Section("Printer", _printers,
             Field("printer.name", "Name"), Field("printer.width", "Bed width (mm)"), Field("printer.depth", "Bed depth (mm)"), Field("printer.height", "Build height (mm)"),
-            Field("printer.nozzle", "Nozzle (mm)"), Field("printer.filament", "Filament (mm)"),
+            PrinterNotes, Field("printer.nozzle", "Nozzle (mm)"), Field("printer.filament", "Filament (mm)"),
+            Field("printer.retract", "Retraction (mm, blank: the material's)"), _originCentre, _roundBed,
             Label("Start G-code ({bed_temp}, {nozzle_temp}… filled in)"), _start, Label("End G-code"), _end, savePrinter);
         var material = Section("Material", _materials,
             Field("material.name", "Name"), Field("material.nozzle", "Nozzle (°C)"), Field("material.first", "First layer nozzle (°C)"), Field("material.bed", "Bed (°C)"),
@@ -363,6 +369,12 @@ public sealed class PrintWindow : Window
         _fields["printer.name"].Text = p.Name;
         Set("printer.width", p.BedWidth); Set("printer.depth", p.BedDepth); Set("printer.height", p.MaxHeight);
         Set("printer.nozzle", p.NozzleDiameter); Set("printer.filament", p.FilamentDiameter);
+        _fields["printer.retract"].Text = p.RetractLength is { } r ? r.ToString("0.###", CultureInfo.InvariantCulture) : "";
+        _originCentre.IsChecked = p.OriginAtCentre;
+        _roundBed.IsChecked = p.RoundBed;
+        _notes = p.Notes;
+        PrinterNotes.Text = p.Notes;
+        PrinterNotes.IsVisible = p.Notes.Length > 0;
         _start.Text = p.StartGCode;
         _end.Text = p.EndGCode;
     }
@@ -411,6 +423,8 @@ public sealed class PrintWindow : Window
         Name = (_fields["printer.name"].Text ?? "").Trim(), BedWidth = Num("printer.width", "The bed width"), BedDepth = Num("printer.depth", "The bed depth"),
         MaxHeight = Num("printer.height", "The build height"), NozzleDiameter = Num("printer.nozzle", "The nozzle"), FilamentDiameter = Num("printer.filament", "The filament"),
         StartGCode = _start.Text ?? "", EndGCode = _end.Text ?? "",
+        RetractLength = string.IsNullOrWhiteSpace(_fields["printer.retract"].Text) ? null : Num("printer.retract", "The printer's retraction"),
+        OriginAtCentre = _originCentre.IsChecked == true, RoundBed = _roundBed.IsChecked == true, Notes = _notes,
     }.Checked();
 
     private MaterialProfile ReadMaterial() => new MaterialProfile
@@ -612,11 +626,28 @@ public sealed class LayerPreview : Control
         var printer = _job?.Setup.Printer ?? new PrinterProfile();
         var (scale, ox, oy) = Fit(printer);
         var bed = new Rect(ox, oy, printer.BedWidth * scale, printer.BedDepth * scale);
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(58, 58, 64)), bed);
+        var bedFill = new SolidColorBrush(Color.FromRgb(58, 58, 64));
+        var edge = new Pen(new SolidColorBrush(Color.FromRgb(120, 120, 130)), 1);
         var grid = new Pen(new SolidColorBrush(Color.FromRgb(74, 74, 82)), 1);
-        for (double x = 10; x < printer.BedWidth; x += 10) context.DrawLine(grid, ToScreen(new Vec2(x, 0), printer), ToScreen(new Vec2(x, printer.BedDepth), printer));
-        for (double y = 10; y < printer.BedDepth; y += 10) context.DrawLine(grid, ToScreen(new Vec2(0, y), printer), ToScreen(new Vec2(printer.BedWidth, y), printer));
-        context.DrawRectangle(new Pen(new SolidColorBrush(Color.FromRgb(120, 120, 130)), 1), bed);
+        if (printer.RoundBed)
+        {
+            // A delta's round bed, its grid inside the circle.
+            context.DrawEllipse(bedFill, edge, bed.Center, bed.Width / 2, bed.Height / 2);
+            double r = printer.BedWidth / 2;
+            for (double x = 10; x < printer.BedWidth; x += 10)
+            {
+                double half = Math.Sqrt(Math.Max(0, r * r - (x - r) * (x - r)));
+                context.DrawLine(grid, ToScreen(new Vec2(x, r - half), printer), ToScreen(new Vec2(x, r + half), printer));
+                context.DrawLine(grid, ToScreen(new Vec2(r - half, x), printer), ToScreen(new Vec2(r + half, x), printer));
+            }
+        }
+        else
+        {
+            context.FillRectangle(bedFill, bed);
+            for (double x = 10; x < printer.BedWidth; x += 10) context.DrawLine(grid, ToScreen(new Vec2(x, 0), printer), ToScreen(new Vec2(x, printer.BedDepth), printer));
+            for (double y = 10; y < printer.BedDepth; y += 10) context.DrawLine(grid, ToScreen(new Vec2(0, y), printer), ToScreen(new Vec2(printer.BedWidth, y), printer));
+            context.DrawRectangle(edge, bed);
+        }
         if (_job is not { } job || job.Plan.Layers.Count == 0) return;
         int i = Math.Clamp(_layer, 0, job.Plan.Layers.Count - 1);
         double width = Math.Max(1, job.Setup.Settings.LineWidth * scale);

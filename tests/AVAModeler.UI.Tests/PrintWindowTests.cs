@@ -158,6 +158,36 @@ public sealed class PrintWindowTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void Choosing_a_printer_on_the_market_fills_in_its_bed_and_says_what_to_know()
+    {
+        var (w, p) = Open();
+        var names = p.Printers.ItemsSource!.Cast<string>().ToList();
+        Assert.True(names.Count > 40);
+        p.Printers.SelectedIndex = names.IndexOf("Flashforge Creator Pro");
+        Assert.Equal("227", p.FieldBox("printer.width").Text);
+        Assert.Equal("148", p.FieldBox("printer.depth").Text);
+        Assert.True(p.PrinterNotes.IsVisible);
+        Assert.Contains("GPX", p.PrinterNotes.Text);
+        Assert.True(Wait(p.Slice()));
+        Assert.Equal("Flashforge Creator Pro", w.Session.Preferences.Print.Printer.Name);
+        Assert.True(w.Session.Preferences.Print.Printer.OriginAtCentre);
+        Assert.Contains("G162 X Y", p.Job!.GCode);
+        // A delta: round, and its round bed drawn.
+        p.Printers.SelectedIndex = names.IndexOf("FLSUN Q5");
+        Assert.Equal("200", p.FieldBox("printer.width").Text);
+        Assert.True(Wait(p.Slice()));
+        Assert.True(p.Job!.Setup.Printer.RoundBed);
+        Assert.NotNull(p.CaptureRenderedFrame());
+        p.Show3D = true;
+        Assert.NotNull(p.CaptureRenderedFrame());
+        // A generic one has no notes; a blank retraction keeps the material's.
+        p.Printers.SelectedIndex = 0;
+        Assert.False(p.PrinterNotes.IsVisible);
+        Assert.Equal("", p.FieldBox("printer.retract").Text);
+        p.Close();
+    }
+
+    [AvaloniaFact]
     public void Bad_settings_say_what_is_wrong_and_slice_nothing()
     {
         var (_, p) = Open();

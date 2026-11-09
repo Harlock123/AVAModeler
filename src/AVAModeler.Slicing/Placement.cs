@@ -161,7 +161,14 @@ public static class Placement
 
         string Mm(double v) => PrinterProfile.Num(Math.Round(v, 2));
         var size = bounds.Size;
-        if (size.X > printer.BedWidth || size.Y > printer.BedDepth)
+        if (printer.RoundBed)
+        {
+            double r = printer.BedWidth / 2, far = 0;
+            foreach (var p in points) far = Math.Max(far, Math.Sqrt((p.X - r) * (p.X - r) + (p.Y - r) * (p.Y - r)));
+            if (far > r + 1e-9)
+                problems.Add($"It reaches {Mm(far)} mm from the middle of the round bed, past its {Mm(r)} mm edge: scale it down, or print fewer copies.");
+        }
+        else if (size.X > printer.BedWidth || size.Y > printer.BedDepth)
             problems.Add(options.Copies > 1
                 ? $"The {options.Copies} copies take {Mm(size.X)} × {Mm(size.Y)} mm, more than the {Mm(printer.BedWidth)} × {Mm(printer.BedDepth)} mm bed: print fewer, or scale them down."
                 : $"It's {Mm(size.X)} × {Mm(size.Y)} mm across, bigger than the {Mm(printer.BedWidth)} × {Mm(printer.BedDepth)} mm bed: scale it down, or turn it.");

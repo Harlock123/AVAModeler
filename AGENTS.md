@@ -62,7 +62,10 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
 - `src/AVAModeler.Geometry/`: triangulation (LibTessDotNet), BSP booleans and drills, subdivision, and the
   extrude, lathe and bevel family.
   - `Curves.cs`: curves as chains of 2-point lines (`Chains`), smoothing them (`Smooth`, centripetal Catmull–Rom),
-    and `SplinePatch` (a Coons patch across a closed loop in 3 or 4 sides; `SharpestCorners` finds the corners).
+    making them (`AddCurve`, the controls kept as points), even pieces (`Even`), `SplinePatch` (a Coons patch across a
+    closed loop in 3 or 4 sides; `SharpestCorners` finds the corners) and `Loft` (a skin across curves, ordered by
+    where they stack, each turned and started to line up with the one before). The tools are `CurveTools.cs` in
+    AVAModeler.Tools (Pen, Make Curve, Smooth Curve, Loft).
   - `MeshCheck.cs` is the mesh check (Mesh Info, `check_mesh`, Lua's `checkmesh()`): `MeshCheck.Document` gives a
     `MeshReport` of `LayerCheck`s (counts, bounds, area, shells, holes, boundary, non-manifold and inconsistent edges,
     the faces Align would turn, cavities, degenerate and non-planar polygons, duplicate and unused points, volume and
@@ -204,8 +207,21 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     when set). `Scene.Evaluate` adds their geometry to the object's frame (`Scene.Grown`, cached by frame, scene
     version and settings), each on a surface of its own after the object's (`ObjectFrame.Surfaces`), so the views,
     the ray tracer, exports and agents see them with nothing of their own. `ParticleSystem.At` works every particle
-    out from its birth in closed form (a hash, no stepping), in world space at its birth time; `HairGrowth.Grow` grows
-    tapering three-sided strands on the deformed mesh. Agents' `set_particles` and `set_hair` are in `ParticleTools.cs`.
+    out from its birth in closed form (a hash, no stepping), in world space at its birth time, unless it collides
+    (`ParticleSettings.Collide`, or a floor it bounces or dies on): then `Stepped` moves it on a grid of
+    `ParticleSystem.StepOf` seconds shared by every particle, against `IParticleColliders` (`Colliders.cs`: the other
+    objects' meshes at the frame, in BVHs, placed by their world matrix at each grid time, cached, safe across threads).
+    `ParticleLooks.cs` makes the looks: `AddBlobs` (metaballs by marching tetrahedra, welded), `AddInstances` (copies of
+    `InstanceOf`, its surfaces after the particles'), and `Soft`, the `SoftParticle`s for puffs and sprites, which
+    `Scene.Grow` puts on `ObjectFrame.Soft` with diamonds on `ObjectFrame.ViewOnlySurface` for the views; the ray tracer
+    leaves that surface out and composites the soft ones along camera rays (`Rendering/RayTracer.Soft.cs`: Gaussian puffs
+    in closed form, lit once at their centres, a `SphereTree`). `HairGrowth.Grow` grows tapering three-sided strands on
+    the deformed mesh, combed by `Comb`; `HairSwing.Lag` is hair dynamics, one damped spring run on the object's whole
+    world transform (linear, so per strand it's that lag applied to the root). `SoftBody.cs`: `ObjectItem.SoftBody`
+    (`SoftBodySettings`), position-based dynamics in world space from the start frame (`SoftBodies.At`, before hair and
+    particles in `Scene.Evaluate`), its state per kept frame in `ObjectItem.SoftCache` keyed by the settings, the scene's
+    version and the mesh, so any edit starts it again. Agents' `set_particles`, `set_hair` and `set_soft_body` are in
+    `ParticleTools.cs`.
   - `Lws/LwText.cs` is the line and envelope parser `LwsReader` and `Lws/MotionFile.cs` (.mot read, write and apply)
     share.
   - `Rendering/EnvironmentMap.cs`: an environment picture by direction (lat-long, turned by its heading), its 64 × 32

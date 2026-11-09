@@ -13,6 +13,32 @@ public enum EmitFrom
     Origin,
 }
 
+/// <summary>How particles look.</summary>
+public enum ParticleLook
+{
+    /// <summary>Small solid diamonds.</summary>
+    Gem,
+    /// <summary>Soft blobs that melt into each other where they meet (liquid, lava, goo): one smooth surface round them all.</summary>
+    Blob,
+    /// <summary>Soft puffs seen through (smoke, steam, cloud), lit by the scene's lights; the ray tracer draws them, the views show diamonds.</summary>
+    Puff,
+    /// <summary>Flat glowing spots that add light (sparks, fireflies, magic); the ray tracer draws them, the views show diamonds.</summary>
+    Sprite,
+    /// <summary>A copy of another object on each particle (debris, leaves, a flock), sized to the particle.</summary>
+    Object,
+}
+
+/// <summary>What a particle does when it meets the floor or an object.</summary>
+public enum ParticleHit
+{
+    /// <summary>Stops there, riding along with a moving object.</summary>
+    Stick,
+    /// <summary>Bounces off, losing speed by <see cref="ParticleSettings.Bounce"/> and <see cref="ParticleSettings.Friction"/>.</summary>
+    Bounce,
+    /// <summary>Is gone.</summary>
+    Die,
+}
+
 /// <summary>
 /// A particle emitter on an object: how many particles a second it sends out and when, from where, how fast, how long
 /// they live, and what pulls on them. Times are in seconds, lengths in metres, angles in degrees; gravity pulls down
@@ -50,6 +76,24 @@ public sealed record ParticleSettings
     public bool HideEmitter { get; init; }
     /// <summary>Changes which particles come where, keeping the same settings.</summary>
     public int Seed { get; init; }
+    /// <summary>How they look: diamonds, blobs, puffs, sprites or copies of an object.</summary>
+    public ParticleLook Look { get; init; } = ParticleLook.Gem;
+    /// <summary>For the Object look: the object (by name) copied onto each particle, its largest side the particle's size.</summary>
+    public string InstanceOf { get; init; } = "";
+    /// <summary>For the Object look: how fast each copy turns (°/s, about an axis of its own), from a turn of its own.</summary>
+    public double Spin { get; init; }
+    /// <summary>For the Object look: point each copy's +Z the way it's going (a flock), instead of turning at random.</summary>
+    public bool AlignToMotion { get; init; }
+    /// <summary>For puffs and sprites: how much a puff hides through its middle, or how bright a sprite is, 0 to 1.</summary>
+    public double Opacity { get; init; } = 0.6;
+    /// <summary>Meet the scene's other visible objects (as they move), as well as the floor.</summary>
+    public bool Collide { get; init; }
+    /// <summary>What a particle does when it meets the floor or an object.</summary>
+    public ParticleHit OnHit { get; init; } = ParticleHit.Stick;
+    /// <summary>For Bounce: how much of its speed into the surface it keeps, 0 (none) to 1 (all).</summary>
+    public double Bounce { get; init; } = 0.5;
+    /// <summary>For Bounce: how much of its speed along the surface it loses, 0 to 1.</summary>
+    public double Friction { get; init; } = 0.2;
 
     /// <summary>The most particles alive at once that are drawn and rendered.</summary>
     public const int MaxAlive = 20000;
@@ -73,8 +117,29 @@ public sealed record ParticleSettings
         In(SizeAtDeath, 0, 100, "size at death (× the size)");
         In(Glow, 0, 1, "glow");
         if (Floor is { } f) In(f, -1e6, 1e6, "floor (m)");
+        In(Spin, -36000, 36000, "spin (°/s)");
+        In(Opacity, 0, 1, "opacity");
+        In(Bounce, 0, 1, "bounce");
+        In(Friction, 0, 1, "friction");
+        if (!Enum.IsDefined(Look)) throw new ArgumentException($"The particles' look must be one of {string.Join(", ", Enum.GetNames<ParticleLook>())}.");
+        if (!Enum.IsDefined(OnHit)) throw new ArgumentException($"What particles do on a hit must be one of {string.Join(", ", Enum.GetNames<ParticleHit>())}.");
+        if (Look == ParticleLook.Object && string.IsNullOrWhiteSpace(InstanceOf))
+            throw new ArgumentException("Particles that look like an object need the object to copy (instance_of).");
         return this;
     }
+}
+
+/// <summary>What particles can meet as they fly: the scene's other objects, wherever they are at the time.</summary>
+public interface IParticleColliders
+{
+    /// <summary>
+    /// The first place the straight move from <paramref name="from"/> to <paramref name="to"/> (world) at
+    /// <paramref name="time"/> (s) meets a collider: how far along it (0 to 1), the surface's normal there, and which collider.
+    /// </summary>
+    bool Hit(Vec3 from, Vec3 to, double time, out double fraction, out Vec3 normal, out int collider);
+
+    /// <summary>Where a point stuck on a collider at <paramref name="from"/> (s) has been carried by <paramref name="to"/>.</summary>
+    Vec3 Carry(int collider, Vec3 point, double from, double to);
 }
 
 /// <summary>
@@ -84,14 +149,23 @@ public sealed record ParticleSettings
 /// </summary>
 public static class ParticleSystem
 {
-    /// <summary>One particle alive at a time: where it is (world), its size, and how far through its life.</summary>
-    public readonly record struct Particle(Vec3 Position, double Size, double Age);
+    /// <summary>
+    /// One particle alive at a time: where it is (world), its size, how far through its life (0 to 1), how fast it's
+    /// going (world, m/s; zero once stopped), and its number (for anything it picks at random).
+    /// </summary>
+    public readonly record struct Particle(Vec3 Position, double Size, double Age, Vec3 Velocity = default, long Index = 0);
+
+    /// <summary>
+    /// The time step particles that meet things move in (s): half a frame, or longer for long lives, so no particle
+    /// takes more than 2000 steps. Colliders are looked up on the same steps.
+    /// </summary>
+    public static double StepOf(ParticleSettings s, double fps) => Math.Max(1 / (2 * fps), s.Life / 2000);
 
     /// <summary>
     /// The particles alive at <paramref name="frame"/>. <paramref name="emitterAt"/> gives the emitter's world
     /// transform at a frame; <paramref name="rest"/> is the emitter's mesh (object coordinates) to emit from.
     /// </summary>
-    public static List<Particle> At(ParticleSettings s, double frame, double fps, Mesh rest, Func<double, Mat4> emitterAt)
+    public static List<Particle> At(ParticleSettings s, double frame, double fps, Mesh rest, Func<double, Mat4> emitterAt, IParticleColliders? colliders = null)
     {
         var alive = new List<Particle>();
         if (s.Rate <= 0 || fps <= 0) return alive;
@@ -102,35 +176,117 @@ public static class ParticleSystem
         if (k1 - k0 + 1 > ParticleSettings.MaxAlive) k0 = k1 - ParticleSettings.MaxAlive + 1;
         var source = Source.Of(rest, s.From);
         var g = new Vec3(0, -s.Gravity, 0);
-        for (long k = k0; k <= k1; k++)
+        // Stepped through time (and so slower) only when particles can meet objects or do more than stop on the floor.
+        bool stepped = colliders != null || (s.Floor != null && s.OnHit != ParticleHit.Stick);
+        double dt = StepOf(s, fps);
+        int n = (int)(k1 - k0 + 1);
+        var found = new Particle?[n];
+        // The emitter where each was born, worked out first (in order: an item's motion isn't worked out from many threads).
+        var births = new Mat4[n];
+        for (int i = 0; i < n; i++) births[i] = emitterAt((start + (k0 + i) / s.Rate) * fps);
+        void One(int i)
         {
+            long k = k0 + i;
             double born = start + k / s.Rate, age = t - born;
-            if (age < 0 || age > s.Life) continue;
-            var m = emitterAt(born * fps);
+            if (age < 0 || age > s.Life) return;
+            var m = births[i];
             var (local, normal) = source.Pick(s.Seed, k);
             var p0 = m.TransformPoint(local);
-            var n = m.TransformVector(normal).Normalized();
-            if (n.LengthSquared < 0.5) n = Vec3.UnitY;
-            var dir = Cone(n, s.Spread * Math.PI / 180, Unit(s.Seed, k, 3), Unit(s.Seed, k, 4));
+            var nrm = m.TransformVector(normal).Normalized();
+            if (nrm.LengthSquared < 0.5) nrm = Vec3.UnitY;
+            var dir = Cone(nrm, s.Spread * Math.PI / 180, Unit(s.Seed, k, 3), Unit(s.Seed, k, 4));
             double speed = s.Speed * (1 + s.SpeedJitter * (2 * Unit(s.Seed, k, 5) - 1));
-            var p = Path(p0, dir * speed, g, s.Drag, age);
-            if (s.Floor is { } floor && p.Y < floor)
+            Vec3 p, v;
+            if (stepped)
             {
-                // Stopped where it reached the floor: the first time its height crosses it.
-                double lo = 0, hi = age;
-                if (p0.Y < floor) hi = 0;
-                for (int i = 0; i < 40 && hi > 0; i++)
+                if (Stepped(s, p0, dir * speed, g, born, t, dt, colliders) is not { } q) return;
+                (p, v) = q;
+            }
+            else
+            {
+                p = Path(p0, dir * speed, g, s.Drag, age);
+                v = Velocity(dir * speed, g, s.Drag, age);
+                if (s.Floor is { } floor && p.Y < floor)
                 {
-                    double mid = (lo + hi) / 2;
-                    if (Path(p0, dir * speed, g, s.Drag, mid).Y < floor) hi = mid; else lo = mid;
+                    // Stopped where it reached the floor: the first time its height crosses it.
+                    double lo = 0, hi = age;
+                    if (p0.Y < floor) hi = 0;
+                    for (int j = 0; j < 40 && hi > 0; j++)
+                    {
+                        double mid = (lo + hi) / 2;
+                        if (Path(p0, dir * speed, g, s.Drag, mid).Y < floor) hi = mid; else lo = mid;
+                    }
+                    p = Path(p0, dir * speed, g, s.Drag, hi);
+                    p = new Vec3(p.X, floor, p.Z);
+                    v = Vec3.Zero;
                 }
-                p = Path(p0, dir * speed, g, s.Drag, hi);
-                p = new Vec3(p.X, floor, p.Z);
             }
             double f = age / s.Life;
-            alive.Add(new Particle(p, s.Size * (1 + (s.SizeAtDeath - 1) * f), f));
+            found[i] = new Particle(p, s.Size * (1 + (s.SizeAtDeath - 1) * f), f, v, k);
         }
+        if (stepped && n > 64) Parallel.For(0, n, One);
+        else for (int i = 0; i < n; i++) One(i);
+        foreach (var q in found)
+            if (q is { } x) alive.Add(x);
         return alive;
+    }
+
+    /// <summary>
+    /// A particle moved through time in steps of <paramref name="dt"/> (on a grid shared by every particle), from its
+    /// birth to <paramref name="now"/>, meeting the floor and the colliders on the way: its place and speed, or null if it
+    /// died on a hit. Between hits it follows the closed form, so a step's length only changes where hits are found.
+    /// </summary>
+    private static (Vec3 P, Vec3 V)? Stepped(ParticleSettings s, Vec3 p0, Vec3 v0, Vec3 g, double born, double now, double dt, IParticleColliders? colliders)
+    {
+        Vec3 origin = p0, vel = v0, prev = p0;
+        double segment = born, before = born;
+        double lift = Math.Max(1e-6, s.Size * 1e-3), settle = Math.Abs(s.Gravity) * dt * 2 + 1e-4;
+        int bounces = 0;
+        long k = (long)Math.Floor(born / dt) + 1;
+        while (true)
+        {
+            double end = Math.Min(k * dt, now);
+            var to = Path(origin, vel, g, s.Drag, end - segment);
+            double best = double.PositiveInfinity;
+            Vec3 normal = default;
+            int which = -1;
+            if (s.Floor is { } floor && prev.Y >= floor - 1e-9 && to.Y < floor)
+            {
+                best = (prev.Y - floor) / Math.Max(1e-12, prev.Y - to.Y);
+                normal = Vec3.UnitY;
+            }
+            if (colliders != null && colliders.Hit(prev, to, end, out double frac, out var cn, out int ci) && frac < best)
+                (best, normal, which) = (frac, cn, ci);
+            if (best <= 1)
+            {
+                double th = before + best * (end - before);
+                var at = prev + (to - prev) * best;
+                var v = Velocity(vel, g, s.Drag, th - segment);
+                if (Vec3.Dot(v, normal) > 0) normal = -normal;
+                if (s.OnHit == ParticleHit.Die) return null;
+                var vn = normal * Vec3.Dot(v, normal);
+                var bounced = (v - vn) * (1 - s.Friction) - vn * s.Bounce;
+                if (s.OnHit == ParticleHit.Stick || ++bounces > 64 || Vec3.Dot(bounced, normal) < settle)
+                    // Stuck (or come to rest): where it met, carried along by what it met.
+                    return (which >= 0 ? colliders!.Carry(which, at + normal * lift, th, now) : at + normal * lift, Vec3.Zero);
+                origin = prev = at + normal * lift;
+                vel = bounced;
+                segment = before = th;
+                continue;
+            }
+            if (end >= now) return (to, Velocity(vel, g, s.Drag, end - segment));
+            prev = to;
+            before = end;
+            k++;
+        }
+    }
+
+    /// <summary>How fast a particle is going after <paramref name="t"/> s (the derivative of <see cref="Path"/>).</summary>
+    public static Vec3 Velocity(Vec3 v0, Vec3 g, double drag, double t)
+    {
+        if (drag <= 1e-9) return v0 + g * t;
+        var terminal = g / drag;
+        return terminal + (v0 - terminal) * Math.Exp(-drag * t);
     }
 
     /// <summary>Where a particle is after <paramref name="t"/> s: gravity and (if any) drag toward terminal speed, in closed form.</summary>

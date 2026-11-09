@@ -135,6 +135,7 @@ public sealed class ItemPropertiesPanel : StackPanel
                 }));
                 ParticleSettingsRows(obj);
                 HairSettingsRows(obj);
+                SoftBodyRows(obj);
                 break;
         }
         if (item is not Bone) PathSettings(item);
@@ -185,6 +186,46 @@ public sealed class ItemPropertiesPanel : StackPanel
         hide.IsCheckedChanged += (_, _) => Set("Hide Emitter", p => p with { HideEmitter = hide.IsChecked == true });
         Children.Add(floor);
         Children.Add(hide);
+        var look = new ComboBox { Name = "ParticleLook", ItemsSource = Enum.GetNames<ParticleLook>(), SelectedIndex = (int)ps.Look, FontSize = 11 };
+        ToolTip.SetTip(look, "How they look: diamonds, blobs melting together, puffs of smoke or glowing sprites (both rendered only), or copies of an object");
+        var others = Session.Scene.Objects.Where(o => o != obj).Select(o => o.Name).Distinct().ToList();
+        look.SelectionChanged += (_, _) =>
+        {
+            var chosen = (ParticleLook)Math.Max(0, look.SelectedIndex);
+            if (chosen == ParticleLook.Object && obj.Particles is { InstanceOf.Length: 0 })
+            {
+                if (others.Count == 0) { Session.SetStatus("Add another object to the scene to copy onto the particles."); return; }
+                Set("Particle Look", p => p with { Look = chosen, InstanceOf = others[0] });
+            }
+            else Set("Particle Look", p => p with { Look = chosen });
+            Dispatcher.UIThread.Post(Show);
+        };
+        Children.Add(look);
+        if (ps.Look == ParticleLook.Object)
+        {
+            var instance = new ComboBox { Name = "ParticleInstance", ItemsSource = others, SelectedItem = ps.InstanceOf, FontSize = 11 };
+            ToolTip.SetTip(instance, "The object copied onto each particle");
+            instance.SelectionChanged += (_, _) => { if (instance.SelectedItem is string name) Set("Particle Object", p => p with { InstanceOf = name }); };
+            Children.Add(instance);
+            NumberRow("Spin (°/s)", ps.Spin, v => Set("Particle Spin", p => p with { Spin = v }));
+            var align = new CheckBox { Name = "AlignToMotion", Content = "Align to motion", IsChecked = ps.AlignToMotion, Foreground = Look.Text };
+            align.IsCheckedChanged += (_, _) => Set("Align to Motion", p => p with { AlignToMotion = align.IsChecked == true });
+            Children.Add(align);
+        }
+        if (ps.Look is ParticleLook.Puff or ParticleLook.Sprite)
+            NumberRow("Opacity (0–1)", ps.Opacity, v => Set("Particle Opacity", p => p with { Opacity = v }));
+        var collide = new CheckBox { Name = "ParticleCollide", Content = "Collide with objects", IsChecked = ps.Collide, Foreground = Look.Text };
+        collide.IsCheckedChanged += (_, _) => Set("Particle Collide", p => p with { Collide = collide.IsChecked == true });
+        Children.Add(collide);
+        var hit = new ComboBox { Name = "ParticleHit", ItemsSource = Enum.GetNames<ParticleHit>(), SelectedIndex = (int)ps.OnHit, FontSize = 11 };
+        ToolTip.SetTip(hit, "What a particle does on meeting the floor or an object");
+        hit.SelectionChanged += (_, _) => { Set("Particle Hit", p => p with { OnHit = (ParticleHit)Math.Max(0, hit.SelectedIndex) }); Dispatcher.UIThread.Post(Show); };
+        Children.Add(hit);
+        if (ps.OnHit == ParticleHit.Bounce)
+        {
+            NumberRow("Bounce (0–1)", ps.Bounce, v => Set("Particle Bounce", p => p with { Bounce = v }));
+            NumberRow("Friction (0–1)", ps.Friction, v => Set("Particle Friction", p => p with { Friction = v }));
+        }
     }
 
     /// <summary>Hair: Grow hair on or off, then density, length, thickness, segments, droop and frizz. Each change is one undo step.</summary>
@@ -213,6 +254,63 @@ public sealed class ItemPropertiesPanel : StackPanel
         NumberRow("Segments", hs.Segments, v => Set("Hair Segments", h => h with { Segments = (int)Math.Round(v) }));
         NumberRow("Droop (0–1)", hs.Droop, v => Set("Hair Droop", h => h with { Droop = v }));
         NumberRow("Frizz (°)", hs.Frizz, v => Set("Hair Frizz", h => h with { Frizz = v }));
+        NumberRow("Comb (0–1)", hs.Comb, v => Set("Hair Comb", h => h with { Comb = v }));
+        var dynamics = new CheckBox { Name = "HairDynamics", Content = "Swing as it moves", IsChecked = hs.Dynamics, Foreground = Look.Text };
+        dynamics.IsCheckedChanged += (_, _) => { Set("Hair Dynamics", h => h with { Dynamics = dynamics.IsChecked == true }); Dispatcher.UIThread.Post(Show); };
+        Children.Add(dynamics);
+        if (hs.Dynamics)
+        {
+            NumberRow("Stiffness (Hz)", hs.Stiffness, v => Set("Hair Stiffness", h => h with { Stiffness = v }));
+            NumberRow("Damping (0–2)", hs.Damping, v => Set("Hair Damping", h => h with { Damping = v }));
+        }
+    }
+
+    /// <summary>
+    /// Cloth and soft bodies: Soft body on or off, then stiffness, bend, goal, damping, gravity, the surface pinned,
+    /// a floor and Collide with objects. Each change is one undo step.
+    /// </summary>
+    private void SoftBodyRows(ObjectItem obj)
+    {
+        void Set(string label, Func<SoftBodySettings, SoftBodySettings> change)
+        {
+            if (obj.SoftBody is not { } b) return;
+            try { var next = change(b).Checked(); Change(label, () => { obj.SoftBody = next; Session.Scene.Notify(); }); }
+            catch (ArgumentException e) { Session.SetStatus(e.Message); }
+        }
+        Children.Add(new TextBlock { Text = "Cloth and soft body", FontWeight = FontWeight.Bold, Foreground = Look.Text, Margin = new Thickness(0, 8, 0, 0) });
+        var on = new CheckBox { Name = "SoftBody", Content = "Soft body (cloth)", IsChecked = obj.SoftBody != null, Foreground = Look.Text };
+        on.IsCheckedChanged += (_, _) =>
+        {
+            bool want = on.IsChecked == true;
+            if (want == (obj.SoftBody != null)) return;
+            if (want && obj.BaseMesh().Points.Count > SoftBodySettings.MaxPoints)
+            {
+                Session.SetStatus($"{obj.Name} has too many points for a soft body (at most {SoftBodySettings.MaxPoints}).");
+                on.IsChecked = false;
+                return;
+            }
+            Change(want ? "Soft Body" : "No Soft Body", () => { obj.SoftBody = want ? new SoftBodySettings() : null; Session.Scene.Notify(); });
+            Dispatcher.UIThread.Post(Show);
+        };
+        Children.Add(on);
+        if (obj.SoftBody is not { } sb) return;
+        NumberRow("Stiffness (0–1)", sb.Stiffness, v => Set("Soft Stiffness", b => b with { Stiffness = v }));
+        NumberRow("Bend (0–1)", sb.Bend, v => Set("Soft Bend", b => b with { Bend = v }));
+        NumberRow("Goal (0 cloth – 1)", sb.Goal, v => Set("Soft Goal", b => b with { Goal = v }));
+        NumberRow("Damping (a second)", sb.Damping, v => Set("Soft Damping", b => b with { Damping = v }));
+        NumberRow("Gravity (m/s²)", sb.Gravity, v => Set("Soft Gravity", b => b with { Gravity = v }));
+        var pins = new List<string> { "(nothing pinned)" };
+        pins.AddRange(obj.Surfaces.Select(x => x.Name));
+        var pin = new ComboBox { Name = "SoftPin", ItemsSource = pins, SelectedIndex = Math.Max(0, pins.IndexOf(sb.Pin)), FontSize = 11 };
+        ToolTip.SetTip(pin, "Hold fast the points of this surface's faces: they move only as the object is animated");
+        pin.SelectionChanged += (_, _) => Set("Soft Pin", b => b with { Pin = pin.SelectedIndex <= 0 ? "" : pins[pin.SelectedIndex] });
+        Children.Add(pin);
+        var floor = new CheckBox { Name = "SoftFloor", Content = "Stop on a floor at Y = 0", IsChecked = sb.Floor != null, Foreground = Look.Text };
+        floor.IsCheckedChanged += (_, _) => Set("Soft Floor", b => b with { Floor = floor.IsChecked == true ? 0 : null });
+        var collide = new CheckBox { Name = "SoftCollide", Content = "Collide with objects", IsChecked = sb.Collide, Foreground = Look.Text };
+        collide.IsCheckedChanged += (_, _) => Set("Soft Collide", b => b with { Collide = collide.IsChecked == true });
+        Children.Add(floor);
+        Children.Add(collide);
     }
 
     /// <summary>The items an item's path can run through (in the item list's order).</summary>

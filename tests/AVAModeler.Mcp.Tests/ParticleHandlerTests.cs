@@ -59,4 +59,46 @@ public class ParticleHandlerTests
         await b.Tools.SetHair(box, off: true, cancel: Cancel);
         Assert.Null(b.Scene.Objects.Single().Hair);
     }
+
+    [Fact]
+    public async Task An_agent_chooses_how_particles_look_and_what_they_do_on_a_hit()
+    {
+        using var b = await WithBox();
+        string box = b.Scene.Objects.Single().Name;
+        var r = await Parse(b.Tools.SetParticles(box, look: "puff", opacity: 0.4, collide: true, on_hit: "bounce", bounce: 0.8, cancel: Cancel));
+        Assert.Equal("puff", (string?)r["particles"]!["look"]);
+        Assert.Equal(0.4, (double)r["particles"]!["opacity"]!);
+        Assert.Equal(0.8, (double)r["particles"]!["bounce"]!);
+        Assert.True((bool)r["particles"]!["collide"]!);
+        // Copies of an object need one that's there.
+        Assert.Contains("no other object called \"Leaf\"", await Error(b.Tools.SetParticles(box, look: "object", instance_of: "Leaf", cancel: Cancel)));
+        Assert.Contains("gem, blob, puff, sprite or object", await Error(b.Tools.SetParticles(box, look: "smoke", cancel: Cancel)));
+        Assert.Contains("stick, bounce or die", await Error(b.Tools.SetParticles(box, on_hit: "explode", cancel: Cancel)));
+        Assert.Equal(Scene.ParticleLook.Puff, b.Scene.Objects.Single().Particles!.Look);
+    }
+
+    [Fact]
+    public async Task An_agent_combs_hair_makes_it_swing_and_makes_an_object_cloth()
+    {
+        using var b = await WithBox();
+        string box = b.Scene.Objects.Single().Name;
+        var r = await Parse(b.Tools.SetHair(box, density: 10, dynamics: true, stiffness: 4, comb: 0.5, comb_direction: [1, 0, 0], cancel: Cancel));
+        Assert.True((bool)r["hair"]!["dynamics"]!);
+        Assert.Equal(4, (double)r["hair"]!["stiffness"]!);
+        Assert.Equal(new JsonArray(1, 0, 0).ToJsonString(), r["hair"]!["comb_direction"]!.ToJsonString());
+        Assert.True((int)r["strands"]! > 0);
+        Assert.Contains("three numbers", await Error(b.Tools.SetHair(box, comb_direction: [1, 0], cancel: Cancel)));
+        // Cloth: settings, the census, mistakes, and solid again.
+        r = await Parse(b.Tools.SetSoftBody(box, goal: 0.5, floor: 0, collide: true, cancel: Cancel));
+        Assert.Equal(0.5, (double)r["soft_body"]!["goal"]!);
+        Assert.Equal(0, (double)r["soft_body"]!["floor"]!);
+        Assert.Equal("Agent: set soft body", (string?)r["undo_scene"]!["next_undo"]);
+        var item = (await Parse(b.Tools.GetScene(cancel: Cancel)))["items"]!.AsArray().First(i => (string?)i!["name"] == box)!;
+        Assert.True((bool)item["soft_body"]!["collide"]!);
+        Assert.Contains("no surface \"Pole\"", await Error(b.Tools.SetSoftBody(box, pin: "Pole", cancel: Cancel)));
+        Assert.Contains("stiffness", await Error(b.Tools.SetSoftBody(box, stiffness: 3, cancel: Cancel)));
+        Assert.Equal(0.5, b.Scene.Objects.Single().SoftBody!.Goal);
+        await b.Tools.SetSoftBody(box, off: true, cancel: Cancel);
+        Assert.Null(b.Scene.Objects.Single().SoftBody);
+    }
 }

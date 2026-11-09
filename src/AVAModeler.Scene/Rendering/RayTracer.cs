@@ -219,6 +219,7 @@ public static partial class RayTracer
                         var (bc, ba) = background.Sample((x + sx) / width, 1 - (y + sy) / height, TextureTiling.Edge, TextureTiling.Edge);
                         seen = tracers[k].Trace(origin, dir, 0, out coverage, pixel, backdropAlpha: ba, backdropColor: bc);
                     }
+                    if (tracers[k].HasSoft) seen = tracers[k].ThroughSoft(origin, dir, seen, ref coverage);
                     if (tracers[k].HasVolumetrics) seen += tracers[k].Volumetric(origin, dir, pixel);
                     sum += seen;
                     alpha += coverage;
@@ -445,7 +446,8 @@ public static partial class RayTracer
                 }
                 var mesh = of.WorldMesh;
                 bounds = bounds.Include(mesh.Bounds());
-                AddTriangles(mesh, of.Mesh, of.Surfaces, firstMaterial, of.World.Determinant() < 0, tris);
+                AddTriangles(mesh, of.Mesh, of.Surfaces, firstMaterial, of.World.Determinant() < 0, tris, of.ViewOnlySurface);
+                if (of.Soft.Count > 0) (_softList ??= []).AddRange(of.Soft);
             }
             _bvh = new Bvh([.. tris]);
             // Offsets that keep secondary rays off the surface they leave, scaled to the scene's size.
@@ -460,6 +462,7 @@ public static partial class RayTracer
                     w.TransformVector(Vec3.UnitX) * l.AreaWidth, w.TransformVector(Vec3.UnitY) * l.AreaHeight));
             }
             PrepareLightEffects(tris, bounds);
+            PrepareSoft();
         }
 
         private static Material MaterialOf(Surface s, ObjectItem o, RenderSettings settings, string? images, Scene scene, double frame)
@@ -483,7 +486,7 @@ public static partial class RayTracer
         /// Triangulates a world-space mesh, with corner normals smoothed per surface where it asks, and the texturing of
         /// those with textured surfaces (from <paramref name="local"/>, the mesh in object coordinates, point for point).
         /// </summary>
-        private void AddTriangles(Mesh mesh, Mesh local, IReadOnlyList<Surface> surfaces, int firstMaterial, bool mirrored, List<Triangle> tris)
+        private void AddTriangles(Mesh mesh, Mesh local, IReadOnlyList<Surface> surfaces, int firstMaterial, bool mirrored, List<Triangle> tris, int viewOnly = -1)
         {
             int count = mesh.Polygons.Count;
             var normals = new Vec3[count];
@@ -497,6 +500,7 @@ public static partial class RayTracer
                 var poly = mesh.Polygons[pi];
                 if (poly.Count < 3 || normals[pi].LengthSquared == 0) continue;
                 int si = poly.Surface >= 0 && poly.Surface < surfaces.Count ? poly.Surface : 0;
+                if (si == viewOnly) continue;
                 var surface = si < surfaces.Count ? surfaces[si] : null;
                 bool doubleSided = surface?.DoubleSided ?? false;
                 var corner = new Dictionary<int, Vec3>();

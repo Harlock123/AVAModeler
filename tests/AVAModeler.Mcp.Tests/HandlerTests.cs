@@ -26,7 +26,7 @@ public class HandlerTests
         Assert.Contains("centred on Center", (string?)box["summary"]);
         // Every tool says what it does; the mouse-only ones say so.
         Assert.All(tools, t => Assert.False(string.IsNullOrWhiteSpace((string?)t["summary"])));
-        Assert.Equal(["Drag", "Points"], tools.Where(t => (bool?)t["scriptable"] == false).Select(t => (string)t["name"]!).Order());
+        Assert.Equal(["Drag", "Pen", "Points"], tools.Where(t => (bool?)t["scriptable"] == false).Select(t => (string)t["name"]!).Order());
         // The Modeler's tab order.
         Assert.Equal("Objects", (string?)tools[0]["tab"]);
     }

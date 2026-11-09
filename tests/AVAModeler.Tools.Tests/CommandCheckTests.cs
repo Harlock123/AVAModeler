@@ -48,7 +48,7 @@ public class CommandCheckTests
             {
                 Assert.False(string.IsNullOrWhiteSpace(tool.Summary), $"{tool.Name} has no summary");
                 Assert.EndsWith(".", tool.Summary);
-                Assert.Equal(tool.Name is "Points" or "Drag", !tool.Scriptable);
+                Assert.Equal(tool.Name is "Points" or "Drag" or "Pen", !tool.Scriptable);
             }
     }
 

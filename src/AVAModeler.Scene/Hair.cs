@@ -28,6 +28,16 @@ public sealed record HairSettings
     public Rgb Color { get; init; } = new(120, 80, 50);
     /// <summary>Changes where strands grow and how they lean, keeping the same settings.</summary>
     public int Seed { get; init; }
+    /// <summary>Swing as the object moves: strands lag behind its starts, stops and turns and settle again.</summary>
+    public bool Dynamics { get; init; }
+    /// <summary>For dynamics: how fast strands swing back (Hz), 0.1 (long and floppy) to 20 (short and stiff).</summary>
+    public double Stiffness { get; init; } = 2;
+    /// <summary>For dynamics: how soon a swing dies away, 0 (swings on) to 2 (no overshoot past 1).</summary>
+    public double Damping { get; init; } = 0.3;
+    /// <summary>How far strands are combed toward <see cref="CombDirection"/>, 0 (not at all) to 1 (flat along it).</summary>
+    public double Comb { get; init; }
+    /// <summary>The way they're combed, in the object's own coordinates (toward −Z, the back, by default).</summary>
+    public Vec3 CombDirection { get; init; } = new(0, 0, -1);
 
     /// <summary>The most strands grown on one object.</summary>
     public const int MaxStrands = 30000;
@@ -45,7 +55,72 @@ public sealed record HairSettings
         In(Segments, 1, 32, "segments");
         In(Droop, 0, 1, "droop");
         In(Frizz, 0, 90, "frizz (°)");
+        In(Stiffness, 0.1, 20, "stiffness (Hz)");
+        In(Damping, 0, 2, "damping");
+        In(Comb, 0, 1, "comb");
+        if (!double.IsFinite(CombDirection.X + CombDirection.Y + CombDirection.Z)) throw new ArgumentException("The hair's comb direction must be three numbers.");
+        if (Comb > 0 && CombDirection.LengthSquared < 1e-12) throw new ArgumentException("The hair's comb direction can't be nothing (0, 0, 0).");
         return this;
+    }
+}
+
+/// <summary>
+/// Hair dynamics as a spring: a copy of the object's motion that lags behind it as a weight on a spring does,
+/// natural frequency <see cref="HairSettings.Stiffness"/> and damping ratio <see cref="HairSettings.Damping"/>. The
+/// spring is linear, so it's run once on the object's whole world transform (its twelve numbers), not per strand: a
+/// strand's lag is then that lagging transform less the real one, applied to its root. Worked out from the scene's
+/// first frame (or as far back as a swing could still be seen), the same however the frame is reached.
+/// </summary>
+public static class HairSwing
+{
+    /// <summary>
+    /// The lag at <paramref name="frame"/>: for a root in the object's coordinates, how far behind its tip is, in the
+    /// object's coordinates. <paramref name="worldAt"/> gives the object's world transform at a frame.
+    /// </summary>
+    public static Func<Vec3, Vec3> Lag(HairSettings s, double frame, double fps, double firstFrame, Func<double, Mat4> worldAt)
+    {
+        double omega = 2 * Math.PI * s.Stiffness, zeta = s.Damping;
+        double t1 = frame / fps, window = zeta > 0 ? Math.Min(10, 8 / (zeta * omega)) : 10;
+        double t0 = Math.Max(firstFrame / fps, t1 - window);
+        var now = worldAt(frame);
+        if (t1 <= t0 || fps <= 0) return _ => Vec3.Zero;
+        // Steps short enough for the spring (a tenth of its period at least, and a quarter frame), at most 20000.
+        int n = (int)Math.Clamp(Math.Ceiling(Math.Max((t1 - t0) * fps * 4, (t1 - t0) * omega * 2)), 1, 20000);
+        double dt = (t1 - t0) / n;
+        static double[] Of(Mat4 m)
+        {
+            var a = new double[12];
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 4; c++) a[r * 4 + c] = m[r, c];
+            return a;
+        }
+        var x = Of(worldAt(t0 * fps));
+        var lag = (double[])x.Clone();
+        var next = Of(worldAt((t0 + dt) * fps));
+        var v = new double[12];
+        for (int i = 0; i < 12; i++) v[i] = (next[i] - x[i]) / dt;
+        for (int k = 1; k <= n; k++)
+        {
+            var xk = k == n ? Of(now) : Of(worldAt((t0 + k * dt) * fps));
+            for (int i = 0; i < 12; i++)
+            {
+                // The spring and damper between the lagging copy and the real one at the step's start.
+                double xv = (xk[i] - x[i]) / dt;
+                double a = omega * omega * (x[i] - lag[i]) + 2 * zeta * omega * (xv - v[i]);
+                v[i] += a * dt;
+                lag[i] += v[i] * dt;
+            }
+            x = xk;
+        }
+        var d = new double[12];
+        for (int i = 0; i < 12; i++) d[i] = lag[i] - x[i];
+        var toLocal = now.Inverted();
+        return root =>
+        {
+            var w = new Vec3(d[0] * root.X + d[1] * root.Y + d[2] * root.Z + d[3], d[4] * root.X + d[5] * root.Y + d[6] * root.Z + d[7],
+                d[8] * root.X + d[9] * root.Y + d[10] * root.Z + d[11]);
+            return toLocal.TransformVector(w);
+        };
     }
 }
 
@@ -55,9 +130,11 @@ public static class HairGrowth
     /// <summary>
     /// Adds the strands to <paramref name="mesh"/> (in its own coordinates), on <paramref name="surface"/>.
     /// <paramref name="down"/> is the world's down in those coordinates, for the droop. Only faces whose surface is
-    /// <paramref name="onSurface"/> (an index) grow hair, or every face when it's null. Returns how many strands grew.
+    /// <paramref name="onSurface"/> (an index) grow hair, or every face when it's null. <paramref name="swing"/>, if
+    /// given, is how far a strand's tip lags behind where it would be (in the mesh's coordinates), by its root, for
+    /// dynamics. Returns how many strands grew.
     /// </summary>
-    public static int Grow(Mesh mesh, HairSettings s, Vec3 down, int surface, int? onSurface)
+    public static int Grow(Mesh mesh, HairSettings s, Vec3 down, int surface, int? onSurface, Func<Vec3, Vec3>? swing = null)
     {
         // The faces to grow on, as triangles weighed by area (taken before any strands are added).
         var tris = new List<(Vec3 A, Vec3 B, Vec3 C, Vec3 N)>();
@@ -98,6 +175,12 @@ public static class HairGrowth
             var y = Vec3.Cross(n, x);
             double lean = s.Frizz * Math.PI / 180 * ParticleSystem.Unit(s.Seed, k, 13), turn = 2 * Math.PI * ParticleSystem.Unit(s.Seed, k, 14);
             var dir = (n * Math.Cos(lean) + (x * Math.Cos(turn) + y * Math.Sin(turn)) * Math.Sin(lean)).Normalized();
+            if (s.Comb > 0)
+            {
+                // Combed: turned toward the comb's way along the surface (its part across the normal), up to lying flat.
+                var along = s.CombDirection - n * Vec3.Dot(s.CombDirection, n);
+                if (along.LengthSquared > 1e-12) dir = (dir * (1 - s.Comb) + (along.Normalized() * 0.98 + n * 0.02).Normalized() * s.Comb).Normalized();
+            }
             double length = s.Length * (1 - s.LengthJitter * ParticleSystem.Unit(s.Seed, k, 15));
             // The spine: each joint turning a little more toward down, by the droop.
             var spine = new Vec3[s.Segments + 1];
@@ -116,6 +199,18 @@ public static class HairGrowth
                 if (axis.LengthSquared > 1e-12 && toDown > 1e-9)
                     heading = Rotate(heading, axis.Normalized(), Math.Min(bend, toDown));
                 spine[j] = spine[j - 1] + heading * step;
+            }
+            if (swing != null)
+            {
+                // The lag, more toward the tip (as a strand bends from its root), then each joint put back at its length.
+                var lag = swing(root);
+                for (int j = 1; j <= s.Segments; j++)
+                {
+                    double w = (double)j / s.Segments;
+                    var moved = spine[j] + lag * (w * w);
+                    var d = moved - spine[j - 1];
+                    spine[j] = spine[j - 1] + (d.LengthSquared > 1e-24 ? d.Normalized() : heading) * step;
+                }
             }
             AddStrand(mesh, spine, s.Thickness, surface);
         }

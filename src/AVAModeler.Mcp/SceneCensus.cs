@@ -326,6 +326,7 @@ internal static partial class SceneCensus
                 if (obj.DissolveAt(frame) != 0 || !Keying.IsConstant(obj.Dissolve, s)) o["dissolve"] = Round(obj.DissolveAt(frame));
                 if (obj.Particles is { } particles) o["particles"] = Particles(particles);
                 if (obj.Hair is { } hair) o["hair"] = Hair(hair);
+                if (obj.SoftBody is { } soft) o["soft_body"] = SoftBody(soft);
                 if (!obj.CastShadows) o["cast_shadows"] = false;
                 if (!obj.ReceiveShadows) o["receive_shadows"] = false;
                 break;

@@ -167,4 +167,130 @@ public static class Curves
         mesh.Touch();
         return made;
     }
+
+    /// <summary>
+    /// A curve of 2-point lines through existing points (<paramref name="controls"/>, in order), closed back to the
+    /// first if asked. Smooth runs it through them as a smooth curve, <paramref name="perSpan"/> pieces between each
+    /// pair, adding the points between (the controls stay where they are). Returns the new lines' indices.
+    /// </summary>
+    public static List<int> AddCurve(Mesh mesh, IReadOnlyList<int> controls, bool closed, bool smooth, int perSpan, int surface = 0)
+    {
+        if (controls.Count < 2) throw new ArgumentException("A curve needs at least two points.");
+        if (closed && controls.Count < 3) throw new ArgumentException("A closed curve needs at least three points.");
+        var chain = new List<int>();
+        if (smooth && controls.Count >= 3 && perSpan >= 2)
+        {
+            var path = Smooth([.. controls.Select(i => mesh.Points[i])], perSpan, closed);
+            for (int k = 0; k < path.Count; k++)
+                // Every perSpan-th point is a control point, exactly where it was.
+                chain.Add(k % perSpan == 0 && k / perSpan < controls.Count ? controls[k / perSpan] : mesh.AddPoint(path[k]));
+        }
+        else chain.AddRange(controls);
+        var lines = new List<int>();
+        int n = chain.Count;
+        for (int k = 0; k + 1 < n || closed && k < n; k++)
+            lines.Add(mesh.AddPolygon([chain[k], chain[(k + 1) % n]], surface));
+        mesh.Touch();
+        return lines;
+    }
+
+    /// <summary>
+    /// A curve resampled to <paramref name="pieces"/> even pieces along it (pieces + 1 points open; pieces closed,
+    /// the first not repeated).
+    /// </summary>
+    public static List<Vec3> Even(IReadOnlyList<Vec3> curve, int pieces, bool closed)
+    {
+        if (!closed) return Multiply.Resample(curve, pieces);
+        var round = Multiply.Resample([.. curve, curve[0]], pieces);
+        round.RemoveAt(round.Count - 1);
+        return round;
+    }
+
+    /// <summary>
+    /// A skin across curves (Loft): each curve resampled to <paramref name="across"/> even pieces and turned to run the
+    /// way the one before does (a closed one also started where it's nearest), then joined in the order they stack up
+    /// (from one end, each to the nearest left) by <paramref name="along"/> rows between each pair, straight or
+    /// (<paramref name="smooth"/>) on smooth curves through all of them. All the curves must be open or all closed (a
+    /// tube). Returns the new faces' indices.
+    /// </summary>
+    public static List<int> Loft(Mesh mesh, IReadOnlyList<IReadOnlyList<Vec3>> curves, bool closed, int across, int along, bool smooth, int surface = 0)
+    {
+        if (curves.Count < 2) throw new ArgumentException("Loft needs at least two curves.");
+        // The order they stack in: from one of the two that are furthest apart, each time the nearest of the rest.
+        var centres = curves.Select(c => c.Aggregate(Vec3.Zero, (a, b) => a + b) / c.Count).ToList();
+        int first = 0;
+        double far = -1;
+        for (int a = 0; a < centres.Count; a++)
+            for (int b = 0; b < centres.Count; b++)
+                if (Vec3.Distance(centres[a], centres[b]) > far) (far, first) = (Vec3.Distance(centres[a], centres[b]), a);
+        var order = new List<int> { first };
+        while (order.Count < curves.Count)
+            order.Add(Enumerable.Range(0, curves.Count).Where(i => !order.Contains(i)).MinBy(i => Vec3.Distance(centres[order[^1]], centres[i])));
+        var rows = new List<List<Vec3>>();
+        foreach (int c in order)
+        {
+            var even = Even(curves[c], across, closed);
+            if (rows.Count > 0)
+            {
+                var prev = rows[^1];
+                if (!closed)
+                {
+                    var back = Enumerable.Reverse(even).ToList();
+                    if (Gap(back, prev) < Gap(even, prev)) even = back;
+                }
+                else
+                {
+                    // Either way round, from whichever point lines up best with the curve before.
+                    List<Vec3>? best = null;
+                    double bestGap = double.PositiveInfinity;
+                    foreach (var way in new[] { even, Enumerable.Reverse(even).ToList() })
+                        for (int shift = 0; shift < way.Count; shift++)
+                        {
+                            var turned = way.Skip(shift).Concat(way.Take(shift)).ToList();
+                            double gap = Gap(turned, prev);
+                            if (gap < bestGap) (best, bestGap) = (turned, gap);
+                        }
+                    even = best!;
+                }
+            }
+            rows.Add(even);
+        }
+        int width = rows[0].Count;
+        // The rows between: each column a curve through the curves' points, smooth or straight.
+        var columns = new List<List<Vec3>>();
+        for (int j = 0; j < width; j++)
+        {
+            var through = rows.Select(r => r[j]).ToList();
+            List<Vec3> col;
+            if (smooth && through.Count >= 3 && along >= 2) col = Smooth(through, along);
+            else
+            {
+                col = [];
+                for (int r = 0; r + 1 < through.Count; r++)
+                    for (int k = 0; k < along; k++) col.Add(Vec3.Lerp(through[r], through[r + 1], (double)k / along));
+                col.Add(through[^1]);
+            }
+            columns.Add(col);
+        }
+        int height = columns[0].Count;
+        var index = new int[width, height];
+        for (int j = 0; j < width; j++)
+            for (int r = 0; r < height; r++) index[j, r] = mesh.AddPoint(columns[j][r]);
+        var made = new List<int>();
+        for (int j = 0; j < (closed ? width : width - 1); j++)
+            for (int r = 0; r + 1 < height; r++)
+            {
+                int jn = (j + 1) % width;
+                made.Add(mesh.AddPolygon([index[j, r], index[j, r + 1], index[jn, r + 1], index[jn, r]], surface));
+            }
+        mesh.Touch();
+        return made;
+    }
+
+    private static double Gap(IReadOnlyList<Vec3> a, IReadOnlyList<Vec3> b)
+    {
+        double sum = 0;
+        for (int i = 0; i < a.Count; i++) sum += Vec3.Distance(a[i], b[i]);
+        return sum;
+    }
 }

@@ -57,9 +57,16 @@ public sealed class ObjectItem : SceneItem
     /// <summary>Hair or fur grown on the object, or null for none (set a new record to change it).</summary>
     public HairSettings? Hair { get; set; }
 
+    /// <summary>Cloth or a soft body on the object, or null for none (set a new record to change it).</summary>
+    public SoftBodySettings? SoftBody { get; set; }
+
     internal readonly object GrownLock = new();
     /// <summary>The last frame's mesh with its hair and particles, by what it was grown from.</summary>
-    internal ((Mesh, ParticleSettings?, HairSettings?, double, int, int) Key, Mesh Mesh, IReadOnlyList<Surface> Surfaces)? GrownCache;
+    internal (object Key, Scene.GrownFrame Frame)? GrownCache;
+
+    internal readonly object SoftLock = new();
+    /// <summary>The soft body's simulation so far (a <see cref="SoftBodies"/> state).</summary>
+    internal object? SoftCache;
 
     public bool IsPlaceholder => Document == null;
 

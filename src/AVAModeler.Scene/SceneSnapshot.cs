@@ -142,6 +142,7 @@ public sealed class SceneSnapshot
         private static Action Object(ObjectItem o)
         {
             var (doc, layer, source, cast, receive, falloff) = (o.Document, o.Layer, o.SourcePath, o.CastShadows, o.ReceiveShadows, o.BoneFalloffExponent);
+            var (particles, hair) = (o.Particles, o.Hair);
             List<Bone> bones = [.. o.BoneList];
             List<MorphTarget> morphs = [.. o.MorphList];
             List<WaveDisplacement> displacements = [.. o.DisplacementList];
@@ -151,6 +152,7 @@ public sealed class SceneSnapshot
             return () =>
             {
                 (o.Document, o.Layer, o.SourcePath, o.CastShadows, o.ReceiveShadows, o.BoneFalloffExponent) = (doc, layer, source, cast, receive, falloff);
+                (o.Particles, o.Hair) = (particles, hair);
                 Replace(o.BoneList, bones);
                 Replace(o.MorphList, morphs);
                 Replace(o.DisplacementList, displacements);

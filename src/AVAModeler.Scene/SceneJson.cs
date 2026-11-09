@@ -138,6 +138,7 @@ public static class SceneJson
                     // Written only when it isn't the default (solid throughout), so other scenes' files are as they were.
                     d.Dissolve = o.Dissolve.Keys.Count == 1 && o.Dissolve.Keys[0].Value == 0 && o.Dissolve.PreBehavior == EndBehavior.Constant && o.Dissolve.PostBehavior == EndBehavior.Constant
                         ? null : Env(o.Dissolve);
+                    (d.Particles, d.Hair) = (o.Particles, o.Hair);
                     d.Morphs = o.Morphs.Select(m => new MorphDto { Name = m.Name, Target = MeshDto.Of(m.Target), Weight = Env(m.Weight) }).ToList();
                     d.Displacements = o.Displacements.Select(x => new DisplacementDto
                     {
@@ -344,6 +345,7 @@ public static class SceneJson
             BoneFalloffExponent = d.BoneFalloffExponent ?? 4,
         };
         SetEnv(o.Dissolve, d.Dissolve);
+        (o.Particles, o.Hair) = (d.Particles?.Checked(), d.Hair?.Checked());
         foreach (var m in d.Morphs ?? [])
         {
             var morph = new MorphTarget(m.Name, m.Target?.ToMesh() ?? new Mesh());
@@ -901,6 +903,8 @@ public static class SceneJson
         public bool? ReceiveShadows { get; set; }
         public double? BoneFalloffExponent { get; set; }
         public EnvelopeDto? Dissolve { get; set; }
+        public ParticleSettings? Particles { get; set; }
+        public HairSettings? Hair { get; set; }
         public List<MorphDto>? Morphs { get; set; }
         public List<DisplacementDto>? Displacements { get; set; }
 

@@ -12,7 +12,7 @@ namespace AVAModeler.Mcp;
 /// What the Layout tools report and how they read an agent's names for things: items (by name, or "#index"),
 /// channels ("position.x", "heading", "intensity"…), frames, colours.
 /// </summary>
-internal static class SceneCensus
+internal static partial class SceneCensus
 {
     /// <summary>The channel names agents use, in the order of <see cref="Channel"/>.</summary>
     public static readonly string[] ChannelNames = SceneChannels.MotionNames;
@@ -324,6 +324,8 @@ internal static class SceneCensus
                 if (obj.Morphs.Count > 0) o["morphs"] = Morphs(obj, frame);
                 if (obj.Displacements.Count > 0) o["displacements"] = Displacements(obj, frame);
                 if (obj.DissolveAt(frame) != 0 || !Keying.IsConstant(obj.Dissolve, s)) o["dissolve"] = Round(obj.DissolveAt(frame));
+                if (obj.Particles is { } particles) o["particles"] = Particles(particles);
+                if (obj.Hair is { } hair) o["hair"] = Hair(hair);
                 if (!obj.CastShadows) o["cast_shadows"] = false;
                 if (!obj.ReceiveShadows) o["receive_shadows"] = false;
                 break;

@@ -199,6 +199,13 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - `MotionModifiers.cs`: `MotionModifier` records (`LagModifier`, `JitterModifier`, `CycleModifier`,
     `OscillateModifier`), `MotionPose`, `Checked` and `Problem`, on `SceneItem.Modifiers` (immutable: set a new list).
     `MotionSolver` applies them after the path and IK (`Unmodified`, `Scale`); `LocalMatrix` uses `MotionScaleAt`.
+  - `Particles.cs` and `Hair.cs`: `ObjectItem.Particles` (`ParticleSettings`) and `ObjectItem.Hair`
+    (`HairSettings`), immutable records with `Checked()`, in `Scene.Copy`, `SceneSnapshot` and SceneJson (written only
+    when set). `Scene.Evaluate` adds their geometry to the object's frame (`Scene.Grown`, cached by frame, scene
+    version and settings), each on a surface of its own after the object's (`ObjectFrame.Surfaces`), so the views,
+    the ray tracer, exports and agents see them with nothing of their own. `ParticleSystem.At` works every particle
+    out from its birth in closed form (a hash, no stepping), in world space at its birth time; `HairGrowth.Grow` grows
+    tapering three-sided strands on the deformed mesh. Agents' `set_particles` and `set_hair` are in `ParticleTools.cs`.
   - `Lws/LwText.cs` is the line and envelope parser `LwsReader` and `Lws/MotionFile.cs` (.mot read, write and apply)
     share.
   - `Rendering/EnvironmentMap.cs`: an environment picture by direction (lat-long, turned by its heading), its 64 × 32

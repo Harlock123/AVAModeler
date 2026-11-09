@@ -133,11 +133,86 @@ public sealed class ItemPropertiesPanel : StackPanel
                     var made = Session.Edit("Skelegons → Bones", () => Skelegons.CreateBones(Session.Scene, obj));
                     Session.SetStatus(made.Count > 0 ? $"Made {made.Count} bones from skelegons." : "No skelegons (2-point polygons on a \"Skelegon…\" surface) in this object.");
                 }));
+                ParticleSettingsRows(obj);
+                HairSettingsRows(obj);
                 break;
         }
         if (item is not Bone) PathSettings(item);
         Extras?.Invoke(item, this);
         Children.Add(Look.MakeButton("Remove item", () => Session.Remove(item)));
+    }
+
+    /// <summary>
+    /// Particles: Emit particles on or off, then where from, how many a second, between which frames, how long they live,
+    /// how fast and how widely they leave, gravity, drag, size, a floor, glow and Hide emitter. Each change is one undo step.
+    /// </summary>
+    private void ParticleSettingsRows(ObjectItem obj)
+    {
+        void Set(string label, Func<ParticleSettings, ParticleSettings> change)
+        {
+            if (obj.Particles is not { } p) return;
+            try { var next = change(p).Checked(); Change(label, () => { obj.Particles = next; Session.Scene.Notify(); }); }
+            catch (ArgumentException e) { Session.SetStatus(e.Message); }
+        }
+        Children.Add(new TextBlock { Text = "Particles", FontWeight = FontWeight.Bold, Foreground = Look.Text, Margin = new Thickness(0, 8, 0, 0) });
+        var on = new CheckBox { Name = "EmitParticles", Content = "Emit particles", IsChecked = obj.Particles != null, Foreground = Look.Text };
+        on.IsCheckedChanged += (_, _) =>
+        {
+            bool want = on.IsChecked == true;
+            if (want == (obj.Particles != null)) return;
+            Change(want ? "Emit Particles" : "No Particles", () => { obj.Particles = want ? new ParticleSettings() : null; Session.Scene.Notify(); });
+            Dispatcher.UIThread.Post(Show);
+        };
+        Children.Add(on);
+        if (obj.Particles is not { } ps) return;
+        var from = new ComboBox { Name = "EmitFrom", ItemsSource = Enum.GetNames<EmitFrom>(), SelectedIndex = (int)ps.From, FontSize = 11 };
+        from.SelectionChanged += (_, _) => Set("Emit From", p => p with { From = (EmitFrom)Math.Max(0, from.SelectedIndex) });
+        Children.Add(from);
+        NumberRow("Rate (a second)", ps.Rate, v => Set("Particle Rate", p => p with { Rate = v }));
+        NumberRow("Start frame", ps.StartFrame, v => Set("Particle Start", p => p with { StartFrame = v }));
+        NumberRow("End frame", ps.EndFrame, v => Set("Particle End", p => p with { EndFrame = v }));
+        NumberRow("Life (s)", ps.Life, v => Set("Particle Life", p => p with { Life = v }));
+        NumberRow("Speed (m/s)", ps.Speed, v => Set("Particle Speed", p => p with { Speed = v }));
+        NumberRow("Spread (°)", ps.Spread, v => Set("Particle Spread", p => p with { Spread = v }));
+        NumberRow("Gravity (m/s²)", ps.Gravity, v => Set("Particle Gravity", p => p with { Gravity = v }));
+        NumberRow("Drag (a second)", ps.Drag, v => Set("Particle Drag", p => p with { Drag = v }));
+        NumberRow("Size (m)", ps.Size, v => Set("Particle Size", p => p with { Size = v }));
+        NumberRow("Size at death (×)", ps.SizeAtDeath, v => Set("Particle Size at Death", p => p with { SizeAtDeath = v }));
+        NumberRow("Glow (0–1)", ps.Glow, v => Set("Particle Glow", p => p with { Glow = v }));
+        var floor = new CheckBox { Name = "ParticleFloor", Content = "Stop on a floor at Y = 0", IsChecked = ps.Floor != null, Foreground = Look.Text };
+        floor.IsCheckedChanged += (_, _) => Set("Particle Floor", p => p with { Floor = floor.IsChecked == true ? 0 : null });
+        var hide = new CheckBox { Name = "HideEmitter", Content = "Hide emitter", IsChecked = ps.HideEmitter, Foreground = Look.Text };
+        hide.IsCheckedChanged += (_, _) => Set("Hide Emitter", p => p with { HideEmitter = hide.IsChecked == true });
+        Children.Add(floor);
+        Children.Add(hide);
+    }
+
+    /// <summary>Hair: Grow hair on or off, then density, length, thickness, segments, droop and frizz. Each change is one undo step.</summary>
+    private void HairSettingsRows(ObjectItem obj)
+    {
+        void Set(string label, Func<HairSettings, HairSettings> change)
+        {
+            if (obj.Hair is not { } h) return;
+            try { var next = change(h).Checked(); Change(label, () => { obj.Hair = next; Session.Scene.Notify(); }); }
+            catch (ArgumentException e) { Session.SetStatus(e.Message); }
+        }
+        Children.Add(new TextBlock { Text = "Hair", FontWeight = FontWeight.Bold, Foreground = Look.Text, Margin = new Thickness(0, 8, 0, 0) });
+        var on = new CheckBox { Name = "GrowHair", Content = "Grow hair", IsChecked = obj.Hair != null, Foreground = Look.Text };
+        on.IsCheckedChanged += (_, _) =>
+        {
+            bool want = on.IsChecked == true;
+            if (want == (obj.Hair != null)) return;
+            Change(want ? "Grow Hair" : "No Hair", () => { obj.Hair = want ? new HairSettings() : null; Session.Scene.Notify(); });
+            Dispatcher.UIThread.Post(Show);
+        };
+        Children.Add(on);
+        if (obj.Hair is not { } hs) return;
+        NumberRow("Density (a m²)", hs.Density, v => Set("Hair Density", h => h with { Density = v }));
+        NumberRow("Length (m)", hs.Length, v => Set("Hair Length", h => h with { Length = v }));
+        NumberRow("Thickness (m)", hs.Thickness, v => Set("Hair Thickness", h => h with { Thickness = v }));
+        NumberRow("Segments", hs.Segments, v => Set("Hair Segments", h => h with { Segments = (int)Math.Round(v) }));
+        NumberRow("Droop (0–1)", hs.Droop, v => Set("Hair Droop", h => h with { Droop = v }));
+        NumberRow("Frizz (°)", hs.Frizz, v => Set("Hair Frizz", h => h with { Frizz = v }));
     }
 
     /// <summary>The items an item's path can run through (in the item list's order).</summary>

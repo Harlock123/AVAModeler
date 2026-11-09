@@ -17,7 +17,7 @@ public enum FogType
 /// <para>Envelope edits and adding, removing or reparenting items bump <see cref="Version"/> and raise
 /// <see cref="Changed"/> on their own; after changing a field directly, call <see cref="Notify"/>.</para>
 /// </summary>
-public sealed class Scene
+public sealed partial class Scene
 {
     private readonly List<SceneItem> _items = [];
     private CameraItem? _camera;
@@ -288,6 +288,7 @@ public sealed class Scene
                     SourcePath = o.SourcePath, CastShadows = o.CastShadows, ReceiveShadows = o.ReceiveShadows, BoneFalloffExponent = o.BoneFalloffExponent,
                 };
                 obj.Dissolve.CopyFrom(o.Dissolve);
+                (obj.Particles, obj.Hair) = (o.Particles, o.Hair);
                 foreach (var m in o.Morphs) obj.AddMorph(new MorphTarget(m.Name, m.Target, m.Weight.Clone()));
                 foreach (var x in o.Displacements)
                 {
@@ -379,7 +380,10 @@ public sealed class Scene
         foreach (var o in Objects)
         {
             var mesh = o.DeformedMesh(frame);
-            objects.Add(new ObjectFrame(o, world[o], mesh));
+            IReadOnlyList<Surface> surfaces = o.Surfaces;
+            if (!o.IsPlaceholder && (o.Particles != null || o.Hair != null))
+                (mesh, surfaces) = Grown(o, mesh, world[o], frame, world);
+            objects.Add(new ObjectFrame(o, world[o], mesh, surfaces));
             warnings.AddRange(o.MorphProblems());
             if (o.IsPlaceholder) warnings.Add($"{o.Name} has no geometry (its file wasn't loaded).");
             else warnings.AddRange(TextureImages.Problems(o.Surfaces, TextureImages.BaseOf(o.SourcePath ?? o.Document?.FilePath)).Select(p => $"{o.Name}, {p}"));
@@ -387,6 +391,49 @@ public sealed class Scene
         if (EnvironmentMap.Problem(Environment) is { } env) warnings.Add(env + " The backdrop shows instead.");
         warnings.AddRange(SceneImages.Problems(this, frame));
         return new SceneFrame(frame, world, objects, warnings);
+    }
+}
+
+public sealed partial class Scene
+{
+    /// <summary>
+    /// The object's mesh with its hair grown on it and its particles added (each on a surface of its own after the
+    /// object's), in object coordinates; with Hide emitter, the particles alone.
+    /// </summary>
+    private (Mesh, IReadOnlyList<Surface>) Grown(ObjectItem o, Mesh deformed, Mat4 world, double frame, Dictionary<SceneItem, Mat4> cache)
+    {
+        // The same frame of the same scene and mesh with the same settings grows the same: kept until any of them changes.
+        var key = (deformed, o.Particles, o.Hair, frame, Version, o.Surfaces.Count);
+        lock (o.GrownLock)
+            if (o.GrownCache is { } c && c.Key.Equals(key)) return (c.Mesh, c.Surfaces);
+        var result = Grow(o, deformed, world, frame);
+        lock (o.GrownLock) o.GrownCache = (key, result.Item1, result.Item2);
+        return result;
+    }
+
+    private (Mesh, IReadOnlyList<Surface>) Grow(ObjectItem o, Mesh deformed, Mat4 world, double frame)
+    {
+        var mesh = new Mesh { Points = [.. deformed.Points], Polygons = [.. deformed.Polygons], UVMaps = deformed.UVMaps };
+        var surfaces = new List<Surface>(o.Surfaces.Count > 0 ? o.Surfaces : [new Surface("Default")]);
+        var toLocal = world.Inverted();
+        if (o.Hair is { } hair)
+        {
+            int index = surfaces.Count;
+            surfaces.Add(new Surface($"{o.Name} hair") { Color = hair.Color, Diffuse = 0.9, Specular = 0.3, Glossiness = 32, DoubleSided = true, Smoothing = true });
+            int? only = hair.OnSurface.Length == 0 ? null : surfaces.FindIndex(x => x.Name == hair.OnSurface) is >= 0 and var i && i < index ? i : -1;
+            HairGrowth.Grow(mesh, hair, toLocal.TransformVector(new Vec3(0, -1, 0)), index, only);
+        }
+        if (o.Particles is { } ps)
+        {
+            if (ps.HideEmitter) mesh.Polygons = [.. mesh.Polygons.Skip(deformed.Polygons.Count)];
+            int index = surfaces.Count;
+            surfaces.Add(new Surface($"{o.Name} particles") { Color = ps.Color, Luminosity = ps.Glow, Diffuse = 0.8, DoubleSided = true });
+            var rest = o.BaseMesh();
+            var alive = ParticleSystem.At(ps, frame, FramesPerSecond, rest, f => f == frame ? world : o.WorldMatrix(f));
+            ParticleSystem.AddGeometry(mesh, alive, toLocal, index);
+        }
+        mesh.Touch();
+        return (mesh, surfaces);
     }
 }
 
@@ -405,7 +452,7 @@ public sealed class SceneFrame(double frame, IReadOnlyDictionary<SceneItem, Mat4
 }
 
 /// <summary>An object at one frame: its world transform and its deformed mesh.</summary>
-public sealed class ObjectFrame(ObjectItem item, Mat4 world, Mesh mesh)
+public sealed class ObjectFrame(ObjectItem item, Mat4 world, Mesh mesh, IReadOnlyList<Surface>? surfaces = null)
 {
     private Mesh? _worldMesh;
 
@@ -413,7 +460,8 @@ public sealed class ObjectFrame(ObjectItem item, Mat4 world, Mesh mesh)
     public Mat4 World { get; } = world;
     /// <summary>The mesh after deformation, in object coordinates (read-only).</summary>
     public Mesh Mesh { get; } = mesh;
-    public IReadOnlyList<Surface> Surfaces => Item.Surfaces;
+    /// <summary>The surfaces the mesh's polygons index: the object's, and its hair's and particles' after them.</summary>
+    public IReadOnlyList<Surface> Surfaces { get; } = surfaces ?? item.Surfaces;
 
     /// <summary>The deformed mesh placed in the world (made on first use).</summary>
     public Mesh WorldMesh => _worldMesh ??= new Mesh { Points = Mesh.Points.Select(World.TransformPoint).ToList(), Polygons = Mesh.Polygons, UVMaps = Mesh.UVMaps };

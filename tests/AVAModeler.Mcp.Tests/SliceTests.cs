@@ -24,6 +24,11 @@ public class SliceTests
         Assert.True((double)r["grams"]! > 1);
         Assert.True((bool)r["printable"]!);
         Assert.Empty((JsonArray)r["warnings"]!);
+        // Laid on a side, turned and four of them: two rows of two 20 mm cubes 5 mm apart.
+        var four = await Parse(b.Tools.SliceToGCode("prints/four.gcode", scale_percent: 2, lay_flat: "largest_face", rotate: 30, copies: 4, cancel: Cancel));
+        Assert.InRange((double)four["size_mm"]![0]!, 45, 60);
+        Assert.Contains("selected_face", await Error(b.Tools.SliceToGCode("x.gcode", lay_flat: "upside_down", cancel: Cancel)));
+        Assert.Contains("Select a polygon", await Error(b.Tools.SliceToGCode("x.gcode", scale_percent: 2, lay_flat: "selected_face", cancel: Cancel)));
         // Slicing is no undo step.
         Assert.Equal(steps, b.Doc.Undo.Count);
     }

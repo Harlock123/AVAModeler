@@ -188,7 +188,9 @@ phases 0 to 7 and Layout phases L1 to L6.
       common sizes; PLA, PETG, ABS and TPU) or your own, saved beside them. Everything is kept in the preferences.
     - The foreground layers go on the bed as STL export puts them (Y up becomes Z up, 1 m is 1000 mm, times the
       scale), centred or with the origin at the bed's centre, dropped onto it. You're told if it doesn't fit, if the
-      mesh check doesn't call it printable, and if holes in the mesh left outlines open.
+      mesh check doesn't call it printable, and if holes in the mesh left outlines open. It can go down as modelled,
+      on its largest flat face, or on the face you've selected; be turned about the bed's up axis; and be printed as
+      several copies in rows with a gap between.
     - Each layer is cut halfway up its height, then printed as walls (inner first, the outer one last, seams at the
       back or nearest), solid top and bottom layers where a surface is near, sparse infill (lines or a grid, on one
       grid for the whole print), optional supports under overhangs (with a gap round them and a layer of air under
@@ -711,7 +713,7 @@ Or, for everyone working in a folder, in its `.mcp.json`:
 | `set_backdrop` | A reference image behind the top, front or side view (from the working folder, only read): its centre in metres on the view's axes, width (or height, or `fit` round the foreground, or `pixel_size`), brightness, contrast, opacity, invert, visible; or `clear`. Not part of the object or its undo; `get_document` lists the backdrops. |
 | `render_view` | A PNG of the top, front, side or perspective view, as the app draws it (wireframe, shaded or textured), with a flat view's backdrop under the grid (framed to take it in). |
 | `render` | A ray-traced PNG of the object, lit and framed. |
-| `slice_to_gcode` | Slices the object for 3D printing and saves G-code (into the working folder), changing nothing in the object: a printer and material preset by name, layer height, infill, walls, supports, brim and scale; returns the print's size in mm, layers, time, filament and grams, and warnings. |
+| `slice_to_gcode` | Slices the object for 3D printing and saves G-code (into the working folder), changing nothing in the object: a printer and material preset by name, layer height, infill, walls, supports, brim, scale, which way up (as modelled, largest face or selected face down), a turn and copies; returns the print's size in mm, layers, time, filament and grams, and warnings. |
 
 The Layout tools:
 
@@ -967,8 +969,8 @@ Layout reuses them.
   bridges are found only over air (not over sparse infill), and combing keeps to one island (travel between islands
   retracts). Supports are simple columns of lines under overhangs, kept to the
   sideways gap and one layer of air, with no interface layers or tree supports, and they stand on the object where it's
-  below. The time is from the moves' lengths and speeds alone, so real prints take somewhat longer. Placement can
-  centre and scale but not turn the object or lay several copies out: model them so. The preview shows one layer at
+  below. The time is from the moves' lengths and speeds alone, so real prints take somewhat longer. Copies are all the same
+  way up and turned alike, laid out in a grid rather than packed. The preview shows one layer at
   a time from above, not the print in 3D. For anything beyond this, export STL for a dedicated slicer.
 - **Backdrops** are behind the Top, Front and Side views only: the perspective view (and Layout) shows none, as a
   picture fixed to the screen wouldn't line up with anything there. One image per view. The grid is drawn over them at

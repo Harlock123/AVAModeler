@@ -91,6 +91,18 @@ public sealed class PrintWindowTests : IDisposable
         p.CombingBox.IsChecked = false;
         Assert.False(p.UpToDate);
         p.CombingBox.IsChecked = true;
+        // Four copies: two rows of two.
+        p.FieldBox("copies").Text = "4";
+        Assert.True(Wait(p.Slice()));
+        Assert.Contains("45 × 45 × 20 mm", p.Status.Text);
+        Assert.Equal(4, p.Job!.Sliced.Layers[0].Islands.Count);
+        // Selected face down with nothing selected says what to do.
+        p.LayFlatBox.SelectedIndex = 2;
+        Assert.False(Wait(p.Slice()));
+        Assert.Contains("Select a polygon", p.Status.Text);
+        p.LayFlatBox.SelectedIndex = 0;
+        p.FieldBox("copies").Text = "1";
+        Assert.True(Wait(p.Slice()));
         // Changing the object or a setting makes it out of date.
         p.FieldBox("infill").Text = "40";
         Assert.False(p.UpToDate);

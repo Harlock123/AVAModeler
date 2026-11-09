@@ -27,6 +27,7 @@ public sealed class PrintWindow : Window
     private readonly ComboBox _pattern = Choice(Enum.GetNames<InfillPattern>());
     private readonly ComboBox _seam = Choice(Enum.GetNames<SeamPosition>());
     private readonly ComboBox _position = Choice(["Centre on the bed", "Origin at the bed's centre"]);
+    private readonly ComboBox _layFlat = Choice(["As modelled", "Largest face down", "Selected face down"]);
     private readonly CheckBox _supports = new() { Content = "Supports under overhangs", Foreground = Look.Text };
     private readonly CheckBox _gapFill = new() { Content = "Fill gaps between walls", Foreground = Look.Text };
     private readonly CheckBox _bridging = new() { Content = "Bridge spans over air", Foreground = Look.Text };
@@ -86,7 +87,8 @@ public sealed class PrintWindow : Window
             Field("speed", "Print speed (mm/s)"), Field("outer", "Outer wall speed (mm/s)"), Field("infillSpeed", "Infill speed (mm/s)"),
             Field("firstSpeed", "First layer speed (mm/s)"), Field("bridgeSpeed", "Bridge speed (mm/s)"), Field("gapSpeed", "Gap fill speed (mm/s)"),
             Field("travel", "Travel speed (mm/s)"), Field("zhop", "Z hop (mm)"),
-            Field("scale", "Scale (%)"), Row("Position", _position));
+            Field("scale", "Scale (%)"), Row("Way up", _layFlat), Field("turn", "Turn on the bed (°)"), Row("Position", _position),
+            Field("copies", "Copies"), Field("gap", "Gap between copies (mm)"));
 
         var left = new ScrollViewer
         {
@@ -256,6 +258,7 @@ public sealed class PrintWindow : Window
     public ComboBox Materials => _materials;
     public CheckBox SupportsBox => _supports;
     public CheckBox CombingBox => _combing;
+    public ComboBox LayFlatBox => _layFlat;
 
     private void Fill(PrintSetup setup)
     {
@@ -284,6 +287,8 @@ public sealed class PrintWindow : Window
         _seam.SelectedIndex = (int)s.Seam;
         _supports.IsChecked = s.Supports;
         _position.SelectedIndex = (int)setup.Placement.Position;
+        _layFlat.SelectedIndex = (int)setup.Placement.LayFlat;
+        Set("turn", setup.Placement.RotateDegrees); Set("copies", setup.Placement.Copies); Set("gap", setup.Placement.CopyGap);
     }
 
     private void FillPrinter(PrinterProfile p)
@@ -323,7 +328,12 @@ public sealed class PrintWindow : Window
             BridgeSpeed = Num("bridgeSpeed", "The bridge speed"), GapFillSpeed = Num("gapSpeed", "The gap fill speed"),
             GapFill = _gapFill.IsChecked == true, Bridging = _bridging.IsChecked == true, Combing = _combing.IsChecked == true,
         };
-        var placement = new PlacementOptions { ScalePercent = Num("scale", "The scale"), Position = (BedPosition)Math.Max(0, _position.SelectedIndex) };
+        var placement = new PlacementOptions
+        {
+            ScalePercent = Num("scale", "The scale"), Position = (BedPosition)Math.Max(0, _position.SelectedIndex),
+            LayFlat = (LayFlat)Math.Max(0, _layFlat.SelectedIndex), RotateDegrees = Num("turn", "The turn"),
+            Copies = Whole("copies", "Copies"), CopyGap = Num("gap", "The gap between copies"),
+        };
         return (_setup with { Printer = printer, Material = material, Settings = settings, Placement = placement }).Checked();
     }
 

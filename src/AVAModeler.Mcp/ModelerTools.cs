@@ -811,6 +811,10 @@ public sealed partial class ModelerTools(IModelerHost host)
         [Description("Lines of brim round the first layer to hold it down, 0 for none (default 0: a skirt instead).")] int brim_lines = 0,
         [Description("Scale in percent: 100 prints at the modelled size, 1 m = 1000 mm (default 100).")] double scale_percent = 100,
         [Description("Centre the object on the bed (default true); false puts the Modeler's origin at the bed's centre.")] bool centre = true,
+        [Description("Which way up: as_modelled (default: the Modeler's +Y is up), largest_face (turned so its largest flat outside face lies on the bed), or selected_face (the first selected polygon in the foreground lies on the bed).")] string lay_flat = "as_modelled",
+        [Description("Degrees to turn it about the bed's up axis, anticlockwise seen from above, after laying it flat (default 0).")] double rotate = 0,
+        [Description("How many copies to print, 1 to 100, in rows centred on the bed (default 1).")] int copies = 1,
+        [Description("The gap between copies in mm (default 5).")] double copy_gap = 5,
         [Description("Replace the file if it already exists.")] bool overwrite = false,
         CancellationToken cancel = default)
     {
@@ -825,7 +829,17 @@ public sealed partial class ModelerTools(IModelerHost host)
             {
                 Printer = p,
                 Material = m,
-                Placement = new PlacementOptions { Position = centre ? BedPosition.Centre : BedPosition.AsModelled, ScalePercent = scale_percent },
+                Placement = new PlacementOptions
+                {
+                    Position = centre ? BedPosition.Centre : BedPosition.AsModelled, ScalePercent = scale_percent, RotateDegrees = rotate, Copies = copies, CopyGap = copy_gap,
+                    LayFlat = lay_flat.ToLowerInvariant() switch
+                    {
+                        "as_modelled" => LayFlat.AsModelled,
+                        "largest_face" => LayFlat.LargestFace,
+                        "selected_face" => LayFlat.SelectedFace,
+                        _ => throw new ArgumentException($"lay_flat is as_modelled, largest_face or selected_face, not \"{lay_flat}\"."),
+                    },
+                },
                 Settings = new SliceSettings { LayerHeight = layer_height, InfillPercent = infill_percent, Walls = walls, Supports = supports, BrimLines = brim_lines },
             }.Checked();
         }

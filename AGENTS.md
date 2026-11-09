@@ -77,8 +77,9 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     `PrintSetup.cs` is what the preferences keep (the chosen profiles, the person's own, the placement) as JSON.
   - `Placement.cs`: `Placement.Place` turns the foreground layers into a `PrintModel`, triangles in the printer's space
     (through `Stl.Triangles` and `Stl.ToStl`, so millimetres and Z up as STL export has them) welded into shared
-    points, dropped on the bed and centred (or the origin at the bed's centre), with what doesn't fit and the mesh
-    check's verdict.
+    points, laid flat (`LayFlat`: as modelled, `LargestFlatFace`, or the selected polygon) and turned with `Mat3`,
+    dropped on the bed and centred (or the origin at the bed's centre), copied into rows, with what doesn't fit and
+    the mesh check's verdict.
   - `Slicer.cs`: `Slicer.Slice` cuts a `PrintModel` into `SliceLayer`s halfway up each layer (`SliceSettings`: layer
     and first-layer height). A point at or above the plane counts as above, so no point lies on it; each edge's cut
     point is worked out once and shared, so segments join edge to edge with no tolerance (outsides anticlockwise, holes

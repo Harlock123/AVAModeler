@@ -231,6 +231,9 @@ phases 0 to 7 and Layout phases L1 to L6.
       by its own density.
     - For Sailfish printers (MakerBot-style: the Flashforge Creator Pro) it also saves .x3g, the binary file their
       firmware prints from, as GPX would convert the G-code: Save .x3g…, `slice("part.x3g")` or `slice_to_gcode`.
+    - Adaptive layer heights choose each layer from the slopes it crosses (0.08 to 0.28 mm by default), so a curve or
+      a gentle slope steps by no more than a set amount while straight walls print in thick, quick layers; a layer
+      grows by at most half on the one below, so the change doesn't show.
     - Ironing smooths top surfaces (the very top and each step's): a last slow pass of lines 0.1 mm apart crossways
       to the top layer, laying a tenth of the plastic (Fine 0.12 irons).
     - Print profiles set the way it's laid down in one go: Standard 0.20, Draft 0.28, Fine 0.12, Strong (four

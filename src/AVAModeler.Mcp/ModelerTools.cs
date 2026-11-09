@@ -811,6 +811,7 @@ public sealed partial class ModelerTools(IModelerHost host)
         [Description("Wall loops round each outline and hole, 1 to 20 (default 2, or the profile's).")] int? walls = null,
         [Description("Build supports under overhangs steeper than 50° from vertical (default false), topped by two dense interface layers that come away cleanly.")] bool supports = false,
         [Description("With supports: only columns that stand on the bed, none on the object (default false).")] bool supports_bed_only = false,
+        [Description("Adaptive layer heights: each layer as thick as the slopes it crosses allow (0.08 to 0.28 mm), fine on curves and quick on straight walls (default false).")] bool adaptive_layers = false,
         [Description("Iron the top surfaces: a last slow pass of close lines with a trickle of plastic, to smooth them (default: the profile's, else false).")] bool? ironing = null,
         [Description("A dual printer (the Creator Pro): the extruder that prints the part, 1 (default, its right one) or 2.")] int extruder = 1,
         [Description("A dual printer: the extruder for supports, 1 or 2 (default: the part's). The other one prints them in support_material.")] int? support_extruder = null,
@@ -849,7 +850,7 @@ public sealed partial class ModelerTools(IModelerHost host)
                 },
                 Settings = (profile == null ? new SliceSettings() : new PrintSetup().WithProfile(profile).Settings) is var b ? b with
                 {
-                    Ironing = ironing ?? b.Ironing, LayerHeight = layer_height ?? b.LayerHeight, InfillPercent = infill_percent ?? b.InfillPercent, Walls = walls ?? b.Walls,
+                    Ironing = ironing ?? b.Ironing, AdaptiveLayers = adaptive_layers || b.AdaptiveLayers, LayerHeight = layer_height ?? b.LayerHeight, InfillPercent = infill_percent ?? b.InfillPercent, Walls = walls ?? b.Walls,
                     Infill = infill_pattern == null ? b.Infill : Enum.TryParse<InfillPattern>(infill_pattern, ignoreCase: true, out var ip) ? ip : throw new ArgumentException($"infill_pattern is lines, grid or gyroid, not \"{infill_pattern}\"."),
                     Supports = supports, BrimLines = brim_lines, SupportOn = supports_bed_only ? SupportPlacement.BedOnly : SupportPlacement.Everywhere,
                     ModelExtruder = extruder - 1, SupportExtruder = (support_extruder ?? extruder) - 1 == extruder - 1 ? -1 : (support_extruder ?? extruder) - 1,

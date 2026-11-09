@@ -42,6 +42,16 @@ public sealed record SliceSettings
     public double LayerHeight { get; init; } = 0.2;
     /// <summary>The first layer's height: a little thicker sticks better to the bed.</summary>
     public double FirstLayerHeight { get; init; } = 0.24;
+    /// <summary>
+    /// Choose each layer's height from the slopes it crosses (between <see cref="AdaptiveMin"/> and
+    /// <see cref="AdaptiveMax"/>), so curves and gentle slopes print fine and straight walls quick; <see cref="LayerHeight"/>
+    /// is then unused after the first layer.
+    /// </summary>
+    public bool AdaptiveLayers { get; init; }
+    public double AdaptiveMin { get; init; } = 0.08;
+    public double AdaptiveMax { get; init; } = 0.28;
+    /// <summary>How far a sloped surface may step from one layer to the next (mm): less is finer and slower.</summary>
+    public double AdaptiveCusp { get; init; } = 0.06;
     /// <summary>The width of a printed line: usually a little wider than the nozzle.</summary>
     public double LineWidth { get; init; } = 0.45;
 
@@ -118,6 +128,9 @@ public sealed record SliceSettings
         double most = Math.Round(nozzle * 0.8, 3);
         PrinterProfile.Range(LayerHeight, 0.04, most, "The layer height");
         PrinterProfile.Range(FirstLayerHeight, 0.04, most, "The first layer's height");
+        PrinterProfile.Range(AdaptiveMin, 0.04, most, "The thinnest adaptive layer");
+        PrinterProfile.Range(AdaptiveMax, AdaptiveMin, most, "The thickest adaptive layer");
+        PrinterProfile.Range(AdaptiveCusp, 0.005, 1, "The adaptive step");
         PrinterProfile.Range(LineWidth, Math.Round(nozzle * 0.6, 3), Math.Round(nozzle * 2, 3), "The line width");
         PrinterProfile.Range(Walls, 1, 20, "The walls", " loops");
         PrinterProfile.Range(TopLayers, 0, 100, "The top layers", "");

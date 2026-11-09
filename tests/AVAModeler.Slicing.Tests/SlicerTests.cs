@@ -133,3 +133,52 @@ public class SlicerTests
         Assert.Equal([new Vec2(0, 0), new Vec2(2, 0), new Vec2(2, 2), new Vec2(0, 2)], clean);
     }
 }
+
+public class AdaptiveLayerTests
+{
+    private static readonly PrinterProfile Printer = new();
+
+    private static SlicedModel Slice(Document doc, SliceSettings s) => Slicer.Slice(Placement.Place(doc, Printer), s, Printer);
+
+    [Fact]
+    public void A_ball_gets_thin_layers_near_its_poles_and_thick_ones_round_its_middle()
+    {
+        var sliced = Slice(SafetyTests.Ball(0.025, 96, 48), new SliceSettings { AdaptiveLayers = true });
+        var layers = sliced.Layers;
+        // (The last ends at the top of the ball, thinner if need be.)
+        Assert.All(layers.Skip(1).SkipLast(1), l => Assert.InRange(l.Height, 0.08 - 1e-9, 0.28 + 1e-9));
+        // Never more than half again as thick as the layer below.
+        for (int i = 2; i < layers.Count - 1; i++) Assert.True(layers[i].Height <= layers[i - 1].Height * 1.5 + 1e-9);
+        double Near(double z) => layers.Where(l => Math.Abs(l.CutAt - z) < 1.5).Average(l => l.Height);
+        Assert.True(Near(25) > 0.25, $"middle {Near(25)}");
+        Assert.True(Near(3) < 0.12, $"low {Near(3)}");
+        Assert.True(Near(47) < 0.12, $"high {Near(47)}");
+        Assert.Equal(50, layers[^1].Top, 6);
+        // Fewer layers than all-fine, more than all-coarse.
+        int fine = (int)(50 / 0.08), coarse = (int)(50 / 0.28);
+        Assert.InRange(layers.Count, coarse, fine);
+    }
+
+    [Fact]
+    public void A_cube_has_nothing_sloped_so_it_takes_the_thickest_layers()
+    {
+        var sliced = Slice(Shapes.Cube(0.02), new SliceSettings { AdaptiveLayers = true });
+        Assert.All(sliced.Layers.Skip(2).SkipLast(1), l => Assert.Equal(0.28, l.Height, 6));
+        Assert.Equal(0.24, sliced.Layers[0].Height, 9);
+        // A finer step on slopes, and limits, are checked.
+        Assert.Throws<ArgumentException>(() => new SliceSettings { AdaptiveMax = 0.5 }.Checked(Printer));
+        Assert.Throws<ArgumentException>(() => new SliceSettings { AdaptiveMin = 0.3, AdaptiveMax = 0.2 }.Checked(Printer));
+    }
+
+    [Fact]
+    public void An_adaptive_print_is_safe_and_its_lines_use_each_layers_own_height()
+    {
+        var job = PrintJob.Run(SafetyTests.Ball(), new PrintSetup { Settings = new SliceSettings { AdaptiveLayers = true } });
+        var run = Playback.Run(job.GCode);
+        Assert.Equal(-2, run.E - run.TotalE, 6);
+        double lines = job.Plan.Layers.Sum(l => l.Paths.Sum(p => p.Length * p.Flow * GCode.FilamentPerMm(p.Width > 0 ? p.Width : 0.45, l.Layer.Height, 1.75)));
+        Assert.Equal(lines, job.Stats.FilamentMm, 1);
+        var byLayer = run.Extrusions.Where(e => e.Layer >= 0).GroupBy(e => e.Layer).ToList();
+        for (int i = 1; i < byLayer.Count; i++) Assert.True(byLayer[i].Min(e => e.Z) > byLayer[i - 1].Max(e => e.Z));
+    }
+}

@@ -64,6 +64,8 @@ public sealed class PrintWindow : Window
     private string? _x3gMachine;
     private readonly CheckBox _gapFill = new() { Content = "Fill gaps between walls", Foreground = Look.Text };
     private readonly CheckBox _bridging = new() { Content = "Bridge spans over air", Foreground = Look.Text };
+    private readonly CheckBox _adaptive = new() { Content = "Adaptive layer heights (thin on slopes)", Foreground = Look.Text };
+    public CheckBox AdaptiveBox => _adaptive;
     private readonly CheckBox _ironing = new() { Content = "Iron top surfaces", Foreground = Look.Text };
     public CheckBox IroningBox => _ironing;
     private readonly CheckBox _combing = new() { Content = "Keep travel inside the object", Foreground = Look.Text };
@@ -200,7 +202,8 @@ public sealed class PrintWindow : Window
             Field("material.fanFrom", "Fan from layer"), Field("material.density", "Density (g/cm³)"),
             Field("material.minLayer", "Shortest layer time (s)"), Field("material.minSpeed", "Slowest cooling speed (mm/s)"), saveMaterial);
         var print = Section("Print", _profiles, Row("", profileName), saveProfile,
-            Field("layer", "Layer height (mm)"), Field("first", "First layer (mm)"), Field("width", "Line width (mm)"), Field("walls", "Walls"),
+            Field("layer", "Layer height (mm)"), Field("first", "First layer (mm)"), _adaptive,
+            Field("adaptMin", "Thinnest layer (mm)"), Field("adaptMax", "Thickest layer (mm)"), Field("adaptCusp", "Largest step on a slope (mm)"), Field("width", "Line width (mm)"), Field("walls", "Walls"),
             Field("top", "Top layers"), Field("bottom", "Bottom layers"), Field("infill", "Infill (%)"), Row("Infill pattern", _pattern), Field("angle", "Infill angle (°)"),
             Row("Seam", _seam), _gapFill, _bridging, _ironing, Field("ironFlow", "Ironing flow (%)"), _combing, Field("skirt", "Skirt loops"), Field("brim", "Brim lines"), _supports, Field("supportAngle", "Support angle (°)"),
             Row("Supports stand", _supportOn), (_dualRows = new StackPanel
@@ -490,6 +493,8 @@ public sealed class PrintWindow : Window
         _bridging.IsChecked = s.Bridging;
         _combing.IsChecked = s.Combing;
         _ironing.IsChecked = s.Ironing;
+        _adaptive.IsChecked = s.AdaptiveLayers;
+        Set("adaptMin", s.AdaptiveMin); Set("adaptMax", s.AdaptiveMax); Set("adaptCusp", s.AdaptiveCusp);
         Set("ironFlow", s.IroningFlowPercent);
         _pattern.SelectedIndex = (int)s.Infill;
         _seam.SelectedIndex = (int)s.Seam;
@@ -561,6 +566,8 @@ public sealed class PrintWindow : Window
             BridgeSpeed = Num("bridgeSpeed", "The bridge speed"), GapFillSpeed = Num("gapSpeed", "The gap fill speed"),
             GapFill = _gapFill.IsChecked == true, Bridging = _bridging.IsChecked == true, Combing = _combing.IsChecked == true,
             Ironing = _ironing.IsChecked == true, IroningFlowPercent = Num("ironFlow", "The ironing flow"),
+            AdaptiveLayers = _adaptive.IsChecked == true, AdaptiveMin = Num("adaptMin", "The thinnest layer"), AdaptiveMax = Num("adaptMax", "The thickest layer"),
+            AdaptiveCusp = Num("adaptCusp", "The largest step on a slope"),
         };
         var placement = new PlacementOptions
         {

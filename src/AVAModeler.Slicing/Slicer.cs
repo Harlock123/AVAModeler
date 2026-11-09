@@ -66,11 +66,15 @@ public static class Slicer
         int next = 0;
         double top = model.Bounds.Max.Z;
         double bottom = 0;
+        var adaptive = settings.AdaptiveLayers ? new AdaptiveHeights(model, settings) : null;
+        double previous = settings.FirstLayerHeight;
         for (int index = 0; bottom < top - 1e-9; index++)
         {
-            double height = index == 0 ? settings.FirstLayerHeight : settings.LayerHeight;
+            double height = index == 0 ? settings.FirstLayerHeight : adaptive?.At(bottom, previous) ?? settings.LayerHeight;
+            previous = height;
             // The last layer ends at the top of the object, thinner if need be; less than half a layer left isn't printed.
-            if (index > 0 && top - bottom < settings.LayerHeight / 2) break;
+            double least = adaptive != null ? settings.AdaptiveMin : settings.LayerHeight;
+            if (index > 0 && top - bottom < least / 2) break;
             double layerTop = Math.Min(bottom + height, top);
             double cut = Math.Min((bottom + layerTop) / 2, top - 1e-6);
             while (next < order.Length && MinZ(model, order[next]) <= cut) active.Add(order[next++]);
@@ -160,6 +164,61 @@ public static class Slicer
             if (clean.Count >= 3 && Math.Abs(Geometry2D.SignedArea(clean)) > 1e-6) loops.Add(new Loop(clean));
         }
         return (loops, open);
+    }
+}
+
+/// <summary>
+/// Adaptive layer heights: a layer is as thick as it can be while every sloped face it crosses steps by no more than
+/// <see cref="SliceSettings.AdaptiveCusp"/>. A face whose normal is n steps h·|n.z| over a layer h tall (none on a
+/// wall, the whole layer on a flat), so each face allows cusp ÷ |n.z|; the layer takes the least of those, within the
+/// least and most heights, and grows by at most half from one layer to the next so the change doesn't show. Flat
+/// faces (tops and bottoms) don't count: they lie on a layer, not across them.
+/// </summary>
+internal sealed class AdaptiveHeights
+{
+    private readonly (double Min, double Max, double Nz)[] _faces;
+    private readonly SliceSettings _s;
+    private int _next;
+    private readonly List<int> _active = [];
+
+    public AdaptiveHeights(PrintModel model, SliceSettings settings)
+    {
+        _s = settings;
+        var faces = new List<(double, double, double)>();
+        foreach (var (a, b, c) in model.Triangles)
+        {
+            Vec3 pa = model.Points[a], pb = model.Points[b], pc = model.Points[c];
+            var n = Vec3.Cross(pb - pa, pc - pa);
+            double len = n.Length;
+            if (len < 1e-12) continue;
+            double nz = Math.Abs(n.Z / len);
+            if (nz < 1e-6 || nz > 1 - 1e-6) continue;
+            faces.Add((Math.Min(pa.Z, Math.Min(pb.Z, pc.Z)), Math.Max(pa.Z, Math.Max(pb.Z, pc.Z)), nz));
+        }
+        _faces = [.. faces.OrderBy(f => f.Item1)];
+    }
+
+    /// <summary>The next layer's height, from <paramref name="bottom"/> up, after one <paramref name="previous"/> tall.</summary>
+    public double At(double bottom, double previous)
+    {
+        double most = Math.Min(_s.AdaptiveMax, previous * 1.5);
+        double h = most;
+        // Twice: a thinner layer reaches fewer faces, so it may be allowed a little more.
+        for (int pass = 0; pass < 2; pass++)
+        {
+            double top = bottom + h;
+            while (_next < _faces.Length && _faces[_next].Min < bottom + most) _active.Add(_next++);
+            _active.RemoveAll(i => _faces[i].Max <= bottom);
+            double allowed = most;
+            foreach (int i in _active)
+            {
+                var f = _faces[i];
+                if (f.Min >= top || f.Max <= bottom) continue;
+                allowed = Math.Min(allowed, _s.AdaptiveCusp / f.Nz);
+            }
+            h = Math.Clamp(allowed, _s.AdaptiveMin, most);
+        }
+        return Math.Max(h, _s.AdaptiveMin);
     }
 }
 

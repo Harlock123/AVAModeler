@@ -91,7 +91,9 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - `Slicer.cs`: `Slicer.Slice` cuts a `PrintModel` into `SliceLayer`s halfway up each layer (`SliceSettings`: layer
     and first-layer height). A point at or above the plane counts as above, so no point lies on it; each edge's cut
     point is worked out once and shared, so segments join edge to edge with no tolerance (outsides anticlockwise, holes
-    clockwise). Chains that don't close (holes in the mesh) are counted in `OpenChains` and left out. `Geometry2D` has
+    clockwise). Chains that don't close (holes in the mesh) are counted in `OpenChains` and left out. `AdaptiveHeights`
+    (`SliceSettings.AdaptiveLayers`) picks each layer's height as the least `AdaptiveCusp ÷ |n.z|` of the sloped
+    faces it crosses, within `AdaptiveMin` and `AdaptiveMax`, growing at most half a layer at a time. `Geometry2D` has
     the plain 2D sums (area, containment, `Clean`).
   - `Polygons2D.cs`: the region work on Clipper2 (non-zero fill, 4 decimal places): `Union`, `Difference`,
     `Intersect`, `Offset` (sharp or round corners), `ClipLines` (open lines inside a region) and `Islands` (a region

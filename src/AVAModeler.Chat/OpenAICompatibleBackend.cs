@@ -77,6 +77,8 @@ internal sealed class OpenAICompatibleBackend : IChatBackend
             ["tools"] = ToolsFor(offered),
             ["tool_choice"] = "auto",
             ["stream"] = true,
+            // The tokens used, in a last chunk (servers that don't know the option leave it out).
+            ["stream_options"] = new JsonObject { ["include_usage"] = true },
         };
     }
 
@@ -107,13 +109,20 @@ internal sealed class OpenAICompatibleBackend : IChatBackend
         public readonly StringBuilder Arguments = new();
     }
 
-    public async Task<BackendReply> ReplyAsync(IReadOnlyList<McpTool> tools, Action<string> text, CancellationToken cancel)
+    public async Task<BackendReply> ReplyAsync(IReadOnlyList<McpTool> tools, Action<string> text, CancellationToken cancel, Action<TokenUsage>? usage = null)
     {
         var words = new StringBuilder();
         var calls = new SortedDictionary<int, Partial>();
         string? finish = null;
+        var used = default(TokenUsage);
         await foreach (var chunk in Client!.StreamAsync(Request(tools), cancel).WithCancellation(cancel))
         {
+            // The usage comes in a chunk of its own at the end (with stream_options.include_usage), or with a whole answer.
+            if (Tokens(chunk["usage"]) is { } u)
+            {
+                used = u;
+                usage?.Invoke(u);
+            }
             if (chunk["choices"] is not JsonArray { Count: > 0 } choices || choices[0] is not JsonObject choice) continue;
             // A streamed chunk has a delta; a whole answer (from a server that doesn't stream) has the message.
             var delta = choice["delta"] as JsonObject ?? choice["message"] as JsonObject;
@@ -170,7 +179,20 @@ internal sealed class OpenAICompatibleBackend : IChatBackend
             "content_filter" when parsed.Count == 0 => ReplyEnd.Refusal,
             _ => ReplyEnd.Done,
         };
-        return new BackendReply(parsed, end);
+        return new BackendReply(parsed, end, used.IsEmpty ? used with { Requests = 1 } : used);
+    }
+
+    /// <summary>
+    /// A Chat Completions usage object as the chat counts it: prompt tokens (less any the server read from its cache,
+    /// counted apart) and completion tokens; null when there's none. Servers that don't report usage leave it at zero.
+    /// </summary>
+    internal static TokenUsage? Tokens(JsonNode? usage)
+    {
+        if (usage is not JsonObject u) return null;
+        static long N(JsonNode? n) => n is JsonValue v && v.TryGetValue<long>(out var x) ? x : n is JsonValue d && d.TryGetValue<double>(out var y) ? (long)y : 0;
+        long prompt = N(u["prompt_tokens"]), completion = N(u["completion_tokens"]);
+        long cached = Math.Min(prompt, N((u["prompt_tokens_details"] as JsonObject)?["cached_tokens"]));
+        return new TokenUsage(prompt - cached, completion, 0, cached, 1);
     }
 
     /// <summary>A call's arguments as the bridge takes them; arguments that aren't a JSON object make it a problem.</summary>

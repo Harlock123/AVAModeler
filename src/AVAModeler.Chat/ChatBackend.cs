@@ -23,8 +23,8 @@ internal sealed record ToolCall(string Id, string Name, IReadOnlyDictionary<stri
 /// <summary>Why a reply ended, when it asked for no tools.</summary>
 internal enum ReplyEnd { Done, MaxTokens, Refusal }
 
-/// <summary>A finished reply: the tool calls it asks for (none when it's done) and why it ended.</summary>
-internal sealed record BackendReply(IReadOnlyList<ToolCall> Calls, ReplyEnd End);
+/// <summary>A finished reply: the tool calls it asks for (none when it's done), why it ended, and the tokens it used.</summary>
+internal sealed record BackendReply(IReadOnlyList<ToolCall> Calls, ReplyEnd End, TokenUsage Usage = default);
 
 /// <summary>
 /// One provider's side of the chat: its conversation in its own API's shape, and one streamed request at a time. The
@@ -49,9 +49,10 @@ internal interface IChatBackend
 
     /// <summary>
     /// Sends the conversation and streams the reply: its words go to <paramref name="text"/> as they come, and the whole
-    /// reply is kept in the conversation (unless it's empty). A failure or cancel keeps nothing.
+    /// reply is kept in the conversation (unless it's empty). A failure or cancel keeps nothing. <paramref name="usage"/>
+    /// is told the request's tokens so far as the API reports them (each time the whole count, not what's new).
     /// </summary>
-    Task<BackendReply> ReplyAsync(IReadOnlyList<McpTool> tools, Action<string> text, CancellationToken cancel);
+    Task<BackendReply> ReplyAsync(IReadOnlyList<McpTool> tools, Action<string> text, CancellationToken cancel, Action<TokenUsage>? usage = null);
 
     /// <summary>The outcomes of the last reply's tool calls, one for each, in order.</summary>
     void AddResults(IReadOnlyList<(ToolCall Call, ToolOutcome Outcome)> results);

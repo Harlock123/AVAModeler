@@ -78,6 +78,10 @@ public sealed class StoredChat
     public DateTimeOffset Updated { get; set; }
     public List<StoredEntry> Entries { get; set; } = [];
     public List<StoredTurn> Turns { get; set; } = [];
+    /// <summary>The tokens the chat used, all its requests added up.</summary>
+    public TokenUsage Usage { get; set; }
+    /// <summary>Their estimated cost in dollars, or null if a model had no price.</summary>
+    public double? Cost { get; set; }
 }
 
 /// <summary>A saved chat as the history list shows it.</summary>

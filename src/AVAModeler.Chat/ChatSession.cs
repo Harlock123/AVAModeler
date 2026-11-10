@@ -28,6 +28,12 @@ public sealed class ChatSession(IToolBridge tools)
     private CancellationTokenSource? _running;
     private int _generation;
     private IReadOnlyList<McpTool>? _toolDefinitions;
+    private TokenUsage _chatTokens, _live;
+    private double _chatCost;
+    private bool _unpriced;
+    private readonly List<RequestUsage> _turnRequests = [];
+    private int _pendingPictures;
+    private double _allowance;
 
     /// <summary>
     /// Where the model runs. Changing it starts a new chat: a conversation can't move between providers (their messages
@@ -121,6 +127,63 @@ public sealed class ChatSession(IToolBridge tools)
     /// <summary>The model as the chat's lines name it: "Claude", or "The model".</summary>
     public string Who => _provider == ChatProvider.Anthropic ? "Claude" : "The model";
 
+    // ───────────────────────────── what it uses ─────────────────────────────
+
+    /// <summary>The person's own prices (Setup…), over <see cref="ChatPricing.Defaults"/>.</summary>
+    public IReadOnlyList<ModelPrice> OwnPrices { get; set; } = [];
+
+    /// <summary>Where each request's use is added up day by day (the panel's today and this month), or null.</summary>
+    public UsageLedger? Ledger { get; set; }
+
+    /// <summary>
+    /// About how many dollars a chat may spend before it stops between requests and says so (null: no limit). Sending
+    /// another message after it stops allows as much again.
+    /// </summary>
+    public double? Budget
+    {
+        get => _budget;
+        set
+        {
+            _budget = value is > 0 && double.IsFinite(value.Value) ? value : null;
+            _allowance = _budget is { } b ? Math.Max(_allowance, b) : 0;
+        }
+    }
+    private double? _budget;
+
+    /// <summary>The model the next request's price is looked up by, or null for one with none (an OpenAI-compatible server's).</summary>
+    public ModelPrice? Price => _provider == ChatProvider.Anthropic ? ChatPricing.Find(Model, OwnPrices) : null;
+
+    /// <summary>This chat's tokens so far, the request under way included.</summary>
+    public TokenUsage ChatTokens => _chatTokens + _live;
+
+    /// <summary>This chat's estimated cost so far (the request under way included), or null if any of it had no price.</summary>
+    public double? ChatCost => _unpriced ? null : _chatCost + (Price?.Cost(_live) ?? 0);
+
+    /// <summary>The turn under way's tokens and estimated cost (since the person's last message), the request under way included.</summary>
+    public TokenUsage TurnTokens => _turnRequests.Aggregate(_live, (a, r) => a + r.Tokens);
+
+    public double? TurnCost => _turnRequests.Any(r => r.Cost == null) || (Price == null && !_live.IsEmpty) ? null
+        : _turnRequests.Sum(r => r.Cost!.Value) + (Price?.Cost(_live) ?? 0);
+
+    /// <summary>Raised as the tokens used change: during a request as the API reports them, and after it.</summary>
+    public event Action? UsageChanged;
+
+    /// <summary>A request's use is final: it's added to the chat, the turn and the ledger.</summary>
+    private void Commit(TokenUsage used)
+    {
+        _live = default;
+        if (used.IsEmpty && used.Requests == 0) return;
+        var price = Price;
+        double? cost = price?.Cost(used);
+        if (cost == null) _unpriced = true;
+        else _chatCost += cost.Value;
+        _chatTokens += used;
+        _turnRequests.Add(new RequestUsage(used, cost, _pendingPictures));
+        _pendingPictures = 0;
+        Ledger?.Add(Clock(), used, cost);
+        UsageChanged?.Invoke();
+    }
+
     /// <summary>The most tool calls one request may make before the chat stops and says so.</summary>
     public int MaxToolCalls { get; set; } = 60;
 
@@ -178,6 +241,8 @@ public sealed class ChatSession(IToolBridge tools)
         }
         Backend.AddUserText(text);
         _log.Add(new LogTurn("user", text, [], []));
+        // Stopped by the budget: the person's carrying on allows as much again.
+        if (_budget is { } b && ChatCost is { } spent && spent >= _allowance) _allowance = spent + b;
         await RunAsync(cancel);
     }
 
@@ -209,6 +274,10 @@ public sealed class ChatSession(IToolBridge tools)
         _anthropic.Clear();
         _server.Clear();
         ChatId = "";
+        (_chatTokens, _live, _chatCost, _unpriced, _pendingPictures) = (default, default, 0, false, 0);
+        _turnRequests.Clear();
+        _allowance = _budget ?? 0;
+        UsageChanged?.Invoke();
         bool wasReadOnly = ReadOnly;
         ReadOnlyProvider = null;
         Cleared?.Invoke();
@@ -231,6 +300,8 @@ public sealed class ChatSession(IToolBridge tools)
     {
         using var running = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         _running = running;
+        _turnRequests.Clear();
+        int generation = _generation;
         WorkingChanged?.Invoke();
         try
         {
@@ -238,6 +309,13 @@ public sealed class ChatSession(IToolBridge tools)
         }
         finally
         {
+            // What the turn used, after it (a request cut short counts what was reported of it).
+            if (generation == _generation)
+            {
+                if (!_live.IsEmpty) Commit(_live with { Requests = 1 });
+                // Shown only when the API reported tokens (some OpenAI-compatible servers don't).
+                if (_turnRequests.Any(r => !r.Tokens.IsEmpty)) Add(new UsageEntry([.. _turnRequests], Price?.Model));
+            }
             _running = null;
             WorkingChanged?.Invoke();
         }
@@ -248,8 +326,15 @@ public sealed class ChatSession(IToolBridge tools)
         int calls = 0, continues = 0, generation = _generation;
         bool Gone() => generation != _generation;
         var who = Who;
-        while (true)
+        for (int request = 0; ; request++)
         {
+            // The budget is checked between requests (never the first of a turn: the person's message is a go-ahead).
+            if (request > 0 && _budget is { } budget && ChatCost is { } spent && spent >= _allowance)
+            {
+                Add(new NoticeEntry($"Stopped at the chat's budget: it has used about {ChatPricing.Dollars(spent)} (the budget is {ChatPricing.Dollars(budget)} a go). " +
+                    $"Send another message to let {(who == "Claude" ? who : "the model")} carry on for as much again, or change the budget in Setup….", NoticeKind.Info));
+                return;
+            }
             var reply = new AssistantEntry();
             BackendReply message;
             try
@@ -276,7 +361,12 @@ public sealed class ChatSession(IToolBridge tools)
                     // The reply shows once it has words (a turn of tool calls only shows its tool lines).
                     if (reply.Text.Length == 0 && !_entries.Contains(reply)) Add(reply);
                     reply.Append(text);
-                }, cancel);
+                }, cancel, u =>
+                {
+                    if (Gone()) return;
+                    _live = u;
+                    UsageChanged?.Invoke();
+                });
             }
             catch (OperationCanceledException) when (cancel.IsCancellationRequested)
             {
@@ -295,6 +385,7 @@ public sealed class ChatSession(IToolBridge tools)
                 return;
             }
             if (Gone()) return;
+            Commit(message.Usage.IsEmpty ? _live with { Requests = 1 } : message.Usage);
             reply.Finish();
             // As the backend keeps it: a reply with no words and no calls isn't kept.
             if (reply.Text.Length > 0 || message.Calls.Count > 0) _log.Add(new LogTurn("assistant", reply.Text, message.Calls, []));
@@ -356,6 +447,8 @@ public sealed class ChatSession(IToolBridge tools)
             }
             // Every tool call has its result, so the conversation can go on after a stop or the cap.
             backend.AddResults(results);
+            // The pictures go to the model with the next request (an OpenAI-compatible model's only if it sees them).
+            if (_provider == ChatProvider.Anthropic || ModelSeesPictures) _pendingPictures += results.Sum(r => r.Item2.Images.Count);
             _log.Add(new LogTurn("results", "", [], results));
             if (stopped)
             {
@@ -403,6 +496,7 @@ public sealed class ChatSession(IToolBridge tools)
             Model = ReadOnly ? _opened.Model : _provider == ChatProvider.Anthropic ? Model : ServerModel,
             Server = ReadOnly ? _opened.Server : _provider == ChatProvider.OpenAICompatible ? ServerName : null,
             Title = Title(),
+            Usage = _chatTokens, Cost = _unpriced ? null : _chatCost,
         };
         foreach (var e in _entries)
         {
@@ -417,6 +511,7 @@ public sealed class ChatSession(IToolBridge tools)
                     break;
                 }
                 case NoticeEntry n: chat.Entries.Add(new StoredEntry { Kind = "notice", Text = n.Text, Error = n.Kind == NoticeKind.Error }); break;
+                case UsageEntry u: chat.Entries.Add(new StoredEntry { Kind = "usage", Text = u.Line }); break;
             }
         }
         foreach (var t in _log)
@@ -487,8 +582,13 @@ public sealed class ChatSession(IToolBridge tools)
                     break;
                 }
                 case "notice": Add(new NoticeEntry(e.Text, e.Error ? NoticeKind.Error : NoticeKind.Info)); break;
+                case "usage": Add(new UsageEntry(e.Text)); break;
             }
         }
+        // Its use so far carries on from where it was (a chat saved before usage was kept starts from nothing).
+        (_chatTokens, _chatCost, _unpriced) = (chat.Usage, chat.Cost ?? 0, chat.Cost == null && !chat.Usage.IsEmpty);
+        if (_budget is { } b) _allowance = Math.Max(b, _chatCost + b);
+        UsageChanged?.Invoke();
         LogTurn? open = null;
         foreach (var t in chat.Turns)
         {

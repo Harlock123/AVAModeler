@@ -134,7 +134,7 @@ public sealed class ChatHistoryUITests : IDisposable
         Assert.True(again.Chat.Input.IsEnabled);
         ChatPanelTests.Type(again, "are you there?");
         ChatPanelTests.Finish(again.Chat.Running);
-        Assert.Equal("Still here.", ((AssistantEntry)again.Chat.Session.Entries[^1]).Text);
+        Assert.Equal("Still here.", again.Chat.Session.Entries.OfType<AssistantEntry>().Last().Text);
         Assert.Equal(0, api.Left);
         again.Close();
     }

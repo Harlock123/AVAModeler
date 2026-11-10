@@ -1,3 +1,4 @@
+using System.Globalization;
 using Anthropic;
 using Avalonia;
 using Avalonia.Controls;
@@ -114,6 +115,36 @@ public sealed class ChatPanel : DockPanel
     /// <summary>Send the OpenAI-compatible model its pictures (a vision model).</summary>
     public CheckBox SeesPictures { get; } = new() { Content = "Model sees pictures", FontSize = 12, Foreground = Look.Text, Margin = new Thickness(10, 0, 0, 0) };
 
+    /// <summary>
+    /// The live usage line under the input: this chat's tokens and estimated cost, and the turn under way's, updated as
+    /// the API reports them; its tooltip has today's and this month's totals.
+    /// </summary>
+    public TextBlock UsageText { get; } = new() { FontSize = 11, Foreground = Look.Text, Opacity = 0.85, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0) };
+
+    /// <summary>Setup…'s budget: about how many dollars a chat may spend before it stops between requests (empty: no limit).</summary>
+    public TextBox BudgetBox { get; } = new() { FontSize = 12, Width = 70, PlaceholderText = "none" };
+
+    /// <summary>Setup…'s prices, one box a Claude model: dollars a million tokens for input, output, cache writes and reads.</summary>
+    public Dictionary<string, TextBox> PriceBoxes { get; } = [];
+
+    /// <summary>Setup…'s today and this-month totals.</summary>
+    public TextBlock Totals { get; } = new() { FontSize = 11, Foreground = Look.Text, TextWrapping = TextWrapping.Wrap };
+
+    private readonly StackPanel _cost = new() { Spacing = 3 };
+
+    /// <summary>Where the chat's use is added up day by day (the app sets it outside tests), or null.</summary>
+    public UsageLedger? Ledger
+    {
+        get => Session.Ledger;
+        set
+        {
+            if (Session.Ledger != null) Session.Ledger.Changed -= ShowUsageSoon;
+            Session.Ledger = value;
+            if (value != null) value.Changed += ShowUsageSoon;
+            ShowUsage();
+        }
+    }
+
     /// <summary>Whether the settings (Setup…) are showing.</summary>
     public bool SetupOpen { get => _setup.IsVisible; set => _setup.IsVisible = value; }
 
@@ -188,6 +219,8 @@ public sealed class ChatPanel : DockPanel
         _setup.Children.Add(SettingLabel("Provider"));
         _setup.Children.Add(Provider);
         _setup.Children.Add(_serverSettings);
+        BuildCost();
+        _setup.Children.Add(_cost);
         var setupBar = new Border { Background = Look.Panel, Child = _setup };
         SetDock(setupBar, Dock.Top);
         Children.Add(setupBar);
@@ -206,7 +239,7 @@ public sealed class ChatPanel : DockPanel
         SetDock(_model, Dock.Left);
         row.Children.Add(_model);
         row.Children.Add(AutoContinue);
-        var bottom = new StackPanel { Margin = new Thickness(6), Children = { Input, row } };
+        var bottom = new StackPanel { Margin = new Thickness(6), Children = { Input, row, UsageText } };
         SetDock(bottom, Dock.Bottom);
         Children.Add(bottom);
 
@@ -277,7 +310,125 @@ public sealed class ChatPanel : DockPanel
         CoreTools.IsCheckedChanged += (_, _) => SettingsChanged();
         SeesPictures.IsCheckedChanged += (_, _) => SettingsChanged();
         FoundModels.SelectionChanged += (_, _) => { if (FoundModels.SelectedItem is string m) ServerModel.Text = m; };
+        Session.UsageChanged += ShowUsage;
         LoadSettings();
+    }
+
+    // ───────────────────────────── what it costs ─────────────────────────────
+
+    /// <summary>Setup…'s Cost section: the budget, each Claude model's prices, today's and this month's totals, and Reset.</summary>
+    private void BuildCost()
+    {
+        _cost.Children.Add(SettingLabel("Cost"));
+        ToolTip.SetTip(BudgetBox, "When a chat has used about this many dollars, it stops between requests and says so; sending another message lets it carry on for as much again. Empty for no limit.");
+        BudgetBox.LostFocus += (_, _) => ReadBudget();
+        _cost.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 4,
+            Children = { new TextBlock { Text = "Stop a chat at about $", FontSize = 12, Foreground = Look.Text, VerticalAlignment = VerticalAlignment.Center }, BudgetBox },
+        });
+        _cost.Children.Add(new TextBlock
+        {
+            Text = $"Prices, $ a million tokens: input, output, cache write, cache read (Anthropic's as of {ChatPricing.AsOf}; change them if they change)",
+            FontSize = 11, Foreground = Look.Text, Opacity = 0.85, TextWrapping = TextWrapping.Wrap,
+        });
+        foreach (var (id, label) in ChatModels.All)
+        {
+            var box = new TextBox { FontSize = 12, Width = 170 };
+            ToolTip.SetTip(box, $"{label}'s prices in dollars a million tokens: input, output, cache write, cache read. Empty puts back the built-in ones.");
+            box.LostFocus += (_, _) => ReadPrice(id, box);
+            PriceBoxes[id] = box;
+            _cost.Children.Add(new DockPanel
+            {
+                Children = { new TextBlock { Text = label, FontSize = 12, Foreground = Look.Text, Width = 120, VerticalAlignment = VerticalAlignment.Center }, box },
+            });
+        }
+        var reset = Look.MakeButton("Reset totals", () => { Ledger?.Reset(); _status("The chat's usage totals are reset."); }, "Forget today's and this month's totals (saved chats keep their own)", 100);
+        reset.HorizontalAlignment = HorizontalAlignment.Left;
+        _cost.Children.Add(Totals);
+        _cost.Children.Add(reset);
+    }
+
+    private static string PriceText(ModelPrice p) => string.Join(" ", new[] { p.Input, p.Output, p.CacheWrite, p.CacheRead }.Select(v => v.ToString("0.###", CultureInfo.InvariantCulture)));
+
+    /// <summary>The person's own prices, as the session uses them.</summary>
+    private List<ModelPrice> OwnPrices() => _prefs.ChatPrices
+        .Where(kv => kv.Value is { Length: 4 })
+        .Select(kv => new ModelPrice(kv.Key, kv.Value[0], kv.Value[1], kv.Value[2], kv.Value[3]))
+        .Where(p => { try { p.Checked(); return true; } catch (ArgumentException) { return false; } })
+        .ToList();
+
+    private void ReadPrice(string model, TextBox box)
+    {
+        var text = box.Text?.Trim() ?? "";
+        if (text.Length == 0)
+        {
+            _prefs.ChatPrices.Remove(model);
+        }
+        else
+        {
+            var parts = text.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries);
+            try
+            {
+                var v = parts.Select(x => double.Parse(x.TrimStart('$'), NumberStyles.Float, CultureInfo.InvariantCulture)).ToArray();
+                if (v.Length != 4) throw new FormatException();
+                new ModelPrice(model, v[0], v[1], v[2], v[3]).Checked();
+                _prefs.ChatPrices[model] = v;
+            }
+            catch (Exception e) when (e is FormatException or OverflowException or ArgumentException)
+            {
+                _status($"{ChatModels.Label(model)}'s prices are four numbers of dollars a million tokens: input, output, cache write, cache read.");
+            }
+        }
+        Session.OwnPrices = OwnPrices();
+        box.Text = PriceText(ChatPricing.Find(model, Session.OwnPrices)!);
+        ShowUsage();
+    }
+
+    private void ReadBudget()
+    {
+        var text = BudgetBox.Text?.Trim().TrimStart('$') ?? "";
+        if (text.Length == 0) _prefs.ChatBudget = null;
+        else if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double b) && b > 0 && b < 1e6) _prefs.ChatBudget = b;
+        else _status("The budget is a number of dollars above 0, or empty for no limit.");
+        Session.Budget = _prefs.ChatBudget;
+        BudgetBox.Text = _prefs.ChatBudget is { } x ? x.ToString("0.##", CultureInfo.InvariantCulture) : "";
+    }
+
+    /// <summary>Takes up the prices and budget from Preferences.</summary>
+    private void LoadCost()
+    {
+        Session.OwnPrices = OwnPrices();
+        Session.Budget = _prefs.ChatBudget;
+        BudgetBox.Text = _prefs.ChatBudget is { } x ? x.ToString("0.##", CultureInfo.InvariantCulture) : "";
+        foreach (var (id, box) in PriceBoxes) box.Text = PriceText(ChatPricing.Find(id, Session.OwnPrices)!);
+    }
+
+    private void ShowUsageSoon() => Dispatcher.UIThread.Post(ShowUsage);
+
+    /// <summary>The usage line and the totals, as they are now.</summary>
+    public void ShowUsage()
+    {
+        var chat = Session.ChatTokens;
+        var priced = Session.Provider == ChatProvider.Anthropic;
+        string Cost(double? c) => c is { } d ? "≈ " + ChatPricing.Dollars(d) : priced ? "no price" : "no charge here";
+        if (chat.IsEmpty && chat.Requests == 0) UsageText.Text = priced ? "This chat: nothing used yet." : "This chat: nothing used yet (the server's own prices, if any, aren't known here).";
+        else
+        {
+            var line = $"This chat: {chat.Describe()} · {Cost(Session.ChatCost)}";
+            if (Session.Working) line += $" · this turn {Cost(Session.TurnCost)}";
+            UsageText.Text = line;
+        }
+        var now = Session.Clock();
+        string Total(UsageDay d) => d.Tokens.IsEmpty ? "nothing" : $"{d.Tokens.Describe()} · ≈ {ChatPricing.Dollars(d.Cost)}";
+        if (Ledger is { } l)
+        {
+            var today = l.Day(DateOnly.FromDateTime(now.LocalDateTime));
+            var month = l.Month(now.LocalDateTime.Year, now.LocalDateTime.Month);
+            Totals.Text = $"Today: {Total(today)}\nThis month: {Total(month)}";
+        }
+        else Totals.Text = "Totals aren't kept in this window.";
+        ToolTip.SetTip(UsageText, $"{Totals.Text}\n\nEstimated from the tokens the API reports and the prices in Setup…; the Anthropic Console has the bill. Each tool call sends the conversation again, so a turn is often many requests; the prompt cache makes most of each one cheap.");
     }
 
     private static TextBlock SettingLabel(string text) => new() { Text = text, FontSize = 11, FontWeight = FontWeight.Bold, Foreground = Look.Text, Margin = new Thickness(0, 3, 0, 0) };
@@ -286,6 +437,7 @@ public sealed class ChatPanel : DockPanel
     public void LoadSettings()
     {
         _loading = true;
+        LoadCost();
         try
         {
             Provider.SelectedIndex = Math.Max(0, PreferencesWindow.ChatProviders.FindIndex(c => c.Id == _prefs.ChatProvider));
@@ -650,6 +802,7 @@ public sealed class ChatPanel : DockPanel
         AssistantEntry a => AssistantView(a),
         ToolEntry t => ToolView(t),
         NoticeEntry n => NoticeView(n),
+        UsageEntry u => UsageView(u),
         _ => new TextBlock(),
     };
 
@@ -719,6 +872,14 @@ public sealed class ChatPanel : DockPanel
         {
             return null;
         }
+    }
+
+    /// <summary>A turn's use, a small line after it; its tooltip lists each request.</summary>
+    private static Control UsageView(UsageEntry u)
+    {
+        var text = new TextBlock { Text = u.Line, FontSize = 10, Foreground = Look.Text, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Right };
+        ToolTip.SetTip(text, u.Details);
+        return text;
     }
 
     private Control NoticeView(NoticeEntry n)

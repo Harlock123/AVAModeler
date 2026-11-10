@@ -39,6 +39,13 @@ public sealed class Preferences
     /// </summary>
     public bool ChatKeepHistory { get; set; }
     /// <summary>
+    /// The person's own prices for the chat's Claude models, over the built-in ones: model id → dollars a million tokens
+    /// for input, output, cache writes and cache reads.
+    /// </summary>
+    public Dictionary<string, double[]> ChatPrices { get; set; } = [];
+    /// <summary>About how many dollars a chat may spend before it stops and asks (null: no limit).</summary>
+    public double? ChatBudget { get; set; }
+    /// <summary>
     /// Whether AI agents may drive the open document through MCP (<c>AVAModeler --mcp --attach</c>), over a local
     /// pipe only this user can open. Off unless turned on.
     /// </summary>
@@ -70,6 +77,8 @@ public sealed class Preferences
     public static string BackdropsPath => Path.Combine(Folder, "backdrops.json");
     /// <summary>The AI Chat's saved conversations, one file each (when <see cref="ChatKeepHistory"/> is on).</summary>
     public static string ChatsFolder => Path.Combine(Folder, "chats");
+    /// <summary>The AI Chat's use day by day (tokens and estimated dollars only), for its today and this-month totals.</summary>
+    public static string ChatUsagePath => Path.Combine(Folder, "chat-usage.json");
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 

@@ -95,6 +95,7 @@ public sealed class MainWindow : Window
         if (loadPlugins)
         {
             Chat.History = new ChatHistory(Preferences.ChatsFolder);
+            Chat.Ledger = new UsageLedger(Preferences.ChatUsagePath);
             Chat.RestoreLast();
         }
         Width = 1400;

@@ -49,16 +49,37 @@ internal sealed class AnthropicBackend : IChatBackend
         else _turns.Add((true, [.. blocks]));
     }
 
-    public async Task<BackendReply> ReplyAsync(IReadOnlyList<McpTool> tools, Action<string> text, CancellationToken cancel)
+    public async Task<BackendReply> ReplyAsync(IReadOnlyList<McpTool> tools, Action<string> text, CancellationToken cancel, Action<TokenUsage>? usage = null)
     {
-        // Text shows as it streams; the whole reply is put together from the same events afterwards, by the SDK.
+        // Text shows as it streams; the whole reply is put together from the same events afterwards, by the SDK. The
+        // input's tokens come with the start; the output's grow with each delta.
         var events = new List<RawMessageStreamEvent>();
+        var so = default(TokenUsage);
         await foreach (var ev in Client!.Messages.CreateStreaming(Request(tools), cancel).WithCancellation(cancel))
         {
             events.Add(ev);
             if (ev.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var t)) text(t.Text);
+            else if (ev.TryPickStart(out var start))
+            {
+                so = Tokens(start.Message.Usage);
+                usage?.Invoke(so);
+            }
+            else if (ev.TryPickDelta(out var md))
+            {
+                var u = md.Usage;
+                so = so with
+                {
+                    Output = u.OutputTokens,
+                    Input = u.InputTokens ?? so.Input,
+                    CacheWrite = u.CacheCreationInputTokens ?? so.CacheWrite,
+                    CacheRead = u.CacheReadInputTokens ?? so.CacheRead,
+                };
+                usage?.Invoke(so);
+            }
         }
         var message = await events.ToAsyncEnumerable().Aggregate();
+        var used = Tokens(message.Usage);
+        if (used.IsEmpty) used = so with { Requests = 1 };
 
         // An empty reply (a refusal can be one) isn't kept: the API takes no empty turns.
         var assistant = AssistantBlocks(message);
@@ -71,8 +92,12 @@ internal sealed class AnthropicBackend : IChatBackend
             StopReason.Refusal => ReplyEnd.Refusal,
             _ => ReplyEnd.Done,
         };
-        return new BackendReply(calls, end);
+        return new BackendReply(calls, end, used);
     }
+
+    /// <summary>The API's usage as the chat counts it (one request).</summary>
+    internal static TokenUsage Tokens(Usage u) =>
+        new(u.InputTokens, u.OutputTokens, u.CacheCreationInputTokens ?? 0, u.CacheReadInputTokens ?? 0, 1);
 
     public void AddResults(IReadOnlyList<(ToolCall Call, ToolOutcome Outcome)> results) =>
         AddToUserTurn([.. results.Select(r => (ContentBlockParam)Result(r.Call.Id, r.Outcome))]);

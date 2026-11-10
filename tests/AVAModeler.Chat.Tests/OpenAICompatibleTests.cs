@@ -21,7 +21,7 @@ public class OpenAICompatibleTests
         await using var rig = await ServerRig.Start(server);
         await rig.Send("hi");
 
-        var reply = Assert.IsType<AssistantEntry>(rig.Chat.Entries[^1]);
+        var reply = Assert.IsType<AssistantEntry>(rig.Chat.Shown()[^1]);
         Assert.Equal("Hello there, what shall we build?", reply.Text);
         Assert.False(reply.Streaming);
         Assert.False(rig.Chat.Working);
@@ -69,7 +69,7 @@ public class OpenAICompatibleTests
         Assert.True(doc.Current.Mesh.Points.Count > 20);
         Assert.Equal(1, doc.Undo.Count);
         Assert.Equal(0, server.Left);
-        var entries = rig.Chat.Entries;
+        var entries = rig.Chat.Shown();
         Assert.Equal("I'll make a ball.", Assert.IsType<AssistantEntry>(entries[1]).Text);
         var ball = Assert.IsType<ToolEntry>(entries[2]);
         Assert.StartsWith("run_tool Ball →", ball.Line);
@@ -115,7 +115,7 @@ public class OpenAICompatibleTests
             .Reply(Say("A closed box."));
         await using var rig = await ServerRig.Start(server);
         await rig.Send("a box, then check it");
-        var tools = rig.Chat.Entries.OfType<ToolEntry>().ToList();
+        var tools = rig.Chat.Shown().OfType<ToolEntry>().ToList();
         Assert.Equal(["run_tool", "get_document", "check_mesh"], tools.Select(t => t.Name));
         Assert.All(tools, t => Assert.False(t.IsError));
         Assert.Contains("Box", tools[0].Input);
@@ -140,7 +140,7 @@ public class OpenAICompatibleTests
         await using var rig = await ServerRig.Start(server, pictures: false);
         await rig.Send("a ball, and look");
         // The person still sees the picture.
-        Assert.Single(rig.Chat.Entries.OfType<ToolEntry>().Single(t => t.Name == "render_view").Images);
+        Assert.Single(rig.Chat.Shown().OfType<ToolEntry>().Single(t => t.Name == "render_view").Images);
         var second = server.Requests[1];
         Assert.DoesNotContain("image_url", second.ToJsonString());
         var messages = Messages(second);
@@ -184,7 +184,7 @@ public class OpenAICompatibleTests
         var server = new FakeModelServer().Error(status, body).Reply(Say("Here I am."));
         await using var rig = await ServerRig.Start(server);
         await rig.Send("hello");
-        var error = Assert.IsType<NoticeEntry>(rig.Chat.Entries[^1]);
+        var error = Assert.IsType<NoticeEntry>(rig.Chat.Shown()[^1]);
         Assert.Equal(NoticeKind.Error, error.Kind);
         Assert.True(error.CanRetry);
         Assert.DoesNotContain("\n", error.Text);
@@ -192,7 +192,7 @@ public class OpenAICompatibleTests
         Assert.False(string.IsNullOrEmpty(kind));
 
         await rig.Chat.RetryAsync(Cancel);
-        Assert.Equal("Here I am.", ((AssistantEntry)rig.Chat.Entries[^1]).Text);
+        Assert.Equal("Here I am.", ((AssistantEntry)rig.Chat.Shown()[^1]).Text);
         Assert.Equal(Messages(server.Requests[0]).ToJsonString(), Messages(server.Requests[1]).ToJsonString());
     }
 
@@ -202,7 +202,7 @@ public class OpenAICompatibleTests
         var server = new FakeModelServer().Refuse();
         await using var rig = await ServerRig.Start(server);
         await rig.Send("hello");
-        var error = Assert.IsType<NoticeEntry>(rig.Chat.Entries[^1]);
+        var error = Assert.IsType<NoticeEntry>(rig.Chat.Shown()[^1]);
         Assert.Equal("Couldn't reach the model server at localhost:11434. Is it running (for Ollama, start it or run \"ollama serve\"), and is the base URL right? Then Retry.", error.Text);
         Assert.True(error.CanRetry);
     }
@@ -217,7 +217,7 @@ public class OpenAICompatibleTests
         await using var rig = await ServerRig.Start(server);
         rig.Chat.Server = server.Client(Key);
         await rig.Send("hello");
-        var error = Assert.IsType<NoticeEntry>(rig.Chat.Entries[^1]);
+        var error = Assert.IsType<NoticeEntry>(rig.Chat.Shown()[^1]);
         Assert.Contains("ai.example.internal", error.Text);
         Assert.DoesNotContain(Key, error.Text);
         Assert.DoesNotContain(Key[8..^4], error.Text);
@@ -234,18 +234,18 @@ public class OpenAICompatibleTests
         var server = new FakeModelServer().StartThenHang("I'll start with").Reply(Say("Back again."));
         await using var rig = await ServerRig.Start(server);
         var send = rig.Send("hello");
-        for (int i = 0; i < 500 && !rig.Chat.Entries.OfType<AssistantEntry>().Any(); i++) await Task.Delay(10, Cancel);
+        for (int i = 0; i < 500 && !rig.Chat.Shown().OfType<AssistantEntry>().Any(); i++) await Task.Delay(10, Cancel);
         Assert.True(rig.Chat.Working);
-        Assert.Equal("I'll start with", rig.Chat.Entries.OfType<AssistantEntry>().Single().Text);
+        Assert.Equal("I'll start with", rig.Chat.Shown().OfType<AssistantEntry>().Single().Text);
         rig.Chat.Stop();
         await send.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
         Assert.False(rig.Chat.Working);
-        Assert.Equal("Stopped.", Assert.IsType<NoticeEntry>(rig.Chat.Entries[^1]).Text);
-        Assert.EndsWith("(stopped)", rig.Chat.Entries.OfType<AssistantEntry>().Single().Text);
+        Assert.Equal("Stopped.", Assert.IsType<NoticeEntry>(rig.Chat.Shown()[^1]).Text);
+        Assert.EndsWith("(stopped)", rig.Chat.Shown().OfType<AssistantEntry>().Single().Text);
         // Nothing half-made is kept: the next request has the person's two messages and no reply between them.
         await rig.Send("are you there?");
         Assert.Equal(["system", "user", "user"], Messages(server.Requests[^1]).Select(m => (string)m!["role"]!));
-        Assert.Equal("Back again.", ((AssistantEntry)rig.Chat.Entries[^1]).Text);
+        Assert.Equal("Back again.", ((AssistantEntry)rig.Chat.Shown()[^1]).Text);
     }
 
     [Fact]
@@ -258,9 +258,9 @@ public class OpenAICompatibleTests
         rig.Chat.AutoContinues = 1;
         await rig.Send("boxes forever");
         // 3 calls, a notice, 3 more, then the seventh and eighth are refused and the chat stops.
-        Assert.Equal(6, rig.Chat.Entries.OfType<ToolEntry>().Count());
-        Assert.Contains("carrying on by itself (1 of 1", rig.Chat.Entries.OfType<NoticeEntry>().First().Text);
-        var stop = Assert.IsType<NoticeEntry>(rig.Chat.Entries[^1]);
+        Assert.Equal(6, rig.Chat.Shown().OfType<ToolEntry>().Count());
+        Assert.Contains("carrying on by itself (1 of 1", rig.Chat.Shown().OfType<NoticeEntry>().First().Text);
+        var stop = Assert.IsType<NoticeEntry>(rig.Chat.Shown()[^1]);
         Assert.Contains("Stopped after 6 tool calls", stop.Text);
         Assert.Contains("the model carry on", stop.Text);
         Assert.Equal(0, server.Left);
@@ -284,7 +284,7 @@ public class OpenAICompatibleTests
             .Reply(Say("Fixed it."));
         await using var rig = await ServerRig.Start(server);
         await rig.Send("a ball");
-        var tools = rig.Chat.Entries.OfType<ToolEntry>().ToList();
+        var tools = rig.Chat.Shown().OfType<ToolEntry>().ToList();
         Assert.True(tools[0].IsError);
         Assert.Contains("weren't valid JSON", tools[0].Result);
         Assert.False(tools[1].IsError);
@@ -300,7 +300,7 @@ public class OpenAICompatibleTests
         var server = new FakeModelServer().Whole("All in one go.");
         await using var rig = await ServerRig.Start(server);
         await rig.Send("hi");
-        Assert.Equal("All in one go.", ((AssistantEntry)rig.Chat.Entries[^1]).Text);
+        Assert.Equal("All in one go.", ((AssistantEntry)rig.Chat.Shown()[^1]).Text);
     }
 
     [Fact]
@@ -309,7 +309,7 @@ public class OpenAICompatibleTests
         var server = new FakeModelServer().Reply("length", Say("A long story that"));
         await using var rig = await ServerRig.Start(server);
         await rig.Send("tell me everything");
-        Assert.Contains("The model's reply reached its length limit", Assert.IsType<NoticeEntry>(rig.Chat.Entries[^1]).Text);
+        Assert.Contains("The model's reply reached its length limit", Assert.IsType<NoticeEntry>(rig.Chat.Shown()[^1]).Text);
     }
 
     [Fact]
@@ -319,7 +319,7 @@ public class OpenAICompatibleTests
         await using var rig = await ServerRig.Start(server);
         rig.Chat.ServerModel = "  ";
         await rig.Send("hello");
-        var notice = Assert.IsType<NoticeEntry>(rig.Chat.Entries[^1]);
+        var notice = Assert.IsType<NoticeEntry>(rig.Chat.Shown()[^1]);
         Assert.Contains("Setup…", notice.Text);
         Assert.Contains(OpenAICompatibleClient.DefaultBaseUrl, notice.Text);
         Assert.Empty(server.Requests);
@@ -331,7 +331,7 @@ public class OpenAICompatibleTests
         await using var rig = await ServerRig.Start();
         rig.Chat.Server = new OpenAICompatibleClient(new HttpClient(rig.Server), "localhost:11434/v1");
         await rig.Send("hello");
-        Assert.Contains("must start with http:// or https://", Assert.IsType<NoticeEntry>(rig.Chat.Entries[^1]).Text);
+        Assert.Contains("must start with http:// or https://", Assert.IsType<NoticeEntry>(rig.Chat.Shown()[^1]).Text);
         Assert.Empty(rig.Server.Requests);
     }
 
@@ -346,7 +346,7 @@ public class OpenAICompatibleTests
         rig.Chat.Cleared += () => cleared++;
         rig.Chat.Provider = ChatProvider.Anthropic;
         Assert.Equal(1, cleared);
-        Assert.Empty(rig.Chat.Entries);
+        Assert.Empty(rig.Chat.Shown());
         Assert.Empty(rig.Chat.ServerMessages);
         Assert.Equal("Claude", rig.Chat.Who);
         rig.Chat.Provider = ChatProvider.Anthropic;

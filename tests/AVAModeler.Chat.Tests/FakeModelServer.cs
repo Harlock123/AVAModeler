@@ -38,10 +38,14 @@ internal sealed class FakeModelServer(string baseUrl = FakeModelServer.Local) : 
 
     public FakeModelServer Reply(params Part[] parts) => Reply("", parts);
 
+    /// <summary>A usage object for the replies scripted after it's set, sent in a chunk of its own at the end (null: none, as some servers).</summary>
+    public JsonObject? Usage { get; set; }
+
     /// <summary>A reply ending with the given finish reason ("" for the usual: tool_calls or stop).</summary>
     public FakeModelServer Reply(string finish, params Part[] parts)
     {
-        _script.Enqueue((_, _) => Task.FromResult(Stream(parts, finish)));
+        var usage = Usage?.DeepClone();
+        _script.Enqueue((_, _) => Task.FromResult(Stream(parts, finish, usage as JsonObject)));
         return this;
     }
 
@@ -136,7 +140,7 @@ internal sealed class FakeModelServer(string baseUrl = FakeModelServer.Local) : 
 
     private static string Event(JsonObject data) => "data: " + data.ToJsonString() + "\n\n";
 
-    private static HttpResponseMessage Stream(Part[] parts, string finish)
+    private static HttpResponseMessage Stream(Part[] parts, string finish, JsonObject? usage)
     {
         var sse = new StringBuilder();
         sse.Append(": a comment line, which a client skips\n\n");
@@ -176,6 +180,7 @@ internal sealed class FakeModelServer(string baseUrl = FakeModelServer.Local) : 
                 sse.Append(Event(Delta(new JsonObject { ["tool_calls"] = new JsonArray { Fragment(i, new JsonObject { ["arguments"] = a[from..to] }) } })));
             }
         sse.Append(Event(Delta(new JsonObject(), finish.Length > 0 ? finish : uses.Count > 0 ? "tool_calls" : "stop")));
+        if (usage != null) sse.Append(Event(new JsonObject { ["id"] = "chatcmpl-fake", ["object"] = "chat.completion.chunk", ["choices"] = new JsonArray(), ["usage"] = usage }));
         sse.Append("data: [DONE]\n\n");
         return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse.ToString(), Encoding.UTF8, "text/event-stream") };
     }

@@ -64,7 +64,7 @@ public sealed class ChatHistoryTests : IDisposable
         again.Chat.Open(loaded, Pictures(history, stored.Id));
         Assert.False(again.Chat.ReadOnly);
         Assert.Equal(stored.Id, again.Chat.ChatId);
-        var entries = again.Chat.Entries;
+        var entries = again.Chat.Shown();
         Assert.Equal("make a ball", Assert.IsType<UserEntry>(entries[0]).Text);
         Assert.Equal("I'll make a ball.", Assert.IsType<AssistantEntry>(entries[1]).Text);
         var look = entries.OfType<ToolEntry>().Single(e => e.Name == "render_view");
@@ -82,7 +82,7 @@ public sealed class ChatHistoryTests : IDisposable
         Assert.Contains(result["content"]!.AsArray(), b => (string?)b!["type"] == "image");
         var last = Json.LastBlocks(r);
         Assert.Equal("thanks", (string?)last[^1]!["text"]);
-        Assert.Equal("You're welcome.", ((AssistantEntry)again.Chat.Entries[^1]).Text);
+        Assert.Equal("You're welcome.", ((AssistantEntry)again.Chat.Shown()[^1]).Text);
     }
 
     [Fact]
@@ -130,11 +130,11 @@ public sealed class ChatHistoryTests : IDisposable
         Assert.True(local.Chat.ReadOnly);
         Assert.Equal(ChatProvider.Anthropic, local.Chat.ReadOnlyProvider);
         Assert.Equal(1, changed);
-        Assert.Equal(2, local.Chat.Entries.Count);
+        Assert.Equal(2, local.Chat.Shown().Count);
         // Nothing is sent to the other provider, and a read-only chat saves as it was.
         await local.Send("can you hear me");
         Assert.Empty(server.Requests);
-        Assert.Equal(2, local.Chat.Entries.Count);
+        Assert.Equal(2, local.Chat.Shown().Count);
         var resaved = local.Chat.ToStored(_ => null);
         Assert.Equal((ChatProvider.Anthropic, ChatModels.Opus), (resaved.Provider, resaved.Model));
         // Choosing Claude again brings it to life: it carries on, with the fake Claude.
@@ -146,7 +146,7 @@ public sealed class ChatHistoryTests : IDisposable
         Assert.Equal(["user", "assistant", "user"], claude.Requests.Single()["messages"]!.AsArray().Select(m => (string)m!["role"]!));
         // New Chat leaves it.
         local.Chat.NewChat();
-        Assert.Empty(local.Chat.Entries);
+        Assert.Empty(local.Chat.Shown());
         Assert.Equal("", local.Chat.ChatId);
     }
 

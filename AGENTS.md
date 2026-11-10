@@ -348,6 +348,16 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     `ChatTools.Core` (in `ChatModels.cs`) when `CoreToolsOnly` is on. `OpenAICompatibleClient.cs` is its HTTP:
     `POST {base}/chat/completions` as server-sent events (or one whole JSON answer), `GET {base}/models`, and every
     failure as an `OpenAICompatibleException` already worded for the person (server named by host and port only).
+  - `ChatUsage.cs`: what the chat uses. `TokenUsage` (fresh input, output, cache writes and reads, requests),
+    `ModelPrice` and `ChatPricing` (the built-in list prices, dated `AsOf`; the person's own from
+    `Preferences.ChatPrices`), `UsageLedger` (day-by-day totals in `chat-usage.json`, counts and dollars only; one
+    made without a path keeps them in memory, as tests' do) and `UsageEntry` (the tag after a turn, `RequestUsage` a
+    request). Both backends report each request's tokens as they stream (`IChatBackend.ReplyAsync`'s `usage`, then
+    `BackendReply.Usage`): Claude's from `message_start` and `message_delta`, an OpenAI-compatible server's from the
+    last chunk it sends with `stream_options.include_usage`. `ChatSession` adds them up (`ChatTokens`, `ChatCost`,
+    `TurnTokens`, `TurnCost`, `UsageChanged`), keeps them in `StoredChat.Usage` and `Cost`, and stops between
+    requests at `Budget` (sending again allows as much more). Old tests that read the chat's lines in order use
+    `Shown()`, which leaves the tags out.
   - `ChatHistory.cs`: saved chats. `StoredChat` (the panel's lines as `StoredEntry`s and the conversation as
     provider-neutral `StoredTurn`s: user words, a reply with its `StoredCall`s, the calls' `StoredResult`s), `ChatHistory`
     (one `<id>.json` a chat in a folder, pictures by content hash in `<id>/`, size caps, owner-only files, `List`,

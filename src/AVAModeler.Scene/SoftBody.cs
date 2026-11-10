@@ -35,6 +35,13 @@ public sealed record SoftBodySettings
     public int Substeps { get; init; } = 8;
     /// <summary>Times a step its edges are put right: more is firmer and slower.</summary>
     public int Iterations { get; init; } = 8;
+    /// <summary>
+    /// Keep it from passing through itself: its points stay at least <see cref="SelfDistance"/> apart, except those
+    /// that started closer than that (neighbours along its faces).
+    /// </summary>
+    public bool SelfCollide { get; init; }
+    /// <summary>For self-collision: how far apart its points stay (m), or 0 for nine-tenths of its average edge.</summary>
+    public double SelfDistance { get; init; }
 
     /// <summary>The most points simulated on one object.</summary>
     public const int MaxPoints = 20000;
@@ -53,6 +60,7 @@ public sealed record SoftBodySettings
         In(Thickness, 0, 1, "thickness (m)");
         In(Substeps, 1, 64, "substeps");
         In(Iterations, 1, 64, "iterations");
+        In(SelfDistance, 0, 10, "self-collision distance (m)");
         if (Floor is { } f) In(f, -1e6, 1e6, "floor (m)");
         if (StartFrame is { } s) In(s, -100000, 100000, "start frame");
         return this;
@@ -77,6 +85,10 @@ public static class SoftBodies
         public required bool[] Pinned;
         public required double Start;
         public required int Stride;
+        /// <summary>For self-collision: the distance points keep apart (0 for none).</summary>
+        public double Self;
+        /// <summary>For self-collision: each point's neighbours that started within that distance (sorted), which don't push.</summary>
+        public int[][] Near = [];
         /// <summary>Places and speeds (world) at the start frame plus i × stride.</summary>
         public readonly List<(Vec3[] X, Vec3[] V)> Frames = [];
         public (double Frame, Mesh Mesh)? Last;
@@ -140,6 +152,8 @@ public static class SoftBodies
             if (!pairs.TryGetValue(k, out double w) || w < weight) pairs[k] = weight;
         }
         var faces = new Dictionary<(int, int), List<int>>();
+        double edgeSum = 0;
+        int edgeCount = 0;
         foreach (var poly in mesh.Polygons)
         {
             var p = poly.Points;
@@ -149,6 +163,8 @@ public static class SoftBodies
             {
                 int a = p[i], b = p[(i + 1) % c];
                 Pair(a, b, s.Stiffness);
+                edgeSum += (x0[a] - x0[b]).Length;
+                edgeCount++;
                 if (c < 3) continue;
                 var k = a < b ? (a, b) : (b, a);
                 // The point after the edge in this face: across the fold from the next face's.
@@ -174,6 +190,25 @@ public static class SoftBodies
             A = [.. list.Select(kv => kv.Key.Item1)], B = [.. list.Select(kv => kv.Key.Item2)],
             Rest = [.. list.Select(kv => (x0[kv.Key.Item1] - x0[kv.Key.Item2]).Length)], Weight = [.. list.Select(kv => Share(kv.Value))],
         };
+        if (s.SelfCollide && n > 1)
+        {
+            double mean = edgeCount == 0 ? 0 : edgeSum / edgeCount;
+            state.Self = s.SelfDistance > 0 ? s.SelfDistance : 0.9 * mean;
+            if (state.Self > 0)
+            {
+                // Pairs closer than half again the distance at the start never push each other (they're the cloth's own weave).
+                var near = new List<int>[n];
+                for (int i = 0; i < n; i++) near[i] = [];
+                double reach = state.Self * 1.5;
+                Grid.Pairs(x0, reach, (a, b) =>
+                {
+                    if ((x0[a] - x0[b]).LengthSquared >= reach * reach) return;
+                    near[a].Add(b);
+                    near[b].Add(a);
+                });
+                state.Near = [.. near.Select(l => { l.Sort(); return l.ToArray(); })];
+            }
+        }
         state.Frames.Add((x0, new Vec3[n]));
         return state;
     }
@@ -248,6 +283,7 @@ public static class SoftBodies
                         p[b] -= corr * 0.5;
                     }
                 }
+            if (state.Self > 0) SelfCollide(state, p);
             for (int i = 0; i < n; i++)
             {
                 if (state.Pinned[i]) { x[i] = p[i]; v[i] = Vec3.Zero; continue; }
@@ -260,6 +296,78 @@ public static class SoftBodies
                 v[i] = (p[i] - x[i]) / h;
                 x[i] = p[i];
             }
+        }
+    }
+
+    /// <summary>
+    /// Pushes apart every two points closer than the self-collision distance that didn't start that close, half each
+    /// (all of it onto one that isn't pinned), so the cloth can't pass through itself where it folds or falls on itself.
+    /// </summary>
+    private static void SelfCollide(State state, Vec3[] p)
+    {
+        double r = state.Self, r2 = r * r;
+        var push = new Vec3[p.Length];
+        var count = new int[p.Length];
+        Grid.Pairs(p, r, (a, b) =>
+        {
+            if (Array.BinarySearch(state.Near[a], b) >= 0) return;
+            var d = p[b] - p[a];
+            double l2 = d.LengthSquared;
+            if (l2 >= r2) return;
+            double l = Math.Sqrt(l2);
+            // Two at the same place push apart along a fixed axis.
+            var dir = l > 1e-12 ? d / l : Vec3.UnitY;
+            var corr = dir * (r - l);
+            bool pa = state.Pinned[a], pb = state.Pinned[b];
+            if (pa && pb) return;
+            if (!pa) { push[a] -= corr * (pb ? 1 : 0.5); count[a]++; }
+            if (!pb) { push[b] += corr * (pa ? 1 : 0.5); count[b]++; }
+        });
+        for (int i = 0; i < p.Length; i++)
+            if (count[i] > 0) p[i] += push[i] / count[i];
+    }
+}
+
+/// <summary>Points sorted into cubes of a size, to find every two closer than it without trying them all.</summary>
+internal static class Grid
+{
+    /// <summary>
+    /// Calls <paramref name="each"/> once for every two points (lower index first) in the same or touching cubes of
+    /// <paramref name="size"/>: every two closer than it, and some further apart (check the distance).
+    /// </summary>
+    public static void Pairs(IReadOnlyList<Vec3> points, double size, Action<int, int> each)
+    {
+        int n = points.Count;
+        if (n < 2 || !(size > 0)) return;
+        var keys = new long[n];
+        var order = new int[n];
+        static long Key(long x, long y, long z) => (x & 0x1FFFFF) | (y & 0x1FFFFF) << 21 | (z & 0x1FFFFF) << 42;
+        var cells = new (long X, long Y, long Z)[n];
+        for (int i = 0; i < n; i++)
+        {
+            var q = points[i];
+            cells[i] = ((long)Math.Floor(q.X / size), (long)Math.Floor(q.Y / size), (long)Math.Floor(q.Z / size));
+            keys[i] = Key(cells[i].X, cells[i].Y, cells[i].Z);
+            order[i] = i;
+        }
+        Array.Sort(keys, order);
+        for (int i = 0; i < n; i++)
+        {
+            var (cx, cy, cz) = cells[i];
+            for (int dz = -1; dz <= 1; dz++)
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        long key = Key(cx + dx, cy + dy, cz + dz);
+                        int at = Array.BinarySearch(keys, key);
+                        if (at < 0) continue;
+                        while (at > 0 && keys[at - 1] == key) at--;
+                        for (; at < n && keys[at] == key; at++)
+                        {
+                            int j = order[at];
+                            if (j > i) each(i, j);
+                        }
+                    }
         }
     }
 }

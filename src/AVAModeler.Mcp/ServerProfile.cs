@@ -85,7 +85,7 @@ public static class ToolGroups
         "render_scene_view", "render_animation", "make_movie",
         "set_morph", "remove_morph", "add_displacement", "set_displacement", "remove_displacement", "skelegons_to_bones", "set_ik", "bake_ik",
         "add_motion_modifier", "set_motion_modifier", "remove_motion_modifier",
-        "load_image", "remove_image", "set_compositing", "set_dissolve", "set_particles", "set_hair", "set_soft_body",
+        "load_image", "remove_image", "set_compositing", "set_dissolve", "set_particles", "set_hair", "set_soft_body", "comb_hair",
         "set_lens_flare", "set_volumetric_light", "set_shadow_map",
     };
 
@@ -94,7 +94,7 @@ public static class ToolGroups
     {
         "list_tools", "describe_tool", "run_tool", "add_points", "add_polygons", "set_selection_mode", "select_points", "select_polygons",
         "select_box", "select_all", "select_none", "select_invert", "select_connected", "select_edges", "select_loop", "select_ring",
-        "set_layers", "undo", "redo", "new", "open", "save", "set_surface", "set_texture", "set_backdrop", "set_procedural",
+        "set_layers", "undo", "redo", "new", "open", "save", "set_surface", "set_surface_nodes", "set_texture", "set_backdrop", "set_procedural",
         "remove_textures", "make_uvs", "set_uv_map", "run_lua", "get_document", "get_points", "get_polygons", "check_mesh",
         "render_view", "render", "copy_layer", "add_morph", "slice_to_gcode",
     };

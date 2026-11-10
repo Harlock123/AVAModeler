@@ -30,6 +30,8 @@ public sealed class Surface
     public bool Smoothing, DoubleSided;
     /// <summary>The texture layers, applied in order (see <see cref="TextureLayer"/>).</summary>
     public List<TextureLayer> Textures = [];
+    /// <summary>The surface's node graph (see <see cref="SurfaceNodeGraph"/>), or null for none.</summary>
+    public SurfaceNodeGraph? Nodes;
     /// <summary>The surface's sub-chunks as read from a file, for writing back unchanged; cleared on any edit.</summary>
     public List<RawChunk>? Raw;
     /// <summary>The values <see cref="Raw"/> was read with: if they still match, the raw chunks are written back.</summary>
@@ -42,13 +44,14 @@ public sealed class Surface
         var s = (Surface)MemberwiseClone();
         s.Raw = Raw == null ? null : [.. Raw];
         s.Textures = Textures.Select(t => t.Clone()).ToList();
+        s.Nodes = Nodes?.Clone();
         return s;
     }
 
     /// <summary>The surface's settings in one string, to tell whether it has changed since it was read.</summary>
     public string Signature() => FormattableString.Invariant(
         $"{Name}|{Color}|{Diffuse:R}|{Specular:R}|{Luminosity:R}|{Reflection:R}|{Transparency:R}|{Glossiness:R}|{SmoothingAngle:R}|{Smoothing}|{DoubleSided}")
-        + string.Concat(Textures.Select(t => "|" + t.Signature()));
+        + string.Concat(Textures.Select(t => "|" + t.Signature())) + (Nodes == null ? "" : "|nodes " + Nodes.ToJson());
 
     /// <summary>The texture layers for one channel, in order.</summary>
     public IEnumerable<TextureLayer> TexturesOf(TextureChannel channel) => Textures.Where(t => t.Channel == channel);

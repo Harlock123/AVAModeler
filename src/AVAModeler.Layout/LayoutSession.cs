@@ -25,6 +25,8 @@ public sealed class LayoutSession
     public SceneItem? Selected { get; private set; }
     /// <summary>Setting an item's position, rotation or scale makes a key at the frame (otherwise it changes the key there or the constant).</summary>
     public bool AutoKey { get; set; } = true;
+    /// <summary>The hair brush: when it's on, dragging in a view combs the chosen object's hair.</summary>
+    public HairBrush HairBrush { get; } = new();
     public List<string> Warnings { get; } = [];
     public string Status { get; private set; } = "";
     public string? ScenePath { get; private set; }

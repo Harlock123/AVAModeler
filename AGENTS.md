@@ -34,6 +34,17 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - `Document.cs` holds the layers, the selection and the `UndoStack`. `Png.cs` writes PNGs (renders, glTF images).
     `Hdr.cs` is `HdrImage` (float RGB pictures) and the Radiance RGBE reader (flat, old and new run-length scanlines,
     `+Y`/`-Y`, `EXPOSURE`) and writer (flat), for environment maps.
+  - `SurfaceNodes.cs` is a surface's node graph (`Surface.Nodes`, cloned with it and in its `Signature`, so an
+    edited graph is written afresh): `SurfaceNodeGraph` (nodes, `Add`, `Remove`, `Link` refusing loops, `Checked`,
+    `Order`, one line of JSON), `SurfaceNode` (kind, place in the editor, option, `Numbers`, `Colors`, `Links`,
+    `Stops`), the catalog `SurfaceNodes.All` (each kind's inputs, outputs, settings and options; names match ignoring
+    case, spaces and underscores) and `NodeProgram` (`SurfaceNodes.Compile`: the nodes the output needs in order, each
+    output a slot of a thread-static scratch array; `Evaluate` gives a `NodeLook` whose unlinked settings are null,
+    `Height` the bump). The ray tracer applies it in `LookAt` after the texture layers (`NodeBump` for Bump); LWOB
+    keeps it as the `AVND` SURF sub-chunk, last; the node editor is `NodeEditor.cs` in Modeler.UI (its canvas's
+    `Press`, `Move` and `Release` are the mouse, for tests; `PreviewBall` shades a ball with it without the ray
+    tracer); agents use `set_surface_nodes` (`NodeTools.cs`, `NodeGraphJson` both ways). A new node kind needs its
+    entry in `SurfaceNodes.All`, its case in `NodeProgram.Run`, and its name in `set_surface_nodes`'s description.
   - `Texture.cs` is `TextureLayer` (an image map, or a procedural: `Procedural` names the kind, `Parameters` holds
     TFP0 to TFP3 and TIP0, with `TextureColor`, `Value` and `Falloff`) and the projections' maths. `Procedurals.cs`
     is LightWave 5's procedural textures: the catalog (`Procedurals.All`, each kind's settings with their LWOB slot,
@@ -211,17 +222,30 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     (`ParticleSettings.Collide`, or a floor it bounces or dies on): then `Stepped` moves it on a grid of
     `ParticleSystem.StepOf` seconds shared by every particle, against `IParticleColliders` (`Colliders.cs`: the other
     objects' meshes at the frame, in BVHs, placed by their world matrix at each grid time, cached, safe across threads).
+    `Fluids.cs` is `ParticleSettings.Fluid`: position-based fluids, every particle stepped together (`StepsPerFrame`)
+    from the start frame, births from `ParticleSystem.Birth` (the same hash), the pool kept per stride of whole
+    frames in `ObjectItem.FluidCache` keyed by the settings and the scene's version; pressure only pushes, a push is
+    capped at a quarter of a size a pass, and a short-range push keeps any two at least 0.6 of a size apart.
     `ParticleLooks.cs` makes the looks: `AddBlobs` (metaballs by marching tetrahedra, welded), `AddInstances` (copies of
     `InstanceOf`, its surfaces after the particles'), and `Soft`, the `SoftParticle`s for puffs and sprites, which
     `Scene.Grow` puts on `ObjectFrame.Soft` with diamonds on `ObjectFrame.ViewOnlySurface` for the views; the ray tracer
-    leaves that surface out and composites the soft ones along camera rays (`Rendering/RayTracer.Soft.cs`: Gaussian puffs
-    in closed form, lit once at their centres, a `SphereTree`). `HairGrowth.Grow` grows tapering three-sided strands on
-    the deformed mesh, combed by `Comb`; `HairSwing.Lag` is hair dynamics, one damped spring run on the object's whole
-    world transform (linear, so per strand it's that lag applied to the root). `SoftBody.cs`: `ObjectItem.SoftBody`
-    (`SoftBodySettings`), position-based dynamics in world space from the start frame (`SoftBodies.At`, before hair and
-    particles in `Scene.Evaluate`), its state per kept frame in `ObjectItem.SoftCache` keyed by the settings, the scene's
-    version and the mesh, so any edit starts it again. Agents' `set_particles`, `set_hair` and `set_soft_body` are in
-    `ParticleTools.cs`.
+    leaves that surface out and composites the soft ones along camera, reflected and refracted rays
+    (`Rendering/RayTracer.Soft.cs`: Gaussian puffs in closed form, `PuffDepth`, lit once at their centres and shaded by
+    the puffs between them and each light, a `SphereTree`); `Transmission` multiplies in `PuffsThrough`, so puffs cast
+    shadows (only when there are puffs: the off path's sums are unchanged). `HairGrowth.Grow` grows tapering
+    three-sided strands on the deformed mesh, combed by `Comb` or, where combed by hand, by `HairSettings.Combing` (a
+    `CombMap`, a direction a point, compared by value, written as a flat list; `HairComb.Comb` and `Blend` are the sums
+    the brush and `comb_hair` share; the brush itself is `HairBrush` in AVAModeler.Layout, `LayoutSession.HairBrush`,
+    which `SceneView` uses while it's on). `HairSwing.Lag` is hair dynamics, one damped spring run on the object's
+    whole world transform (linear, so per strand it's that lag applied to the root); with bones it runs on each bone's
+    world transform times its move (`BoneDeformer.Moving`, `Moves`, `Weights`) and mixes them by the root's rest-place
+    weights. `SoftBody.cs`: `ObjectItem.SoftBody` (`SoftBodySettings`), position-based dynamics in world space from the
+    start frame (`SoftBodies.At`, before hair and particles in `Scene.Evaluate`), its state per kept frame in
+    `ObjectItem.SoftCache` keyed by the settings, the scene's version and the mesh, so any edit starts it again; with
+    `SelfCollide` its points keep `SelfDistance` apart (`Grid.Pairs` finds the pairs), but for those that started that
+    close. Agents' `set_particles`, `set_hair`, `comb_hair` and `set_soft_body` are in `ParticleTools.cs`. In .lws they
+    are plugin sections (`LwsEffects`: `AVA_Particles`, `AVA_Hair`, `AVA_SoftBody`), one line of SceneJson's JSON each
+    (`SceneJson.OneLineOf`, `FromOneLine`).
   - `Lws/LwText.cs` is the line and envelope parser `LwsReader` and `Lws/MotionFile.cs` (.mot read, write and apply)
     share.
   - `Rendering/EnvironmentMap.cs`: an environment picture by direction (lat-long, turned by its heading), its 64 × 32

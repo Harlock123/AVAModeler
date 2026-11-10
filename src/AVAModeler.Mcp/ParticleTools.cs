@@ -12,7 +12,7 @@ namespace AVAModeler.Mcp;
 public sealed partial class ModelerTools
 {
     [McpServerTool(Name = "set_particles", Destructive = true)]
-    [Description("Puts a particle emitter on an object, changes it, or (off true) takes it away: sparks, fountains, smoke, dust, snow. Particles are born at rate a second from emit_from (surface: anywhere on its faces, by area, leaving along their normal; points: its points; origin: its pivot, leaving along +Y) between start_frame and end_frame, leave at speed m/s (give or take speed_jitter of it) within spread degrees of straight out, live life seconds, fall under gravity (m/s², down the world's -Y; 9.81 is Earth's, 0 for none, negative rises like smoke), slow with drag (a second), and stop on a floor at that height (metres) if given. Each is a small diamond of size metres, grown or shrunk to size_at_death × the size by the end of its life, in color [r, g, b] 0-255, glowing by glow (0-1). A particle stays where it was born as the emitter moves on. look: gem (the diamonds, default), blob (one smooth surface melting close particles together: liquid, lava), puff (soft, seen-through, lit by the lights: smoke, steam; rendered only, the views show small diamonds), sprite (flat glowing spots that add light: sparks, fireflies; rendered only) or object (a copy of instance_of on each, its largest side the particle's size, turned at random and by spin °/s, or with align_to_motion its +Z along its flight: debris, leaves, a flock). opacity (0-1, default 0.6) is how much a puff hides or how bright a sprite is. collide true makes them meet the scene's other visible objects (wherever those are as they move) as well as the floor; on_hit says what happens there: stick (default: stop, riding along with a moving object), bounce (keeping bounce of the speed into the surface, 0-1, default 0.5, and losing friction of the speed along it, 0-1, default 0.2) or die. Without collisions (and with stick on the floor) every frame is worked out on its own in closed form; with them each particle is stepped through its life on half-frame steps, slower but the same every time. Seed changes which particles come where. Leave out what you don't want to change. Returns the emitter's settings and how many are alive at the current frame.")]
+    [Description("Puts a particle emitter on an object, changes it, or (off true) takes it away: sparks, fountains, smoke, dust, snow. Particles are born at rate a second from emit_from (surface: anywhere on its faces, by area, leaving along their normal; points: its points; origin: its pivot, leaving along +Y) between start_frame and end_frame, leave at speed m/s (give or take speed_jitter of it) within spread degrees of straight out, live life seconds, fall under gravity (m/s², down the world's -Y; 9.81 is Earth's, 0 for none, negative rises like smoke), slow with drag (a second), and stop on a floor at that height (metres) if given. Each is a small diamond of size metres, grown or shrunk to size_at_death × the size by the end of its life, in color [r, g, b] 0-255, glowing by glow (0-1). A particle stays where it was born as the emitter moves on. look: gem (the diamonds, default), blob (one smooth surface melting close particles together: liquid, lava), puff (soft, seen-through, lit by the lights: smoke, steam; rendered only, the views show small diamonds), sprite (flat glowing spots that add light: sparks, fireflies; rendered only) or object (a copy of instance_of on each, its largest side the particle's size, turned at random and by spin °/s, or with align_to_motion its +Z along its flight: debris, leaves, a flock). opacity (0-1, default 0.6) is how much a puff hides or how bright a sprite is. collide true makes them meet the scene's other visible objects (wherever those are as they move) as well as the floor; on_hit says what happens there: stick (default: stop, riding along with a moving object), bounce (keeping bounce of the speed into the surface, 0-1, default 0.5, and losing friction of the speed along it, 0-1, default 0.2) or die. Without collisions (and with stick on the floor) every frame is worked out on its own in closed form; with them each particle is stepped through its life on half-frame steps, slower but the same every time. fluid true makes them flow as a liquid: they push each other apart to keep about their size between them and drag on each other by viscosity (0 water to 1 honey, default 0.05), so they pour, splash, pool on the floor and fill what holds them (with collide, the scene's objects: a bowl, a glass); worked out all together step by step from start_frame and kept frame by frame, at most 8000 alive at once. Space them about their size apart as they leave (rate, speed and the emitter's size together), and give them a long life; look blob shows them as one liquid surface. Seed changes which particles come where. Leave out what you don't want to change. Returns the emitter's settings and how many are alive at the current frame.")]
     public Task<string> SetParticles(
         [Description("The object's name, or #index from get_scene.")] string item,
         [Description("Take the emitter away.")] bool off = false,
@@ -43,6 +43,8 @@ public sealed partial class ModelerTools
         [Description("stick (default), bounce or die: what a particle does on meeting the floor or an object.")] string? on_hit = null,
         [Description("For bounce: the share of speed into the surface kept, 0 to 1 (default 0.5).")] double? bounce = null,
         [Description("For bounce: the share of speed along the surface lost, 0 to 1 (default 0.2).")] double? friction = null,
+        [Description("Flow as a liquid.")] bool? fluid = null,
+        [Description("For fluid: 0 (water) to 1 (honey) (default 0.05).")] double? viscosity = null,
         CancellationToken cancel = default) =>
         DoScene(off ? "took away particles" : "set particles", (c, l) =>
         {
@@ -62,6 +64,7 @@ public sealed partial class ModelerTools
                     Look = look == null ? s.Look : Enum.TryParse<ParticleLook>(look, ignoreCase: true, out var lk) && Enum.IsDefined(lk) && !int.TryParse(look, out _) ? lk : throw new ArgumentException($"look is gem, blob, puff, sprite or object, not \"{look}\"."),
                     InstanceOf = instance_of ?? s.InstanceOf, Spin = spin ?? s.Spin, AlignToMotion = align_to_motion ?? s.AlignToMotion, Opacity = opacity ?? s.Opacity,
                     Collide = collide ?? s.Collide, Bounce = bounce ?? s.Bounce, Friction = friction ?? s.Friction,
+                    Fluid = fluid ?? s.Fluid, Viscosity = viscosity ?? s.Viscosity,
                     OnHit = on_hit == null ? s.OnHit : Enum.TryParse<ParticleHit>(on_hit, ignoreCase: true, out var oh) && Enum.IsDefined(oh) && !int.TryParse(on_hit, out _) ? oh : throw new ArgumentException($"on_hit is stick, bounce or die, not \"{on_hit}\"."),
                 }).Checked();
                 if (obj.Particles.Look == ParticleLook.Object && !l.Scene.Objects.Any(x => x.Name == obj.Particles.InstanceOf && x != obj))
@@ -72,7 +75,7 @@ public sealed partial class ModelerTools
             if (obj.Particles is { } p)
             {
                 result["particles"] = Particles(p);
-                result["alive_now"] = p.Collide || (p.Floor != null && p.OnHit != ParticleHit.Stick)
+                result["alive_now"] = p.Fluid || p.Collide || (p.Floor != null && p.OnHit != ParticleHit.Stick)
                     ? null // stepped particles: counting them means working them all out; a render shows them
                     : (JsonNode)ParticleSystem.At(p, l.Frame, l.Scene.FramesPerSecond, obj.BaseMesh(), f => obj.WorldMatrix(f)).Count;
             }
@@ -80,7 +83,7 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "set_hair", Destructive = true)]
-    [Description("Grows hair or fur on an object, changes it, or (off true) takes it away: density strands a square metre over its faces (or only on_surface's), each length metres (shortened at random by up to length_jitter of it), thickness metres at the root tapering to a point, in segments joints, drooping under its weight by droop (0 straight out, 1 hanging down), leaning up to frizz degrees from the surface at random, in color [r, g, b] 0-255. Strands grow from the object's deformed surface, so they follow bones, morphs and displacements (and a soft body); at most 30000 an object. comb (0-1) lays them toward comb_direction [x, y, z] in the object's own coordinates (default [0, 0, -1], the back). dynamics true makes them swing as the object moves, starts, stops and turns, lagging like a weight on a spring and settling: stiffness is how fast they swing back (Hz, 0.1 floppy to 20 stiff, default 2), damping how soon a swing dies (0 swings on, 1 no overshoot, default 0.3). Only the object's motion (and its parents') swings them, not its bones or morphs; worked out from the scene's first frame, the same every time. Leave out what you don't want to change. Returns the hair's settings and how many strands it grows.")]
+    [Description("Grows hair or fur on an object, changes it, or (off true) takes it away: density strands a square metre over its faces (or only on_surface's), each length metres (shortened at random by up to length_jitter of it), thickness metres at the root tapering to a point, in segments joints, drooping under its weight by droop (0 straight out, 1 hanging down), leaning up to frizz degrees from the surface at random, in color [r, g, b] 0-255. Strands grow from the object's deformed surface, so they follow bones, morphs and displacements (and a soft body); at most 30000 an object. comb (0-1) lays them toward comb_direction [x, y, z] in the object's own coordinates (default [0, 0, -1], the back). dynamics true makes them swing as the object moves, starts, stops and turns, lagging like a weight on a spring and settling: stiffness is how fast they swing back (Hz, 0.1 floppy to 20 stiff, default 2), damping how soon a swing dies (0 swings on, 1 no overshoot, default 0.3). The object's motion (and its parents') swings them, and so do its bones (each strand by the bones that move its root, as they weigh it), not its morphs; worked out from the scene's first frame, the same every time. comb_hair combs it point by point, as the brush in the view does. Leave out what you don't want to change. Returns the hair's settings and how many strands it grows.")]
     public Task<string> SetHair(
         [Description("The object's name, or #index from get_scene.")] string item,
         [Description("Take the hair away.")] bool off = false,
@@ -134,8 +137,40 @@ public sealed partial class ModelerTools
 
 public sealed partial class ModelerTools
 {
+    [McpServerTool(Name = "comb_hair", Destructive = true)]
+    [Description("Combs an object's hair by hand, as the brush in Layout's view does: the hair at its points within radius metres of at [x, y, z] (in the object's own coordinates; leave at out for every point) is laid toward direction [x, y, z] (the object's coordinates; only its part along the surface counts) by strength (0-1, default 1, less toward the brush's edge), or with uncomb true its combing is taken away by as much; clear true takes all of it away. Where it's combed it takes the place of set_hair's comb and comb_direction. Strands between points take the blend of their face's corners. The object must have hair (set_hair). Returns the hair's settings and how many points are combed.")]
+    public Task<string> CombHair(
+        [Description("The object's name, or #index from get_scene.")] string item,
+        [Description("[x, y, z]: the way to comb, in the object's coordinates.")] double[]? direction = null,
+        [Description("[x, y, z]: the brush's centre in the object's coordinates; leave out for every point.")] double[]? at = null,
+        [Description("The brush's radius in metres, for at (default 0.1).")] double radius = 0.1,
+        [Description("0 to 1 (default 1).")] double strength = 1,
+        [Description("Take combing away instead.")] bool uncomb = false,
+        [Description("Take all the combing away.")] bool clear = false,
+        CancellationToken cancel = default) =>
+        DoScene(clear ? "cleared combing" : uncomb ? "uncombed hair" : "combed hair", (c, l) =>
+        {
+            var obj = SceneObject(l.Scene, item);
+            if (obj.Hair is not { } hair) throw new ArgumentException($"{obj.Name} has no hair to comb: give it some with set_hair first.");
+            static Vec3 V(double[] v, string what) =>
+                v.Length == 3 && v.All(double.IsFinite) ? new Vec3(v[0], v[1], v[2]) : throw new ArgumentException($"{what} is three numbers, [x, y, z].");
+            if (!(strength is >= 0 and <= 1)) throw new ArgumentException("strength is 0 to 1.");
+            if (at != null && !(radius > 0 && double.IsFinite(radius))) throw new ArgumentException("radius is a length in metres above 0.");
+            if (clear) obj.Hair = hair with { Combing = null };
+            else
+            {
+                if (!uncomb && direction == null) throw new ArgumentException("Give the direction to comb, [x, y, z] (or uncomb or clear true).");
+                obj.Hair = HairComb.Comb(hair, obj.BaseMesh().Points, at == null ? null : V(at, "at"), radius,
+                    direction == null ? Vec3.Zero : V(direction, "direction"), strength, uncomb).Checked();
+            }
+            l.Scene.Notify();
+            var result = ItemNow(c, l, obj, l.Frame);
+            result["hair"] = Hair(obj.Hair);
+            return result;
+        }, cancel);
+
     [McpServerTool(Name = "set_soft_body", Destructive = true)]
-    [Description("Makes an object cloth or a soft body, changes it, or (off true) makes it solid again. Its points then move under gravity (m/s² down the world's -Y, default 9.81) from start_frame (default the scene's first frame), held together by its edges (stiffness 0-1, default 0.9) and against folding (bend 0-1, default 0.1), drawn back to its animated shape by goal (0 for cloth, default; up to 1 for a jiggly soft body that follows its animation), slowed by damping (a second, default 0.5), held fast where the faces of the surface pin are (by name: a flag's edge on its pole, a cape's shoulders; they move only as the object is animated), kept thickness metres (default 0.005) above a floor at that height if given and, with collide true, out of the scene's other visible objects as they move. substeps (1-64, default 8) and iterations (1-64, default 8) trade speed for steadiness. Worked out by stepping from the start frame and kept frame by frame, so playing forward is quick and any frame comes out the same; any change to the scene starts it again. Use a mesh with enough points to bend (a subdivided plane for cloth); at most 20000 points. Hair grows on the moved surface. Leave out what you don't want to change. Returns the settings.")]
+    [Description("Makes an object cloth or a soft body, changes it, or (off true) makes it solid again. Its points then move under gravity (m/s² down the world's -Y, default 9.81) from start_frame (default the scene's first frame), held together by its edges (stiffness 0-1, default 0.9) and against folding (bend 0-1, default 0.1), drawn back to its animated shape by goal (0 for cloth, default; up to 1 for a jiggly soft body that follows its animation), slowed by damping (a second, default 0.5), held fast where the faces of the surface pin are (by name: a flag's edge on its pole, a cape's shoulders; they move only as the object is animated), kept thickness metres (default 0.005) above a floor at that height if given and, with collide true, out of the scene's other visible objects as they move. self_collide true keeps it from passing through itself where it folds or falls on itself: its points stay self_distance metres apart (default 0, meaning nine-tenths of its average edge), except neighbours that started that close. substeps (1-64, default 8) and iterations (1-64, default 8) trade speed for steadiness. Worked out by stepping from the start frame and kept frame by frame, so playing forward is quick and any frame comes out the same; any change to the scene starts it again. Use a mesh with enough points to bend (a subdivided plane for cloth); at most 20000 points. Hair grows on the moved surface. Leave out what you don't want to change. Returns the settings.")]
     public Task<string> SetSoftBody(
         [Description("The object's name, or #index from get_scene.")] string item,
         [Description("Make it solid again.")] bool off = false,
@@ -152,6 +187,8 @@ public sealed partial class ModelerTools
         [Description("The frame it starts moving from (default the scene's first).")] double? start_frame = null,
         [Description("Steps a frame, 1 to 64 (default 8).")] int? substeps = null,
         [Description("Edge passes a step, 1 to 64 (default 8).")] int? iterations = null,
+        [Description("Keep it from passing through itself.")] bool? self_collide = null,
+        [Description("For self_collide: metres its points stay apart, 0 for nine-tenths of its average edge (default 0).")] double? self_distance = null,
         CancellationToken cancel = default) =>
         DoScene(off ? "made solid" : "set soft body", (c, l) =>
         {
@@ -167,6 +204,7 @@ public sealed partial class ModelerTools
                     Stiffness = stiffness ?? s.Stiffness, Bend = bend ?? s.Bend, Goal = goal ?? s.Goal, Damping = damping ?? s.Damping, Gravity = gravity ?? s.Gravity,
                     Floor = no_floor ? null : floor ?? s.Floor, Collide = collide ?? s.Collide, Thickness = thickness ?? s.Thickness, Pin = pin ?? s.Pin,
                     StartFrame = start_frame ?? s.StartFrame, Substeps = substeps ?? s.Substeps, Iterations = iterations ?? s.Iterations,
+                    SelfCollide = self_collide ?? s.SelfCollide, SelfDistance = self_distance ?? s.SelfDistance,
                 }).Checked();
                 if (obj.BaseMesh().Points.Count > SoftBodySettings.MaxPoints)
                     throw new ArgumentException($"{obj.Name} has {obj.BaseMesh().Points.Count} points; a soft body can have at most {SoftBodySettings.MaxPoints}.");
@@ -186,8 +224,9 @@ internal static partial class SceneCensus
         {
             ["stiffness"] = Round(b.Stiffness), ["bend"] = Round(b.Bend), ["goal"] = Round(b.Goal), ["damping"] = Round(b.Damping),
             ["gravity"] = Round(b.Gravity), ["collide"] = b.Collide, ["thickness"] = Round(b.Thickness), ["pin"] = b.Pin,
-            ["substeps"] = b.Substeps, ["iterations"] = b.Iterations,
+            ["substeps"] = b.Substeps, ["iterations"] = b.Iterations, ["self_collide"] = b.SelfCollide,
         };
+        if (b.SelfCollide) o["self_distance"] = Round(b.SelfDistance);
         if (b.Floor is { } f) o["floor"] = Round(f);
         if (b.StartFrame is { } s) o["start_frame"] = Round(s);
         return o;
@@ -202,7 +241,9 @@ internal static partial class SceneCensus
             ["gravity"] = Round(p.Gravity), ["drag"] = Round(p.Drag), ["size"] = Round(p.Size), ["size_at_death"] = Round(p.SizeAtDeath),
             ["color"] = new JsonArray(p.Color.R, p.Color.G, p.Color.B), ["glow"] = Round(p.Glow), ["hide_emitter"] = p.HideEmitter, ["seed"] = p.Seed,
             ["look"] = p.Look.ToString().ToLowerInvariant(), ["collide"] = p.Collide, ["on_hit"] = p.OnHit.ToString().ToLowerInvariant(),
+            ["fluid"] = p.Fluid,
         };
+        if (p.Fluid) o["viscosity"] = Round(p.Viscosity);
         if (p.Look == ParticleLook.Object)
         {
             o["instance_of"] = p.InstanceOf;
@@ -237,6 +278,7 @@ internal static partial class SceneCensus
             o["comb"] = Round(h.Comb);
             o["comb_direction"] = new JsonArray(Round(h.CombDirection.X), Round(h.CombDirection.Y), Round(h.CombDirection.Z));
         }
+        o["combed_points"] = h.Combing?.Combed ?? 0;
         return o;
     }
 }

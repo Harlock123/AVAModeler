@@ -97,7 +97,8 @@ public static class Dialogs
 /// The surface editor: every surface in the object, and how the chosen one looks (colour, diffuse, specular,
 /// glossiness, luminosity, transparency, reflection, smoothing). As in LightWave 5, a "T" button beside a setting
 /// opens its texture panel (<see cref="TextureEditor"/>), and lights up when the setting has textures. Changes show in
-/// the shaded view as they're made, and the whole visit is one undo step.
+/// the shaded view as they're made, and the whole visit is one undo step. Nodes… opens the surface's node graph
+/// (<see cref="NodeEditor"/>).
 /// </summary>
 public sealed class SurfaceEditor : Window
 {
@@ -187,7 +188,32 @@ public sealed class SurfaceEditor : Window
         both.IsCheckedChanged += (_, _) => { s.DoubleSided = both.IsChecked == true; Changed(); };
         _fields.Children.Add(smooth);
         _fields.Children.Add(both);
+        Button? nodes = null;
+        nodes = Look.MakeButton("Nodes…", () => OpenNodes(s, nodes), "The surface's node graph: textures, gradients and sums wired into its settings (seen in renders)");
+        Look.SetOn(nodes, s.Nodes?.Output?.Links.Count > 0);
+        NodesButton = nodes;
+        _fields.Children.Add(nodes);
         _loading = false;
+    }
+
+    /// <summary>The Nodes… button, so tests can press it.</summary>
+    public Button? NodesButton { get; private set; }
+
+    /// <summary>Opens the node editor for a surface; returns it.</summary>
+    public NodeEditor OpenNodes(Surface s, Button? button = null)
+    {
+        var editor = new NodeEditor(s, () =>
+        {
+            if (button != null) Look.SetOn(button, s.Nodes?.Output?.Links.Count > 0);
+            Changed();
+        });
+        // A graph with nothing in it but its output is no graph.
+        editor.Closed += (_, _) =>
+        {
+            if (s.Nodes is { Nodes.Count: <= 1 } g && (g.Output?.Links.Count ?? 0) == 0) { s.Nodes = null; Changed(); }
+        };
+        editor.Show(this);
+        return editor;
     }
 
     private static TextBlock Label(string text) => new() { Text = text, Foreground = Look.Text, FontSize = 11, Margin = new Thickness(0, 4, 0, 0) };

@@ -165,7 +165,7 @@ internal static class Census
     {
         int index = doc.Surfaces.IndexOf(s);
         int used = doc.Layers.Sum(l => l.Mesh.Polygons.Count(p => p.Surface == index));
-        return new JsonObject
+        var o = new JsonObject
         {
             ["name"] = s.Name,
             ["color"] = new JsonArray(s.Color.R, s.Color.G, s.Color.B),
@@ -181,6 +181,8 @@ internal static class Census
             ["polygons"] = used,
             ["textures"] = new JsonArray(s.Textures.Select(t => (JsonNode)Texture(t)).ToArray()),
         };
+        if (s.Nodes != null) o["nodes"] = NodeGraphJson.Write(s.Nodes);
+        return o;
     }
 
     public static JsonObject Texture(TextureLayer t)

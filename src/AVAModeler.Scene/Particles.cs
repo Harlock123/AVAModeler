@@ -94,9 +94,20 @@ public sealed record ParticleSettings
     public double Bounce { get; init; } = 0.5;
     /// <summary>For Bounce: how much of its speed along the surface it loses, 0 to 1.</summary>
     public double Friction { get; init; } = 0.2;
+    /// <summary>
+    /// Flow as a liquid: the particles push each other apart to keep about their size between them and drag on each
+    /// other, so they pour, pool, splash and fill what holds them (the floor, and with <see cref="Collide"/> the
+    /// scene's objects). Worked out all together, step by step from the start frame (see <see cref="Fluids"/>).
+    /// </summary>
+    public bool Fluid { get; init; }
+    /// <summary>For a fluid: how much the particles drag each other along, 0 (water) to 1 (honey).</summary>
+    public double Viscosity { get; init; } = 0.05;
 
     /// <summary>The most particles alive at once that are drawn and rendered.</summary>
     public const int MaxAlive = 20000;
+
+    /// <summary>The most particles a fluid has alive at once: more are not born until some die.</summary>
+    public const int MaxFluid = 8000;
 
     public ParticleSettings Checked()
     {
@@ -121,6 +132,7 @@ public sealed record ParticleSettings
         In(Opacity, 0, 1, "opacity");
         In(Bounce, 0, 1, "bounce");
         In(Friction, 0, 1, "friction");
+        In(Viscosity, 0, 1, "viscosity");
         if (!Enum.IsDefined(Look)) throw new ArgumentException($"The particles' look must be one of {string.Join(", ", Enum.GetNames<ParticleLook>())}.");
         if (!Enum.IsDefined(OnHit)) throw new ArgumentException($"What particles do on a hit must be one of {string.Join(", ", Enum.GetNames<ParticleHit>())}.");
         if (Look == ParticleLook.Object && string.IsNullOrWhiteSpace(InstanceOf))
@@ -279,6 +291,17 @@ public static class ParticleSystem
             before = end;
             k++;
         }
+    }
+
+    /// <summary>Where particle <paramref name="k"/> is born (world) and how fast it leaves, given the emitter's world transform when it is.</summary>
+    internal static (Vec3 P, Vec3 V) Birth(ParticleSettings s, long k, Mesh rest, Mat4 emitter)
+    {
+        var (local, normal) = Source.Of(rest, s.From).Pick(s.Seed, k);
+        var nrm = emitter.TransformVector(normal).Normalized();
+        if (nrm.LengthSquared < 0.5) nrm = Vec3.UnitY;
+        var dir = Cone(nrm, s.Spread * Math.PI / 180, Unit(s.Seed, k, 3), Unit(s.Seed, k, 4));
+        double speed = s.Speed * (1 + s.SpeedJitter * (2 * Unit(s.Seed, k, 5) - 1));
+        return (emitter.TransformPoint(local), dir * speed);
     }
 
     /// <summary>How fast a particle is going after <paramref name="t"/> s (the derivative of <see cref="Path"/>).</summary>

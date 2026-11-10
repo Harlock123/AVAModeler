@@ -204,6 +204,49 @@ public class ParticleEffectsTests
         Assert.Equal(255, Brightness(RayTracer.Render(smoke, 30, settings, null, Cancel)));
     }
 
+    /// <summary>The average green of a box of pixels, from fractions of the width and height.</summary>
+    private static double Region(RenderImage img, double x0, double x1, double y0, double y1)
+    {
+        double sum = 0;
+        int count = 0;
+        for (int y = (int)(y0 * img.Height); y < (int)(y1 * img.Height); y++)
+            for (int x = (int)(x0 * img.Width); x < (int)(x1 * img.Width); x++) { sum += img.Pixel(x, y).G; count++; }
+        return sum / count;
+    }
+
+    [Fact]
+    public void Puffs_cast_shadows_and_are_seen_in_mirrors()
+    {
+        var settings = new RenderSettings { SamplesPerPixel = 1 };
+        // A white wall a metre behind the cloud, lit from the side so the cloud's shadow falls 2 m to its right.
+        var (scene, puffs) = Cloud(ParticleLook.Puff, Vec3.Zero, new Rgb(200, 200, 200));
+        scene.AmbientIntensity = 0;
+        var cam = scene.Cameras.First();
+        cam.SetPosition(0, new Vec3(0, 0, -4));
+        cam.Zoom.SetConstant(1);
+        cam.Width = cam.Height = 48;
+        scene.AddObject("Wall", Doc(Square(new Vec3(0, 0, 1), 8, -Vec3.UnitZ)));
+        var sun = scene.AddLight("Sun");
+        sun.SetRotation(0, new Vec3(Math.Atan2(2, 1) * 180 / Math.PI, 0, 0));
+        // Where the shadow falls the camera sees only the wall (the cloud is at most a metre across in front of it).
+        var shaded = RayTracer.Render(scene, 30, settings, null, Cancel);
+        puffs.Particles = puffs.Particles! with { Opacity = 0 };
+        var clear = RayTracer.Render(scene, 30, settings, null, Cancel);
+        double inShadow = Region(shaded, 0.66, 0.74, 0.45, 0.55), lit = Region(clear, 0.66, 0.74, 0.45, 0.55);
+        Assert.True(inShadow < lit * 0.8, $"{inShadow} against {lit}");
+        // Far from the shadow, the same.
+        AssertNear(Region(clear, 0.05, 0.15, 0.45, 0.55), Region(shaded, 0.05, 0.15, 0.45, 0.55), 1);
+
+        // A mirror in front of the camera shows a glowing cloud behind it, which the camera can't see itself.
+        var (room, cloud) = Cloud(ParticleLook.Puff, Vec3.Zero, new Rgb(255, 255, 255));
+        cloud.Particles = cloud.Particles! with { Glow = 1 };
+        cloud.SetPosition(0, new Vec3(0, 0, -6));
+        room.AddObject("Mirror", Doc(Square(new Vec3(0, 0, 1), 8, -Vec3.UnitZ), sf => { sf.Diffuse = 0; sf.Reflection = 1; }));
+        Assert.True(Brightness(RayTracer.Render(room, 30, settings, null, Cancel)) > 5);
+        cloud.Particles = cloud.Particles with { Opacity = 0 };
+        Assert.Equal(0, Brightness(RayTracer.Render(room, 30, settings, null, Cancel)));
+    }
+
     /// <summary>The hair's points (in the object's coordinates) at a frame.</summary>
     private static List<Vec3> HairPoints(Scene scene, double frame)
     {
@@ -224,6 +267,66 @@ public class ParticleEffectsTests
         Assert.True(combed.Max(p => p.Y) < 0.01, $"{combed.Max(p => p.Y)}");
         Assert.True(combed.Max(p => p.X) > 0.55);
         Assert.Contains("comb direction", Assert.Throws<ArgumentException>(() => (o.Hair with { CombDirection = Vec3.Zero }).Checked()).Message);
+    }
+
+    [Fact]
+    public void Hair_combed_by_hand_lies_where_it_was_combed()
+    {
+        var scene = new Scene();
+        var o = scene.AddObject("Rug", Doc(Square(Vec3.Zero, 1, Vec3.UnitY)));
+        o.Hair = new HairSettings { Density = 400, Length = 0.1, LengthJitter = 0, Droop = 0, Frizz = 0 }.Checked();
+        var points = o.BaseMesh().Points;
+        // Every point combed along +X: as the comb for the whole object does.
+        o.Hair = HairComb.Comb(o.Hair, points, null, 0, new Vec3(1, 0, 0), 1).Checked();
+        Assert.Equal(4, o.Hair.Combing!.Combed);
+        var all = HairPoints(scene, 1);
+        Assert.Equal(HairPoints(WithComb(new Vec3(1, 0, 0)), 1), all);
+        // Uncombed again: standing up, the combing gone.
+        o.Hair = HairComb.Comb(o.Hair, points, null, 0, Vec3.Zero, 1, uncomb: true);
+        Assert.Null(o.Hair.Combing);
+        Assert.True(HairPoints(scene, 1).Max(p => p.Y) > 0.09);
+        // Combed only at one corner: the hair there lies down, the far corner's stands up; half strength, half way.
+        o.Hair = HairComb.Comb(o.Hair, points, new Vec3(-0.5, 0, -0.5), 0.5, new Vec3(0, 0, -1), 1);
+        Assert.Equal(1, o.Hair.Combing!.Combed);
+        var corner = HairPoints(scene, 1);
+        Assert.True(corner.Where(p => p.X < -0.4 && p.Z < -0.4).Min(p => p.Y) < 0.03);
+        Assert.True(corner.Where(p => p.X > 0.4 && p.Z > 0.4).Max(p => p.Y) > 0.09);
+        var half = HairComb.Comb(new HairSettings(), points, null, 0, new Vec3(0, 0, 2), 0.5);
+        AssertNear(new Vec3(0, 0, 0.5), half.Combing!.Directions[0]);
+        // Kept in scene files, and checked.
+        var back = (ObjectItem)SceneJson.Read(SceneJson.Write(scene, embedMeshes: true)).Scene.Find("Rug")!;
+        Assert.Equal(o.Hair, back.Hair);
+        Assert.Contains("combing", Assert.Throws<ArgumentException>(() => (o.Hair with { Combing = new CombMap([new Vec3(3, 0, 0)]) }).Checked()).Message);
+        Assert.Contains("direction", Assert.Throws<ArgumentException>(() => HairComb.Comb(o.Hair, points, null, 0, Vec3.Zero, 1)).Message);
+
+        Scene WithComb(Vec3 way)
+        {
+            var other = new Scene();
+            other.AddObject("Rug", Doc(Square(Vec3.Zero, 1, Vec3.UnitY))).Hair = o.Hair! with { Combing = null, Comb = 1, CombDirection = way };
+            return other;
+        }
+    }
+
+    [Fact]
+    public void Hair_swings_with_the_bones_that_move_it()
+    {
+        // A rug standing still, its one bone sliding it +X for half a second and stopping.
+        var scene = new Scene { FramesPerSecond = 30 };
+        var o = scene.AddObject("Rug", Doc(Square(Vec3.Zero, 1, Vec3.UnitY)));
+        var bone = scene.AddBone(o, "Bone", Vec3.Zero, Vec3.Zero, 1);
+        bone.SetPosition(1, Vec3.Zero);
+        bone.SetPosition(15, new Vec3(1, 0, 0));
+        o.Hair = new HairSettings { Density = 100, Length = 0.2, Droop = 0, Frizz = 0 }.Checked();
+        var still = HairPoints(scene, 17);
+        o.Hair = o.Hair with { Dynamics = true };
+        var swung = HairPoints(scene, 17);
+        // The strands carry on forward past where they'd stand; long after, they stand again.
+        Assert.True(swung.Average(p => p.X) > still.Average(p => p.X) + 0.005, $"{swung.Average(p => p.X)} against {still.Average(p => p.X)}");
+        o.Hair = o.Hair with { Dynamics = false };
+        var later = HairPoints(scene, 300);
+        o.Hair = o.Hair with { Dynamics = true };
+        var settled = HairPoints(scene, 300);
+        for (int i = 0; i < later.Count; i++) AssertNear(later[i], settled[i], 1e-4);
     }
 
     [Fact]
@@ -343,13 +446,149 @@ public class ParticleEffectsTests
     }
 
     [Fact]
+    public void Self_collision_keeps_cloth_falling_on_itself_from_passing_through()
+    {
+        // Two sheets in one object, the upper half a square across, so its points fall between the lower one's.
+        static Document Two(bool self)
+        {
+            var doc = Cloth(6, 1, 0.3);
+            var mesh = doc.Layers[0].Mesh;
+            int count = mesh.Points.Count;
+            foreach (var p in mesh.Points.Take(count).ToList()) mesh.Points.Add(p + new Vec3(1.0 / 12, 0.3, 1.0 / 12));
+            foreach (var poly in mesh.Polygons.ToList()) mesh.Polygons.Add(new Polygon([.. poly.Points.Select(i => i + count)], poly.Surface));
+            return doc;
+        }
+        (double Lower, double Upper) Rest(bool self)
+        {
+            var scene = new Scene { FramesPerSecond = 30, FirstFrame = 0, LastFrame = 90 };
+            var o = scene.AddObject("Sheets", Two(self));
+            o.SoftBody = new SoftBodySettings { Floor = 0, Damping = 2, SelfCollide = self }.Checked();
+            var at = World(scene.Evaluate(75), o);
+            int half = at.Length / 2;
+            return (at.Take(half).Average(p => p.Y), at.Skip(half).Min(p => p.Y));
+        }
+        // Without it both lie flat on the floor, one through the other; with it the upper lies on the lower.
+        var (lower, upper) = Rest(false);
+        AssertNear(0.005, lower, 1e-3);
+        AssertNear(0.005, upper, 1e-3);
+        (lower, upper) = Rest(true);
+        AssertNear(0.005, lower, 0.01);
+        Assert.True(upper > lower + 0.05, $"{upper} over {lower}");
+        Assert.Contains("self-collision", Assert.Throws<ArgumentException>(() => new SoftBodySettings { SelfDistance = -1 }.Checked()).Message);
+    }
+
+    /// <summary>A pour: 201 particles 5 cm across from a spout 20 cm across half a metre up, over a second, living long.</summary>
+    private static readonly ParticleSettings Pour = new()
+    {
+        From = EmitFrom.Surface, Rate = 200, EndFrame = 30, Life = 30, Speed = 0.3, Spread = 0, Size = 0.05, Fluid = true, Viscosity = 0.05,
+    };
+
+    private static (Scene Scene, ObjectItem Spout) Pouring(ParticleSettings s)
+    {
+        var scene = new Scene { FramesPerSecond = 30, FirstFrame = 0, LastFrame = 120 };
+        var o = scene.AddObject("Spout", Doc(Square(Vec3.Zero, 0.2, -Vec3.UnitY)));
+        o.SetPosition(0, new Vec3(0, 0.5, 0));
+        o.Particles = s.Checked();
+        return (scene, o);
+    }
+
+    private static List<ParticleSystem.Particle> Fluid(Scene scene, ObjectItem o, double frame) =>
+        Fluids.At(scene, o, o.Particles!, frame, o.BaseMesh(), f => o.WorldMatrix(f),
+            o.Particles!.Collide ? Colliders.Of(scene, [o], frame, 1 / (scene.FramesPerSecond * Fluids.StepsPerFrame(scene.FramesPerSecond))) : null);
+
+    [Fact]
+    public void A_fluid_pours_and_spreads_into_a_puddle_its_particles_kept_apart()
+    {
+        // Poured straight down: without the fluid they'd stop where they land, under the spout; as a fluid they spread out.
+        var (scene, spout) = Pouring(Pour with { Floor = 0 });
+        var puddle = Fluid(scene, spout, 90);
+        Assert.Equal(201, puddle.Count);
+        Assert.All(puddle, q => Assert.True(q.Position.Y >= -1e-9, $"{q.Position} is under the floor"));
+        double across = puddle.Max(q => q.Position.X) - puddle.Min(q => q.Position.X);
+        Assert.True(across > 0.4, $"{across}");
+        // Low: a puddle a few particles deep, not a column.
+        Assert.True(puddle.Max(q => q.Position.Y) < 0.2, $"{puddle.Max(q => q.Position.Y)}");
+        // No two closer than half a size: they push each other apart.
+        double closest = double.PositiveInfinity;
+        for (int i = 0; i < puddle.Count; i++)
+            for (int j = i + 1; j < puddle.Count; j++) closest = Math.Min(closest, (puddle[i].Position - puddle[j].Position).Length);
+        Assert.True(closest > 0.4 * 0.05, $"{closest}");
+        // The same however the frame is reached: straight there, after going on, and in a copy.
+        var at45 = Fluid(scene, spout, 45).Select(q => q.Position).ToList();
+        Fluid(scene, spout, 100);
+        Assert.Equal(at45, Fluid(scene, spout, 45).Select(q => q.Position));
+        var copy = scene.Copy();
+        var other = (ObjectItem)copy.Find("Spout")!;
+        Assert.Equal(at45, Fluid(copy, other, 45).Select(q => q.Position));
+        // Through the scene, as blobs: one surface.
+        spout.Particles = spout.Particles! with { Look = ParticleLook.Blob };
+        Assert.True(scene.Evaluate(90).Objects[0].Mesh.Polygons.Count > 100);
+        Assert.Contains("viscosity", Assert.Throws<ArgumentException>(() => (Pour with { Viscosity = 2 }).Checked()).Message);
+    }
+
+    [Fact]
+    public void A_fluid_fills_what_holds_it()
+    {
+        // An open box 40 cm across and a metre deep, its walls facing in, round the spout (high enough that splashes stay in).
+        var (scene, spout) = Pouring(Pour with { Collide = true });
+        var box = new Mesh();
+        double h = 0.2;
+        Face(box, 0, Vec3.UnitY, new(-h, 0, -h), new(h, 0, -h), new(h, 0, h), new(-h, 0, h));
+        Face(box, 0, Vec3.UnitX, new(-h, 0, -h), new(-h, 0, h), new(-h, 1.0, h), new(-h, 1.0, -h));
+        Face(box, 0, -Vec3.UnitX, new(h, 0, -h), new(h, 1.0, -h), new(h, 1.0, h), new(h, 0, h));
+        Face(box, 0, Vec3.UnitZ, new(-h, 0, -h), new(-h, 1.0, -h), new(h, 1.0, -h), new(h, 0, -h));
+        Face(box, 0, -Vec3.UnitZ, new(-h, 0, h), new(h, 0, h), new(h, 1.0, h), new(-h, 1.0, h));
+        scene.AddObject("Box", Doc(box));
+        var held = Fluid(scene, spout, 90);
+        Assert.Equal(201, held.Count);
+        Assert.All(held, q => Assert.True(Math.Abs(q.Position.X) < h + 0.01 && Math.Abs(q.Position.Z) < h + 0.01 && q.Position.Y > -0.01,
+            $"{q.Position} got out of the box"));
+        // Settled in the bottom of it, spread across it.
+        Assert.True(held.Average(q => q.Position.Y) < 0.15, $"{held.Average(q => q.Position.Y)}");
+        Assert.True(held.Max(q => q.Position.X) - held.Min(q => q.Position.X) > 0.25);
+    }
+
+    [Fact]
+    public void Particles_hair_and_soft_bodies_are_kept_in_lightwave_scenes_as_plugin_sections()
+    {
+        var scene = new Scene();
+        var o = scene.AddObject("Thing", Cloth(2, 1, 0));
+        var plain = scene.AddObject("Plain", Doc(Square(Vec3.Zero, 1, Vec3.UnitY)));
+        o.Particles = new ParticleSettings { Look = ParticleLook.Blob, Collide = true, OnHit = ParticleHit.Bounce, Floor = -2, Fluid = true, Viscosity = 0.2 }.Checked();
+        o.Hair = HairComb.Comb(new HairSettings { Dynamics = true, Comb = 0.3 }, o.BaseMesh().Points, null, 0, new Vec3(1, 0, 0), 0.5).Checked();
+        o.SoftBody = new SoftBodySettings { Pin = "Edge", SelfCollide = true }.Checked();
+        var warnings = new List<string>();
+        string lws = LwsWriter.Write(scene, warnings);
+        Assert.Contains("Plugin CustomObjHandler 1 AVA_Particles", lws);
+        Assert.Contains("Plugin CustomObjHandler 1 AVA_Hair", lws);
+        Assert.Contains("Plugin CustomObjHandler 1 AVA_SoftBody", lws);
+        Assert.Equal(3, lws.Split('\n').Count(l => l == "EndPlugin"));
+        var read = LwsReader.Read(lws, _ => new Document(), "/no/such");
+        var back = read.Scene.Objects.First(x => x.Name == "Thing");
+        Assert.Equal((o.Particles, o.Hair, o.SoftBody), (back.Particles, back.Hair, back.SoftBody));
+        var other = read.Scene.Objects.First(x => x.Name == "Plain");
+        Assert.True(other.Particles == null && other.Hair == null && other.SoftBody == null);
+        // An object without them writes none, as before.
+        o.Particles = null;
+        o.Hair = null;
+        o.SoftBody = null;
+        Assert.DoesNotContain("Plugin", LwsWriter.Write(scene));
+        _ = plain;
+        // A section that can't be read is a warning, and the rest of the scene still is.
+        string bad = lws.Replace("\"look\":\"Blob\"", "\"look\":\"Teapot\"");
+        var broken = LwsReader.Read(bad, _ => new Document(), "/no/such");
+        Assert.Contains(broken.Warnings, w => w.Contains("AVA_Particles"));
+        Assert.NotNull(broken.Scene.Objects.First(x => x.Name == "Thing").Hair);
+    }
+
+    [Fact]
     public void New_settings_are_kept_through_copies_snapshots_and_scene_files()
     {
         var scene = new Scene();
         var o = scene.AddObject("Thing", Cloth(2, 1, 0));
         o.Particles = new ParticleSettings { Look = ParticleLook.Puff, Opacity = 0.3, Collide = true, OnHit = ParticleHit.Bounce, Bounce = 0.7 }.Checked();
         o.Hair = new HairSettings { Dynamics = true, Stiffness = 5, Comb = 0.5, CombDirection = new Vec3(1, 0, 0) }.Checked();
-        o.SoftBody = new SoftBodySettings { Goal = 0.4, Pin = "Edge", Floor = -1, StartFrame = 10 }.Checked();
+        o.SoftBody = new SoftBodySettings { Goal = 0.4, Pin = "Edge", Floor = -1, StartFrame = 10, SelfCollide = true, SelfDistance = 0.02 }.Checked();
         var copy = (ObjectItem)scene.Copy().Find("Thing")!;
         Assert.Equal((o.Particles, o.Hair, o.SoftBody), (copy.Particles, copy.Hair, copy.SoftBody));
         var snap = scene.Snapshot();

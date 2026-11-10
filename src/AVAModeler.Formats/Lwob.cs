@@ -44,6 +44,9 @@ public static class Lwob
     private const ushort LuminousFlag = 1, SmoothingFlag = 4, DoubleSidedFlag = 256;
     private const int MaxLayers = 4096;
 
+    /// <summary>The SURF sub-chunk AVA keeps a surface's node graph in.</summary>
+    public const string NodesId = "AVND";
+
     /// <summary>The SURF sub-chunks that map onto <see cref="Surface"/>'s typed fields, in the order they're written.</summary>
     private static readonly string[] TypedIds =
         ["COLR", "FLAG", "LUMI", "VLUM", "DIFF", "VDIF", "SPEC", "VSPC", "GLOS", "REFL", "VRFL", "TRAN", "VTRN", "SMAN"];
@@ -207,6 +210,15 @@ public static class Lwob
     private static void Apply(Surface s, List<RawChunk> chunks, string context)
     {
         s.Textures = LwobTextures.Read(chunks, context);
+        // AVA's node graph, one line of JSON (LightWave skips a sub-chunk it doesn't know).
+        if (chunks.Find(c => c.Id == NodesId) is { } nodes)
+        {
+            try { s.Nodes = SurfaceNodeGraph.FromJson(System.Text.Encoding.UTF8.GetString(nodes.Data)); }
+            catch (Exception e) when (e is ArgumentException or System.Text.Json.JsonException)
+            {
+                throw new FormatException($"{context}'s node graph can't be read: {e.Message}", e);
+            }
+        }
         foreach (var c in chunks.Where(c => TypedIds.Contains(c.Id)).OrderBy(c => c.Id == "FLAG" ? 0 : c.Id[0] == 'V' ? 2 : 1))
         {
             var r = new IffReader(c.Data, 0, c.Data.Length, $"{context} {c.Id}");
@@ -277,7 +289,17 @@ public static class Lwob
         Set("TRAN", s.Transparency > 0, w => w.U2(Fixed(s.Transparency)));
         Set("VTRN", s.Transparency > 0, w => w.F4((float)s.Transparency));
         Set("SMAN", s.Smoothing, w => w.F4((float)(s.SmoothingAngle * Math.PI / 180.0)));
-        return WithTextures(list, s.Textures);
+        var chunks = WithTextures(list, s.Textures);
+        // The node graph last, or none.
+        chunks = [.. chunks.Where(c => c.Id != NodesId)];
+        if (s.Nodes != null)
+        {
+            var json = System.Text.Encoding.UTF8.GetBytes(s.Nodes.ToJson());
+            if (json.Length > ushort.MaxValue)
+                throw new InvalidOperationException($"Surface \"{s.Name}\"'s node graph is too big for an LWOB file ({json.Length} bytes, at most {ushort.MaxValue}): take some nodes away.");
+            chunks.Add(new RawChunk(NodesId, json));
+        }
+        return chunks;
     }
 
     /// <summary>A surface's sub-chunks with the texture runs taken out and the layers' put back where the first was.</summary>

@@ -24,6 +24,14 @@ public static class SceneJson
         Converters = { new JsonStringEnumConverter() },
     };
 
+    private static readonly JsonSerializerOptions OneLine = new(Options) { WriteIndented = false };
+
+    /// <summary>A setting (particles, hair, a soft body) as one line of the scene file's JSON, for a .lws plugin section.</summary>
+    internal static string OneLineOf<T>(T value) => JsonSerializer.Serialize(value, OneLine);
+
+    /// <summary>A setting read back from <see cref="OneLineOf"/>'s line.</summary>
+    internal static T? FromOneLine<T>(string json) => JsonSerializer.Deserialize<T>(json, OneLine);
+
     /// <summary>
     /// Writes a scene. Object files in <paramref name="baseDirectory"/> or below it are written relative to it, so a
     /// scene and its objects can be moved or shared together; others keep their full paths.

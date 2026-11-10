@@ -97,8 +97,10 @@ public static partial class RayTracer
         public IReadOnlyList<ProceduralTexture?> Procedurals { get; init; } = [];
         /// <summary>The object's dissolve at the frame, 0 (solid) to under 1: the share of what's behind it seen through it.</summary>
         public double Dissolve { get; init; }
-        public bool Textured => Layers.Count > 0;
-        public bool TexturedTransparency => Layers.Any(l => l.Layer.Channel == TextureChannel.Transparency);
+        /// <summary>The surface's node graph, ready to evaluate, or null for none.</summary>
+        public NodeProgram? Nodes { get; init; }
+        public bool Textured => Layers.Count > 0 || Nodes != null;
+        public bool TexturedTransparency => Layers.Any(l => l.Layer.Channel == TextureChannel.Transparency) || Nodes != null;
     }
 
     /// <summary>
@@ -476,6 +478,7 @@ public static partial class RayTracer
             {
                 Layers = layers,
                 Procedurals = layers.Select(l => l.t.IsImage ? null : Core.Procedurals.Prepare(l.t)).ToList(),
+                Nodes = SurfaceNodes.Compile(s.Nodes),
             };
         }
 
@@ -561,7 +564,7 @@ public static partial class RayTracer
         /// normal tilted by any bump layers. <paramref name="distance"/> is how far the ray has come from the eye, which
         /// sets how big a patch of the image a sample covers.
         /// </summary>
-        private Look LookAt(Material m, in Triangle tri, in Hit hit, Vec3 p, Vec3 normal, double distance)
+        private Look LookAt(Material m, in Triangle tri, in Hit hit, Vec3 p, Vec3 normal, double distance, Vec3 toEye = default)
         {
             var look = new Look(m.Color, m.Diffuse, m.Specular, m.Luminosity, m.Reflection, m.Transparency, normal);
             if (tri.Texture < 0) return look;
@@ -620,7 +623,50 @@ public static partial class RayTracer
                     case TextureChannel.Transparency: transparency = TextureMapping.Blend(transparency, value, weight, t.Blend); break;
                 }
             }
+            if (m.Nodes is { } nodes)
+            {
+                // The node graph, after the layers: what's linked into its output takes their place.
+                var ctx = new NodeContext(local, p, n, toEye);
+                var g = nodes.Evaluate(ctx);
+                color = g.Color ?? color;
+                diffuse = g.Diffuse ?? diffuse;
+                specular = g.Specular ?? specular;
+                luminosity = g.Luminosity ?? luminosity;
+                reflection = g.Reflection ?? reflection;
+                transparency = g.Transparency ?? transparency;
+                if (nodes.HasBump) n = NodeBump(nodes, ctx, tri, tex, n);
+            }
             return new Look(color, diffuse, specular, luminosity, Math.Clamp(reflection, 0, 1), Math.Clamp(transparency, 0, 1), n);
+        }
+
+        /// <summary>
+        /// A normal tilted by a node graph's bump: its height (times Bump Height, in metres) found a millimetre either way
+        /// along the triangle's two sides (in the object's coordinates and the world's together), as a slope across the
+        /// triangle in the world; the normal leans away from the way it rises.
+        /// </summary>
+        private static Vec3 NodeBump(NodeProgram nodes, NodeContext ctx, in Triangle tri, TriangleTexture tex, Vec3 n)
+        {
+            Vec3 l1 = tex.B - tex.A, l2 = tex.C - tex.A;
+            double len1 = tri.E1.Length, len2 = tri.E2.Length;
+            if (len1 == 0 || len2 == 0 || nodes.BumpHeight == 0) return n;
+            const double eps = 1e-3;
+            double Along(Vec3 local, Vec3 world, double length)
+            {
+                double f = eps / length;
+                var up = ctx with { Local = ctx.Local + local * f, World = ctx.World + world * f };
+                var down = ctx with { Local = ctx.Local - local * f, World = ctx.World - world * f };
+                return (nodes.Height(up) - nodes.Height(down)) / (2 * f) * nodes.BumpHeight;
+            }
+            // The height's change for a step of 1 along each side, then the world gradient g with g·E1 = d1, g·E2 = d2.
+            double d1 = Along(l1, tri.E1, len1), d2 = Along(l2, tri.E2, len2);
+            if (d1 == 0 && d2 == 0) return n;
+            double a11 = Vec3.Dot(tri.E1, tri.E1), a12 = Vec3.Dot(tri.E1, tri.E2), a22 = Vec3.Dot(tri.E2, tri.E2);
+            double det = a11 * a22 - a12 * a12;
+            if (Math.Abs(det) < 1e-30) return n;
+            var g = tri.E1 * ((d1 * a22 - d2 * a12) / det) + tri.E2 * ((d2 * a11 - d1 * a12) / det);
+            g -= n * Vec3.Dot(g, n);
+            var tilted = (n - g).Normalized();
+            return tilted.LengthSquared > 0 ? tilted : n;
         }
 
         /// <summary>
@@ -740,7 +786,7 @@ public static partial class RayTracer
             var nf = tri.Normal;
             var ns = (tri.NA * (1 - hit.U - hit.V) + tri.NB * hit.U + tri.NC * hit.V).Normalized();
             if (ns.LengthSquared == 0) ns = nf;
-            var look = LookAt(m, tri, hit, p, ns, travelled + hit.T);
+            var look = LookAt(m, tri, hit, p, ns, travelled + hit.T, -dir);
             ns = look.Normal;
             bool inside = Vec3.Dot(dir, nf) > 0;
             if (inside)
@@ -811,7 +857,15 @@ public static partial class RayTracer
             {
                 var r = dir - ns * (2 * Vec3.Dot(dir, ns));
                 if (Vec3.Dot(r, nf) <= 0) r = dir - nf * (2 * Vec3.Dot(dir, nf));
-                color += (depth < _settings.MaxDepth ? Trace(p + lift, r.Normalized(), depth + 1, out _, pixel, far) : Background(r)) * reflection;
+                var rd = r.Normalized();
+                var mirrored = depth < _settings.MaxDepth ? Trace(p + lift, rd, depth + 1, out _, pixel, far) : Background(r);
+                // Puffs and sprites are seen in reflections too.
+                if (_soft != null && depth < _settings.MaxDepth)
+                {
+                    double ignored = 0;
+                    mirrored = ThroughSoft(p + lift, rd, mirrored, ref ignored);
+                }
+                color += mirrored * reflection;
             }
             if (transparency > 0 && depth < _settings.MaxDepth)
                 color += Transmitted(p, dir, nf, ns, lift, m.Ior, inside, depth, far, pixel) * transparency;
@@ -832,7 +886,10 @@ public static partial class RayTracer
                     : (dir * eta + ns * (eta * cosI - Math.Sqrt(k))).Normalized();
             }
             var start = Vec3.Dot(through, nf) < 0 ? p - lift : p + lift;
-            return Trace(start, through, depth + 1, out _, pixel, travelled);
+            var seen = Trace(start, through, depth + 1, out _, pixel, travelled);
+            if (_soft == null) return seen;
+            double ignored = 0;
+            return ThroughSoft(start, through, seen, ref ignored);
         }
 
         /// <summary>
@@ -944,7 +1001,8 @@ public static partial class RayTracer
         private double Transmission(Vec3 from, Vec3 dir, double distance)
         {
             if (_settings.Counters is { } counters) Interlocked.Increment(ref counters.ShadowRays);
-            double share = 1;
+            // Smoke dims the light through it, so puffs cast soft shadows.
+            double share = _soft != null ? PuffsThrough(from, dir, distance) : 1;
             for (int i = 0; i < 64 && share > 1e-4; i++)
             {
                 if (!_bvh.Intersect(from, dir, _bias, distance, out var hit)) return share;

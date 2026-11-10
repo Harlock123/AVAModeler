@@ -8,6 +8,7 @@ public static partial class RayTracer
     private sealed partial class Tracer
     {
         private List<SoftParticle>? _softList;
+        [ThreadStatic] private static double _softSkip;
         private SoftParticle[]? _soft;
         /// <summary>Each puff's colour as lit (or a sprite's light), worked out once at its centre.</summary>
         private Vec3[] _softLit = [];
@@ -20,20 +21,23 @@ public static partial class RayTracer
 
         /// <summary>
         /// Lights each puff where it is (the ambient light, and each light's colour by its falloff and spot cone, if
-        /// nothing casting shadows is in the way), plus its glow; a sprite is its colour by its opacity.
+        /// nothing casting shadows is in the way, dimmed by the other puffs between it and the light), plus its glow; a
+        /// sprite is its colour by its opacity.
         /// </summary>
         private void PrepareSoft()
         {
             if (_softList is not { Count: > 0 } list) return;
             _soft = [.. list];
             _softLit = new Vec3[_soft.Length];
-            for (int i = 0; i < _soft.Length; i++)
+            _softTree = new SphereTree([.. _soft.Select(q => (q.Position, Reach(q)))]);
+            var lit = _softLit;
+            Parallel.For(0, _soft.Length, i =>
             {
                 var q = _soft[i];
                 if (q.Additive)
                 {
-                    _softLit[i] = q.Color * q.Opacity;
-                    continue;
+                    lit[i] = q.Color * q.Opacity;
+                    return;
                 }
                 var light = _ambient;
                 foreach (var l in _lights)
@@ -56,20 +60,56 @@ public static partial class RayTracer
                             strength *= l.Item.SpotFactor(Math.Acos(Math.Clamp(Vec3.Dot(l.Direction, -toLight), -1, 1)) * 180 / Math.PI);
                     }
                     if (strength <= 0) continue;
-                    if (_settings.Shadows && l.Item.Shadows
-                        && _bvh.Intersect(q.Position, toLight, _bias * 10, distance, out var hit) && _materials[_bvh[hit.Triangle].Material].CastShadows) continue;
+                    if (_settings.Shadows && l.Item.Shadows)
+                    {
+                        if (_bvh.Intersect(q.Position, toLight, _bias * 10, distance, out var hit) && _materials[_bvh[hit.Triangle].Material].CastShadows) continue;
+                        // The smoke between it and the light (not itself) shades it, so a thick cloud is dark on its far side.
+                        strength *= PuffsThrough(q.Position, toLight, distance, skip: i);
+                    }
                     light += l.Color * strength;
                 }
-                _softLit[i] = new Vec3(q.Color.X * light.X, q.Color.Y * light.Y, q.Color.Z * light.Z) * 0.8 + q.Color * q.Glow;
-            }
-            _softTree = new SphereTree([.. _soft.Select(q => (q.Position, Reach(q)))]);
+                lit[i] = new Vec3(q.Color.X * light.X, q.Color.Y * light.Y, q.Color.Z * light.Z) * 0.8 + q.Color * q.Glow;
+            });
+        }
+
+        /// <summary>
+        /// How much light gets through the puffs (not sprites, which only add light) along a ray from
+        /// <paramref name="origin"/> for <paramref name="distance"/>, 1 for none in the way: for shadows, and for the
+        /// puffs' own lighting (leaving out puff <paramref name="skip"/>).
+        /// </summary>
+        private double PuffsThrough(Vec3 origin, Vec3 dir, double distance, int skip = -1)
+        {
+            if (_softTree == null) return 1;
+            double tau = 0;
+            double end = double.IsFinite(distance) ? distance : 1e30;
+            _softSkip = skip;
+            _softTree.Along(origin, dir, end, i =>
+            {
+                if (i == (int)_softSkip) return;
+                var q = _soft![i];
+                if (q.Additive) return;
+                tau += PuffDepth(q, origin, dir, end);
+            });
+            return Math.Exp(-tau);
+        }
+
+        /// <summary>A Gaussian puff's optical depth along a ray from 0 to <paramref name="end"/>, in closed form.</summary>
+        private static double PuffDepth(in SoftParticle q, Vec3 origin, Vec3 dir, double end)
+        {
+            var to = q.Position - origin;
+            double tc = Vec3.Dot(to, dir), d2 = Math.Max(0, to.LengthSquared - tc * tc);
+            double sigma = q.Size / 3;
+            if (d2 >= 9 * sigma * sigma) return 0;
+            double tau0 = -Math.Log(1 - Math.Min(0.999, q.Opacity));
+            double part = (Erf((Math.Min(end, 1e30) - tc) / sigma) - Erf(-tc / sigma)) / 2;
+            return Math.Max(0, tau0 * Math.Exp(-d2 / (sigma * sigma)) * part);
         }
 
         /// <summary>How far from its centre a puff (three spreads) or a sprite (half its size) reaches.</summary>
         private static double Reach(SoftParticle q) => q.Additive ? q.Size / 2 : q.Size;
 
         /// <summary>
-        /// What a camera ray sees through the puffs and sprites in front of what it hits (<paramref name="seen"/>), nearest
+        /// What a ray (from the camera, or reflected or refracted) sees through the puffs and sprites in front of what it hits (<paramref name="seen"/>), nearest
         /// first: each puff hides its share of what's behind it and shows its lit colour in its place, each sprite adds its
         /// light; the coverage grows by what the puffs hide.
         /// </summary>
@@ -93,11 +133,7 @@ public static partial class RayTracer
                 else
                 {
                     // A Gaussian puff: its density along the ray, from the eye to what's hit, in closed form.
-                    double sigma = q.Size / 3;
-                    if (d2 >= 9 * sigma * sigma) return;
-                    double tau0 = -Math.Log(1 - Math.Min(0.999, q.Opacity));
-                    double part = (Erf((Math.Min(hitAt, 1e30) - tc) / sigma) - Erf(-tc / sigma)) / 2;
-                    double tau = tau0 * Math.Exp(-d2 / (sigma * sigma)) * part;
+                    double tau = PuffDepth(q, origin, dir, hitAt);
                     if (tau > 1e-6) hits.Add((tc, i, 1 - Math.Exp(-tau)));
                 }
             });

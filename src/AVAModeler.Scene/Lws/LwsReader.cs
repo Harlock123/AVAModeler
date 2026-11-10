@@ -378,6 +378,9 @@ public static class LwsReader
                     break;
                 }
 
+                case "Plugin" when _current is ObjectItem effects && Tokens(rest).LastOrDefault() is LwsEffects.Particles or LwsEffects.Hair or LwsEffects.SoftBody:
+                    ReadEffect(effects, Tokens(rest)[^1]);
+                    break;
                 case "Plugin":
                     SkipUntil("EndPlugin");
                     break;
@@ -447,6 +450,28 @@ public static class LwsReader
         {
             int depth = opening.Count(c => c == '{') - opening.Count(c => c == '}');
             while (depth > 0 && Next() is { } l) depth += l.Count(c => c == '{') - l.Count(c => c == '}');
+        }
+
+        /// <summary>An object's particles, hair or soft body: AVA's own plugin section, its settings one line of JSON.</summary>
+        private void ReadEffect(ObjectItem o, string name)
+        {
+            int at = _pos;
+            var text = new System.Text.StringBuilder();
+            for (var l = Next(); l != null && l.Trim() != "EndPlugin"; l = Next()) text.Append(l);
+            try
+            {
+                string json = text.ToString();
+                switch (name)
+                {
+                    case LwsEffects.Particles: o.Particles = SceneJson.FromOneLine<ParticleSettings>(json)?.Checked(); break;
+                    case LwsEffects.Hair: o.Hair = SceneJson.FromOneLine<HairSettings>(json)?.Checked(); break;
+                    default: o.SoftBody = SceneJson.FromOneLine<SoftBodySettings>(json)?.Checked(); break;
+                }
+            }
+            catch (Exception e) when (e is System.Text.Json.JsonException or ArgumentException or NotSupportedException)
+            {
+                Warn($"Line {at}: {o.Name}'s {name} settings couldn't be read ({e.Message}); they are left out.");
+            }
         }
 
         private void SkipUntil(string end)

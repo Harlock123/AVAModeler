@@ -21,6 +21,9 @@ namespace AVAModeler.Scene;
 /// flare <c>LensFlare 1</c> with <c>FlareIntensity</c>, <c>FlareNominalDistance</c>, <c>FlareDissolve</c>,
 /// <c>LensFlareFade</c> and <c>LensFlareOptions</c> (written only when on, so other scenes stay as they were); the
 /// flare's sizes and streak count and volumetric lights have no place in the format (a warning says so).
+/// An object's particles, hair and soft body are each a plugin section of LightWave 6's kind, <c>Plugin
+/// CustomObjHandler 1 AVA_Particles</c> (or <c>AVA_Hair</c>, <c>AVA_SoftBody</c>), one line of the .avascene's JSON for
+/// the settings, and <c>EndPlugin</c>: LightWave and other readers skip a plugin they don't have.
 /// </summary>
 public static class LwsWriter
 {
@@ -67,6 +70,7 @@ public static class LwsWriter
                     if (!(obj.Dissolve.IsConstant && obj.Dissolve.Evaluate(0) == 0)) Value("ObjectDissolve", obj.Dissolve);
                     L($"ShadowOptions {(obj.CastShadows ? 2 : 0) | (obj.ReceiveShadows ? 4 : 0)}");
                     L($"BoneFalloffType {(int)Math.Round(Math.Log2(Math.Max(1, obj.BoneFalloffExponent)))}");
+                    WriteEffects(obj);
                     foreach (var b in obj.Bones) WriteBone(b);
                 }
                 L();
@@ -134,6 +138,20 @@ public static class LwsWriter
             L($"FogMaxDistance {N(scene.FogMaxDistance)}");
             L($"FogColor {V(scene.FogColor)}");
             WriteCompositing();
+        }
+
+        /// <summary>The object's particles, hair and soft body, as plugin sections only AVA reads (written only when set).</summary>
+        private void WriteEffects(ObjectItem o)
+        {
+            void Section(string name, string json)
+            {
+                L($"Plugin CustomObjHandler 1 {name}");
+                L(json);
+                L("EndPlugin");
+            }
+            if (o.Particles is { } p) Section(LwsEffects.Particles, SceneJson.OneLineOf(p));
+            if (o.Hair is { } h) Section(LwsEffects.Hair, SceneJson.OneLineOf(h));
+            if (o.SoftBody is { } b) Section(LwsEffects.SoftBody, SceneJson.OneLineOf(b));
         }
 
         /// <summary>
@@ -283,4 +301,10 @@ public static class LwsWriter
         L($"  Behaviors {(int)e.PreBehavior} {(int)e.PostBehavior}");
         L("}");
     }
+}
+
+/// <summary>The names of the plugin sections a .lws keeps an object's particles, hair and soft body in.</summary>
+internal static class LwsEffects
+{
+    public const string Particles = "AVA_Particles", Hair = "AVA_Hair", SoftBody = "AVA_SoftBody";
 }

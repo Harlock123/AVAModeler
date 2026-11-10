@@ -226,6 +226,11 @@ public sealed class ItemPropertiesPanel : StackPanel
             NumberRow("Bounce (0–1)", ps.Bounce, v => Set("Particle Bounce", p => p with { Bounce = v }));
             NumberRow("Friction (0–1)", ps.Friction, v => Set("Particle Friction", p => p with { Friction = v }));
         }
+        var fluid = new CheckBox { Name = "ParticleFluid", Content = "Flow as a liquid", IsChecked = ps.Fluid, Foreground = Look.Text };
+        ToolTip.SetTip(fluid, "The particles push each other apart and drag on each other: they pour, splash and pool (Blob shows them as one surface)");
+        fluid.IsCheckedChanged += (_, _) => { Set("Particle Fluid", p => p with { Fluid = fluid.IsChecked == true }); Dispatcher.UIThread.Post(Show); };
+        Children.Add(fluid);
+        if (ps.Fluid) NumberRow("Viscosity (0–1)", ps.Viscosity, v => Set("Particle Viscosity", p => p with { Viscosity = v }));
     }
 
     /// <summary>Hair: Grow hair on or off, then density, length, thickness, segments, droop and frizz. Each change is one undo step.</summary>
@@ -255,6 +260,23 @@ public sealed class ItemPropertiesPanel : StackPanel
         NumberRow("Droop (0–1)", hs.Droop, v => Set("Hair Droop", h => h with { Droop = v }));
         NumberRow("Frizz (°)", hs.Frizz, v => Set("Hair Frizz", h => h with { Frizz = v }));
         NumberRow("Comb (0–1)", hs.Comb, v => Set("Hair Comb", h => h with { Comb = v }));
+        // The brush: dragging in a view combs the hair the way the mouse goes (Shift or the right button uncombs).
+        var brush = Session.HairBrush;
+        var combing = new Avalonia.Controls.Primitives.ToggleButton { Name = "CombBrush", Content = "Comb with the mouse", IsChecked = brush.On, FontSize = 11 };
+        ToolTip.SetTip(combing, "Drag across the object in a view to comb its hair that way; Shift-drag or right-drag uncombs");
+        combing.IsCheckedChanged += (_, _) => { brush.On = combing.IsChecked == true; Session.SetStatus(brush.On ? "Drag in a view to comb the hair; Shift-drag uncombs." : ""); Dispatcher.UIThread.Post(Show); };
+        Children.Add(combing);
+        if (brush.On)
+        {
+            NumberRow("Brush size (px)", brush.Radius, v => { if (v is >= 2 and <= 1000) brush.Radius = v; else Session.SetStatus("The brush's size is 2 to 1000 pixels."); });
+            NumberRow("Brush strength (0–1)", brush.Strength, v => { if (v is >= 0 and <= 1) brush.Strength = v; else Session.SetStatus("The brush's strength is 0 to 1."); });
+        }
+        if (hs.Combing is { } map)
+        {
+            var clear = new Button { Name = "ClearCombing", Content = $"Clear combing ({map.Combed} points)", FontSize = 11 };
+            clear.Click += (_, _) => { Set("Clear Combing", h => h with { Combing = null }); Dispatcher.UIThread.Post(Show); };
+            Children.Add(clear);
+        }
         var dynamics = new CheckBox { Name = "HairDynamics", Content = "Swing as it moves", IsChecked = hs.Dynamics, Foreground = Look.Text };
         dynamics.IsCheckedChanged += (_, _) => { Set("Hair Dynamics", h => h with { Dynamics = dynamics.IsChecked == true }); Dispatcher.UIThread.Post(Show); };
         Children.Add(dynamics);
@@ -311,6 +333,10 @@ public sealed class ItemPropertiesPanel : StackPanel
         collide.IsCheckedChanged += (_, _) => Set("Soft Collide", b => b with { Collide = collide.IsChecked == true });
         Children.Add(floor);
         Children.Add(collide);
+        var self = new CheckBox { Name = "SoftSelfCollide", Content = "Don't pass through itself", IsChecked = sb.SelfCollide, Foreground = Look.Text };
+        ToolTip.SetTip(self, "Self-collision: its points stay apart where it folds or falls on itself (slower)");
+        self.IsCheckedChanged += (_, _) => Set("Soft Self-Collide", b => b with { SelfCollide = self.IsChecked == true });
+        Children.Add(self);
     }
 
     /// <summary>The items an item's path can run through (in the item list's order).</summary>

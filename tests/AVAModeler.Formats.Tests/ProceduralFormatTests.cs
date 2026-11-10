@@ -336,3 +336,39 @@ public class GltfProceduralTests
         Assert.Null(glb.Json["materials"]![0]!["pbrMetallicRoughness"]!["baseColorTexture"]);
     }
 }
+
+public class LwobNodeTests
+{
+    [Fact]
+    public void A_surfaces_node_graph_is_kept_in_its_own_subchunk()
+    {
+        var doc = Lwob.Read(LwobProceduralTests.Procedural());
+        var stone = doc.Surfaces[0];
+        Assert.Null(stone.Nodes);
+        var g = SurfaceNodeGraph.New();
+        var noise = g.Add(NodeKind.Noise, 10, 20);
+        noise.Numbers["Scale"] = 0.25;
+        var ramp = g.Add(NodeKind.Gradient);
+        ramp.Stops = [new(0.2, new Rgb(10, 20, 30)), new(0.9, new Rgb(200, 190, 180))];
+        g.Link(noise.Id, "Value", ramp.Id, "Value");
+        g.Link(ramp.Id, "Color", g.Output!.Id, "Color");
+        stone.Nodes = g.Checked();
+        var bytes = Lwob.Write(doc);
+        var back = Lwob.Read(bytes).Surfaces[0];
+        Assert.Equal(g.ToJson(), back.Nodes!.ToJson());
+        // Its textures and settings are kept beside it, and a file read and written back is the same.
+        Assert.Equal(stone.Textures.Count, back.Textures.Count);
+        Assert.Equal(bytes, Lwob.Write(Lwob.Read(bytes)));
+        // Taken away again, the sub-chunk goes.
+        var again = Lwob.Read(bytes);
+        again.Surfaces[0].Nodes = null;
+        Assert.Null(Lwob.Read(Lwob.Write(again)).Surfaces[0].Nodes);
+        Assert.DoesNotContain("AVND", System.Text.Encoding.ASCII.GetString(Lwob.Write(again)));
+        // A broken one says which surface.
+        var text = System.Text.Encoding.Latin1.GetString(bytes);
+        int at = text.IndexOf("AVND", StringComparison.Ordinal) + 6;
+        var bad = (byte[])bytes.Clone();
+        bad[at] = (byte)'?';
+        Assert.Contains("Stone", Assert.ThrowsAny<FormatException>(() => Lwob.Read(bad)).Message);
+    }
+}

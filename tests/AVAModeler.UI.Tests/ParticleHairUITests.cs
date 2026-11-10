@@ -197,4 +197,80 @@ public class ParticleHairUITests
             img.SavePng(Path.Combine(dir, "AVAModeler-cloth-goo-smoke.png"), alpha: false);
         }
     }
+
+    [AvaloniaFact]
+    public void Water_poured_into_a_tank_beside_a_ball_shaded_with_nodes()
+    {
+        var scene = new Scene.Scene { FramesPerSecond = 30, FirstFrame = 0, LastFrame = 75, AmbientIntensity = 0.3, GradientBackground = true,
+            GradientTop = new Vec3(0.08, 0.1, 0.16), GradientBottom = new Vec3(0.2, 0.18, 0.2) };
+        var cam = scene.AddCamera("Camera");
+        cam.SetPosition(0, new Vec3(0, 1.2, -2.8));
+        cam.SetRotation(0, new Vec3(0, 18, 0));
+        cam.Width = 640;
+        cam.Height = 360;
+        scene.AddLight("Key").SetRotation(0, new Vec3(-30, 40, 0));
+        // A floor checkered by a node graph: a checkerboard texture choosing between two colours.
+        var floorDoc = new Document();
+        new Commands(floorDoc).Run("Box", new Dictionary<string, object?> { ["Size"] = new[] { 8.0, 0, 8 } });
+        var floorNodes = SurfaceNodeGraph.New();
+        var check = floorNodes.Add(NodeKind.Texture, option: "Checkerboard");
+        check.Numbers["Size"] = 0.25;
+        var tiles = floorNodes.Add(NodeKind.Mix);
+        (tiles.Colors["A"], tiles.Colors["B"]) = (new Rgb(60, 60, 70), new Rgb(120, 115, 110));
+        floorNodes.Link(check.Id, "Value", tiles.Id, "Factor");
+        floorNodes.Link(tiles.Id, "Color", floorNodes.Output!.Id, "Color");
+        floorDoc.Surfaces[0].Nodes = floorNodes.Checked();
+        scene.AddObject("Floor", floorDoc);
+        // A ball of marble: veins through a gradient, bumped by noise, glossier where it faces you.
+        var ballDoc = Ball(0.35, "Stone", new Rgb(200, 200, 200));
+        var g = SurfaceNodeGraph.New();
+        var marble = g.Add(NodeKind.Texture, option: "Marble");
+        marble.Numbers["Size"] = 0.3;
+        var ramp = g.Add(NodeKind.Gradient);
+        ramp.Stops = [new(0, new Rgb(235, 228, 215)), new(0.6, new Rgb(180, 150, 120)), new(1, new Rgb(70, 50, 40))];
+        g.Link(marble.Id, "Value", ramp.Id, "Value");
+        g.Link(ramp.Id, "Color", g.Output!.Id, "Color");
+        var noise = g.Add(NodeKind.Noise);
+        noise.Numbers["Scale"] = 0.05;
+        g.Link(noise.Id, "Value", g.Output.Id, "Bump");
+        g.Output.Numbers["Bump Height"] = 0.002;
+        var facing = g.Add(NodeKind.Incidence);
+        g.Link(facing.Id, "Value", g.Output.Id, "Specular");
+        var stone = ballDoc.Surfaces[ballDoc.SurfaceIndex("Stone")];
+        stone.Nodes = g.Checked();
+        stone.Glossiness = 128;
+        stone.Smoothing = true;
+        var ball = scene.AddObject("Marble Ball", ballDoc);
+        ball.SetPosition(0, new Vec3(0.75, 0.35, 0.3));
+        // An open tank, its walls facing in, filled from a spout above it.
+        var tank = new Document();
+        var m = tank.Layers[0].Mesh;
+        double h = 0.3, top = 0.45;
+        void Wall(params Vec3[] p) { int f = m.AddPolygon([.. p.Select(m.AddPoint)]); }
+        Wall(new(-h, 0, -h), new(h, 0, -h), new(h, 0, h), new(-h, 0, h));
+        Wall(new(-h, 0, -h), new(-h, 0, h), new(-h, top, h), new(-h, top, -h));
+        Wall(new(h, 0, -h), new(h, top, -h), new(h, top, h), new(h, 0, h));
+        Wall(new(-h, 0, h), new(h, 0, h), new(h, top, h), new(-h, top, h));
+        Wall(new(-h, 0, -h), new(-h, top, -h), new(h, top, -h), new(h, 0, -h));
+        tank.Surfaces[0].Name = "Glass";
+        tank.Surfaces[0].Color = new Rgb(180, 200, 210);
+        tank.Surfaces[0].Transparency = 0.7;
+        tank.Surfaces[0].DoubleSided = true;
+        var tankItem = scene.AddObject("Tank", tank);
+        tankItem.SetPosition(0, new Vec3(-0.55, 0, 0.2));
+        var spout = scene.AddObject("Spout", Ball(0.06, "Pipe", new Rgb(90, 90, 100)));
+        spout.SetPosition(0, new Vec3(-0.55, 0.55, 0.2));
+        spout.Particles = new ParticleSettings
+        {
+            From = EmitFrom.Surface, Rate = 260, StartFrame = 0, EndFrame = 60, Life = 30, Speed = 0.2, Spread = 0, Size = 0.045, Collide = true,
+            Fluid = true, Viscosity = 0.1, Look = ParticleLook.Blob, Color = new Rgb(60, 130, 220), Glow = 0.05, HideEmitter = true,
+        }.Checked();
+        var img = RayTracer.Render(scene, 75, new RenderSettings { Width = 640, Height = 360, SamplesPerPixel = 2 }, null, TestContext.Current.CancellationToken);
+        Assert.Equal(640, img.Width);
+        if (Environment.GetEnvironmentVariable("AVAMODELER_SHOTS") is { Length: > 0 } dir)
+        {
+            Directory.CreateDirectory(dir);
+            img.SavePng(Path.Combine(dir, "AVAModeler-fluid-nodes.png"), alpha: false);
+        }
+    }
 }

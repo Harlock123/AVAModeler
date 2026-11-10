@@ -430,8 +430,21 @@ public sealed partial class Scene
             int index = surfaces.Count;
             surfaces.Add(new Surface($"{o.Name} hair") { Color = hair.Color, Diffuse = 0.9, Specular = 0.3, Glossiness = 32, DoubleSided = true, Smoothing = true });
             int? only = hair.OnSurface.Length == 0 ? null : surfaces.FindIndex(x => x.Name == hair.OnSurface) is >= 0 and var i && i < index ? i : -1;
-            var swing = hair.Dynamics ? HairSwing.Lag(hair, frame, FramesPerSecond, FirstFrame, f => f == frame ? world : o.WorldMatrix(f)) : null;
-            HairGrowth.Grow(mesh, hair, toLocal.TransformVector(new Vec3(0, -1, 0)), index, only, swing);
+            Func<Vec3, Vec3>? swing = null;
+            IReadOnlyList<Vec3>? rest = null;
+            if (hair.Dynamics)
+            {
+                Mat4 WorldAt(double f) => f == frame ? world : o.WorldMatrix(f);
+                var bones = BoneDeformer.Moving(o);
+                // With bones, each bone's motion swings the hair it moves; without, the object's.
+                if (bones.Count > 0 && o.SoftBody == null)
+                {
+                    rest = o.BaseMesh().Points;
+                    swing = HairSwing.Lag(hair, frame, FramesPerSecond, FirstFrame, WorldAt, bones.Count, f => BoneDeformer.Moves(bones, f), BoneDeformer.Weights(o, bones));
+                }
+                else swing = HairSwing.Lag(hair, frame, FramesPerSecond, FirstFrame, WorldAt);
+            }
+            HairGrowth.Grow(mesh, hair, toLocal.TransformVector(new Vec3(0, -1, 0)), index, only, swing, rest);
         }
         if (o.Particles is { } ps)
         {
@@ -440,10 +453,11 @@ public sealed partial class Scene
             surfaces.Add(new Surface($"{o.Name} particles") { Color = ps.Color, Luminosity = ps.Glow, Diffuse = 0.8, DoubleSided = true });
             var rest = o.BaseMesh();
             var source = ps.Look == ParticleLook.Object ? Objects.FirstOrDefault(x => x.Name == ps.InstanceOf && x != o && !x.IsPlaceholder) : null;
-            var colliders = ps.Collide
-                ? Colliders.Of(this, source == null ? [o] : [o, source], frame, ParticleSystem.StepOf(ps, FramesPerSecond))
-                : null;
-            var alive = ParticleSystem.At(ps, frame, FramesPerSecond, rest, f => f == frame ? world : o.WorldMatrix(f), colliders);
+            double step = ps.Fluid ? 1 / (FramesPerSecond * Fluids.StepsPerFrame(FramesPerSecond)) : ParticleSystem.StepOf(ps, FramesPerSecond);
+            var colliders = ps.Collide ? Colliders.Of(this, source == null ? [o] : [o, source], frame, step) : null;
+            var alive = ps.Fluid
+                ? Fluids.At(this, o, ps, frame, rest, f => f == frame ? world : o.WorldMatrix(f), colliders)
+                : ParticleSystem.At(ps, frame, FramesPerSecond, rest, f => f == frame ? world : o.WorldMatrix(f), colliders);
             switch (ps.Look)
             {
                 case ParticleLook.Blob:
@@ -451,7 +465,8 @@ public sealed partial class Scene
                     surfaces[index].SmoothingAngle = 179;
                     surfaces[index].Specular = 0.5;
                     surfaces[index].DoubleSided = false;
-                    ParticleLooks.AddBlobs(mesh, alive, toLocal, index);
+                    // A fluid's particles sit about a size apart: meshed twice as big, they melt into one surface.
+                    ParticleLooks.AddBlobs(mesh, ps.Fluid ? [.. alive.Select(q => q with { Size = q.Size * 2 })] : alive, toLocal, index);
                     break;
                 case ParticleLook.Puff or ParticleLook.Sprite:
                     soft = ParticleLooks.Soft(alive, ps);

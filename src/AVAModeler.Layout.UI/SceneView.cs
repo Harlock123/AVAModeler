@@ -49,7 +49,8 @@ public sealed class SceneView : Control
     private LayoutViewMode _mode = LayoutViewMode.Camera;
     public bool Shaded { get; set; } = true;
     private Point _press, _last;
-    private bool _dragItem, _rotateItem, _pan, _orbit, _moved;
+    private bool _dragItem, _rotateItem, _pan, _orbit, _moved, _comb, _uncomb;
+    private Point? _hover;
     private Vec3 _startPosition, _startRotation, _startScale;
 
     /// <summary>What dragging the chosen item does (<see cref="ItemDrag.MoveOrRotate"/> unless a host changes it).</summary>
@@ -186,6 +187,13 @@ public sealed class SceneView : Control
             LayoutViewMode.Light => $"Light: {LightShown?.Name ?? "(none)"}",
             _ => _mode.ToString(),
         };
+        if (_session.HairBrush.On && _hover is { } at)
+        {
+            // The brush, its size on screen.
+            double r = _session.HairBrush.Radius;
+            context.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(200, 255, 220, 120)), 1.5), at, r, r);
+            label += " · combing hair (Shift or right-drag uncombs)";
+        }
         context.DrawText(new FormattedText($"{label} · frame {_session.Frame:0}", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
             new Typeface(FontFamily.Default), 12, Brushes.White), new Point(6, 4));
         Redrawn?.Invoke();
@@ -219,7 +227,15 @@ public sealed class SceneView : Control
         _moved = false;
         _pan = props.IsMiddleButtonPressed || props.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Alt) && _mode != LayoutViewMode.Perspective;
         _orbit = !_pan && _mode == LayoutViewMode.Perspective && (e.KeyModifiers.HasFlag(KeyModifiers.Alt) || Pick(p) == null && _session.Selected == null);
-        if (!_pan && !_orbit && _session.Selected is { Locked: false } item && (props.IsLeftButtonPressed || props.IsRightButtonPressed))
+        if (!_pan && !_orbit && _session.HairBrush.On && _session.Selected is ObjectItem { Hair: not null, Locked: false } combed
+            && (props.IsLeftButtonPressed || props.IsRightButtonPressed))
+        {
+            // The hair brush: the stroke, press to release, is one undo step. Shift or the right button uncombs.
+            _comb = true;
+            _uncomb = props.IsRightButtonPressed || e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            _session.BeginEdit($"Comb {combed.Name}'s Hair");
+        }
+        else if (!_pan && !_orbit && _session.Selected is { Locked: false } item && (props.IsLeftButtonPressed || props.IsRightButtonPressed))
         {
             _dragItem = props.IsLeftButtonPressed;
             _rotateItem = props.IsRightButtonPressed;
@@ -236,6 +252,16 @@ public sealed class SceneView : Control
     {
         base.OnPointerMoved(e);
         var p = e.GetPosition(this);
+        if (_session.HairBrush.On)
+        {
+            _hover = p;
+            InvalidateVisual();
+        }
+        if (_comb)
+        {
+            CombStroke(p);
+            return;
+        }
         if (!(_pan || _orbit || _dragItem || _rotateItem)) return;
         if (Math.Abs(p.X - _press.X) + Math.Abs(p.Y - _press.Y) > 3) _moved = true;
         if (!_moved) return;
@@ -244,6 +270,27 @@ public sealed class SceneView : Control
         else if (_orbit) cam.Orbit((p.X - _last.X) * 0.4, (p.Y - _last.Y) * 0.4);
         else if (_session.Selected is { } item && (_dragItem || _rotateItem)) DragItem(item, cam, p.X - _press.X, p.Y - _press.Y);
         _last = p;
+        InvalidateVisual();
+    }
+
+    /// <summary>One stroke of the hair brush, from the last place the mouse was to <paramref name="p"/>.</summary>
+    private void CombStroke(Point p)
+    {
+        if (Math.Abs(p.X - _press.X) + Math.Abs(p.Y - _press.Y) > 3) _moved = true;
+        if (_session.Selected is not ObjectItem { Hair: not null } o) return;
+        var next = _session.HairBrush.Stroke(o, _session.Frame, Camera, (_last.X, _last.Y), (p.X, p.Y), _uncomb);
+        if (next != null)
+        {
+            o.Hair = next;
+            _session.Scene.Notify();
+        }
+        _last = p;
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        _hover = null;
         InvalidateVisual();
     }
 
@@ -308,8 +355,9 @@ public sealed class SceneView : Control
     {
         base.OnPointerReleased(e);
         var p = e.GetPosition(this);
+        bool combing = _comb;
         EndDrag();
-        if (!_moved && !_pan) _session.Select(Pick(p));
+        if (!_moved && !_pan && !combing) _session.Select(Pick(p));
         _pan = _orbit = false;
         e.Pointer.Capture(null);
         InvalidateVisual();
@@ -324,8 +372,8 @@ public sealed class SceneView : Control
 
     private void EndDrag()
     {
-        if (_dragItem || _rotateItem) _session.EndEdit();
-        _dragItem = _rotateItem = false;
+        if (_dragItem || _rotateItem || _comb) _session.EndEdit();
+        _dragItem = _rotateItem = _comb = false;
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)

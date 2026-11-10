@@ -68,6 +68,12 @@ public sealed class ObjectItem : SceneItem
     /// <summary>The soft body's simulation so far (a <see cref="SoftBodies"/> state).</summary>
     internal object? SoftCache;
 
+    /// <summary>Guards <see cref="FluidCache"/>.</summary>
+    internal readonly object FluidLock = new();
+
+    /// <summary>Its fluid particles' state at kept frames (see <see cref="Fluids"/>), or null.</summary>
+    internal object? FluidCache;
+
     public bool IsPlaceholder => Document == null;
 
     public IReadOnlyList<Bone> Bones => _bones;

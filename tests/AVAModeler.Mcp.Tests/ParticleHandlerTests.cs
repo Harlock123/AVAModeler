@@ -101,4 +101,36 @@ public class ParticleHandlerTests
         await b.Tools.SetSoftBody(box, off: true, cancel: Cancel);
         Assert.Null(b.Scene.Objects.Single().SoftBody);
     }
+
+    [Fact]
+    public async Task An_agent_combs_hair_by_hand_pours_a_fluid_and_keeps_cloth_off_itself()
+    {
+        using var b = await WithBox();
+        string box = b.Scene.Objects.Single().Name;
+        Assert.Contains("no hair", await Error(b.Tools.CombHair(box, direction: [1, 0, 0], cancel: Cancel)));
+        await b.Tools.SetHair(box, density: 10, cancel: Cancel);
+        // A brush at one corner of the cube combs that corner's point only.
+        var r = await Parse(b.Tools.CombHair(box, direction: [0, 0, -1], at: [1, 1, 1], radius: 0.5, cancel: Cancel));
+        Assert.Equal(1, (int)r["hair"]!["combed_points"]!);
+        Assert.Equal("Agent: combed hair", (string?)r["undo_scene"]!["next_undo"]);
+        // Every point, then uncombed half way, then cleared.
+        r = await Parse(b.Tools.CombHair(box, direction: [1, 0, 0], cancel: Cancel));
+        Assert.Equal(8, (int)r["hair"]!["combed_points"]!);
+        await b.Tools.CombHair(box, uncomb: true, strength: 0.5, cancel: Cancel);
+        Assert.Equal(0.5, b.Scene.Objects.Single().Hair!.Combing!.Directions[0].Length, 6);
+        r = await Parse(b.Tools.CombHair(box, clear: true, cancel: Cancel));
+        Assert.Equal(0, (int)r["hair"]!["combed_points"]!);
+        Assert.Contains("direction", await Error(b.Tools.CombHair(box, cancel: Cancel)));
+        Assert.Contains("strength", await Error(b.Tools.CombHair(box, direction: [1, 0, 0], strength: 2, cancel: Cancel)));
+        // A fluid: its settings in the census, and no count (it's stepped).
+        r = await Parse(b.Tools.SetParticles(box, fluid: true, viscosity: 0.3, look: "blob", cancel: Cancel));
+        Assert.True((bool)r["particles"]!["fluid"]!);
+        Assert.Equal(0.3, (double)r["particles"]!["viscosity"]!);
+        Assert.Null(r["alive_now"]);
+        Assert.Contains("viscosity", await Error(b.Tools.SetParticles(box, viscosity: 5, cancel: Cancel)));
+        // Cloth that keeps off itself.
+        r = await Parse(b.Tools.SetSoftBody(box, self_collide: true, self_distance: 0.05, cancel: Cancel));
+        Assert.True((bool)r["soft_body"]!["self_collide"]!);
+        Assert.Equal(0.05, (double)r["soft_body"]!["self_distance"]!);
+    }
 }

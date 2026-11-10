@@ -134,6 +134,40 @@ internal static class BoneDeformer
         }
     }
 
+    /// <summary>The bones that move an object's points (active, with strength), in the order <see cref="Weights"/> and <see cref="Moves"/> use.</summary>
+    public static List<Bone> Moving(ObjectItem obj) => obj.Bones.Where(b => b.Active && b.Strength != 0).ToList();
+
+    /// <summary>Each bone's move at a frame: from its rest to its pose, in the object's coordinates.</summary>
+    public static Mat4[] Moves(List<Bone> bones, double frame) =>
+        [.. bones.Select(b => b.PoseInObject(frame) * b.RestInObject().Inverted())];
+
+    /// <summary>How much each bone moves a point at its rest place (adding to 1), as <see cref="Apply"/> weighs them.</summary>
+    public static Func<Vec3, double[]> Weights(ObjectItem obj, List<Bone> bones)
+    {
+        var starts = new Vec3[bones.Count];
+        var ends = new Vec3[bones.Count];
+        for (int i = 0; i < bones.Count; i++)
+        {
+            var rest = bones[i].RestInObject();
+            starts[i] = rest.TransformPoint(Vec3.Zero);
+            ends[i] = rest.TransformPoint(new Vec3(0, 0, bones[i].RestLength));
+        }
+        double n = obj.BoneFalloffExponent;
+        return p =>
+        {
+            var w = new double[bones.Count];
+            double total = 0;
+            for (int i = 0; i < bones.Count; i++)
+            {
+                double d = Math.Max(DistanceToSegment(p, starts[i], ends[i]), 1e-6);
+                w[i] = bones[i].Strength / Math.Pow(d, n);
+                total += w[i];
+            }
+            if (total != 0) for (int i = 0; i < w.Length; i++) w[i] /= total;
+            return w;
+        };
+    }
+
     public static double DistanceToSegment(Vec3 p, Vec3 a, Vec3 b)
     {
         var ab = b - a;

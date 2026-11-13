@@ -378,7 +378,7 @@ public static class LwsReader
                     break;
                 }
 
-                case "Plugin" when _current is ObjectItem effects && Tokens(rest).LastOrDefault() is LwsEffects.Particles or LwsEffects.Hair or LwsEffects.SoftBody or LwsEffects.RigidBody:
+                case "Plugin" when _current is ObjectItem effects && Tokens(rest).LastOrDefault() is LwsEffects.Particles or LwsEffects.Hair or LwsEffects.SoftBody or LwsEffects.RigidBody or LwsEffects.Scatter:
                     ReadEffect(effects, Tokens(rest)[^1]);
                     break;
                 case "Plugin":
@@ -466,6 +466,7 @@ public static class LwsReader
                     case LwsEffects.Particles: o.Particles = SceneJson.FromOneLine<ParticleSettings>(json)?.Checked(); break;
                     case LwsEffects.Hair: o.Hair = SceneJson.FromOneLine<HairSettings>(json)?.Checked(); break;
                     case LwsEffects.RigidBody: o.RigidBody = SceneJson.FromOneLine<RigidBodySettings>(json)?.Checked(); break;
+                    case LwsEffects.Scatter: o.Scatter = SceneJson.FromOneLine<ScatterSettings>(json)?.Checked(); break;
                     default: o.SoftBody = SceneJson.FromOneLine<SoftBodySettings>(json)?.Checked(); break;
                 }
             }

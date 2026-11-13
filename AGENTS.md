@@ -259,6 +259,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     close. Agents' `set_particles`, `set_hair`, `comb_hair` and `set_soft_body` are in `ParticleTools.cs`. In .lws they
     are plugin sections (`LwsEffects`: `AVA_Particles`, `AVA_Hair`, `AVA_SoftBody`, `AVA_RigidBody`), one line of SceneJson's JSON each
     (`SceneJson.OneLineOf`, `FromOneLine`).
+  - `Scatter.cs`: `ObjectItem.Scatter` (`ScatterSettings`: the object copied by name, count, seed, scale range, a random
+    turn, along the surface or upright, one surface only, a density picture laid from above, sink) and `Scattering`
+    (`Spots`: hashed spots by area; `Add`: the copies into the frame's mesh, the copy's surfaces after the object's,
+    within `ParticleLooks.MaxInstanceFaces`). `Scene.Grow` adds them as it does particles (so views, renders and exports
+    see them; they are copies in the mesh, not instances). In `Scene.Copy`, snapshots, .avascene and .lws (`AVA_Scatter`).
   - `RigidBodies.cs`: `ObjectItem.RigidBody` (`RigidBodySettings`: dynamic or static, box, sphere or a 26-sided hull
     fit to its points, mass, bounce, friction, damping, gravity, start velocity and spin, a floor, the start frame) and
     `RigidBodyWorld` (`Scene.RigidBodies`): every rigid body simulated together from the earliest start, a frame's

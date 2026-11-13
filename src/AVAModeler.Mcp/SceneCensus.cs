@@ -333,6 +333,13 @@ internal static partial class SceneCensus
                 if (obj.Hair is { } hair) o["hair"] = Hair(hair);
                 if (obj.SoftBody is { } soft) o["soft_body"] = SoftBody(soft);
                 if (obj.RigidBody is { } rigid) o["rigid_body"] = RigidBody(rigid);
+                if (obj.Scatter is { } scatter)
+                    o["scatter"] = new JsonObject
+                    {
+                        ["of"] = scatter.Of, ["count"] = scatter.Count, ["seed"] = scatter.Seed, ["scale"] = new JsonArray(scatter.ScaleMin, scatter.ScaleMax),
+                        ["random_turn"] = scatter.RandomTurn, ["along_surface"] = scatter.AlongSurface, ["on_surface"] = scatter.OnSurface,
+                        ["density_map"] = scatter.DensityMap, ["sink"] = scatter.Sink,
+                    };
                 if (!obj.CastShadows) o["cast_shadows"] = false;
                 if (!obj.ReceiveShadows) o["receive_shadows"] = false;
                 break;

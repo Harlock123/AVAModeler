@@ -336,7 +336,7 @@ public sealed partial class Scene
                     SourcePath = o.SourcePath, CastShadows = o.CastShadows, ReceiveShadows = o.ReceiveShadows, BoneFalloffExponent = o.BoneFalloffExponent,
                 };
                 obj.Dissolve.CopyFrom(o.Dissolve);
-                (obj.Particles, obj.Hair, obj.SoftBody, obj.RigidBody) = (o.Particles, o.Hair, o.SoftBody, o.RigidBody);
+                (obj.Particles, obj.Hair, obj.SoftBody, obj.RigidBody, obj.Scatter) = (o.Particles, o.Hair, o.SoftBody, o.RigidBody, o.Scatter);
                 foreach (var m in o.Morphs) obj.AddMorph(new MorphTarget(m.Name, m.Target, m.Weight.Clone()));
                 foreach (var x in o.Displacements)
                 {
@@ -431,7 +431,7 @@ public sealed partial class Scene
         {
             var mesh = o.DeformedMesh(frame);
             if (!o.IsPlaceholder && o.SoftBody is { } soft) mesh = SoftBodies.At(this, o, soft, mesh, frame);
-            var grown = !o.IsPlaceholder && (o.Particles != null || o.Hair != null) ? Grown(o, mesh, world[o], frame) : null;
+            var grown = !o.IsPlaceholder && (o.Particles != null || o.Hair != null || o.Scatter != null) ? Grown(o, mesh, world[o], frame) : null;
             objects.Add(grown == null ? new ObjectFrame(o, world[o], mesh)
                 : new ObjectFrame(o, world[o], grown.Mesh, grown.Surfaces) { Soft = grown.Soft, ViewOnlySurface = grown.ViewOnly });
             warnings.AddRange(o.MorphProblems());
@@ -460,7 +460,7 @@ public sealed partial class Scene
     private GrownFrame Grown(ObjectItem o, Mesh deformed, Mat4 world, double frame)
     {
         // The same frame of the same scene and mesh with the same settings grows the same: kept until any of them changes.
-        var key = (deformed, o.Particles, o.Hair, frame, Version, o.Surfaces.Count);
+        var key = (deformed, o.Particles, o.Hair, o.Scatter, frame, Version, o.Surfaces.Count);
         lock (o.GrownLock)
             if (o.GrownCache is { } c && c.Key.Equals(key)) return c.Frame;
         var result = Grow(o, deformed, world, frame);
@@ -533,6 +533,19 @@ public sealed partial class Scene
                     ParticleSystem.AddGeometry(mesh, alive, toLocal, index);
                     break;
             }
+        }
+        if (o.Scatter is { } scatter && Objects.FirstOrDefault(x => x.Name == scatter.Of && x != o && !x.IsPlaceholder) is { } copied)
+        {
+            TextureImage? density = null;
+            if (scatter.DensityMap.Length > 0)
+            {
+                var img = TextureImages.Load(scatter.DensityMap, TextureImages.BaseOf(o.SourcePath ?? o.Document?.FilePath));
+                if (!img.IsPlaceholder) density = img;
+            }
+            var spots = Scattering.Spots(deformed, o.Surfaces, scatter, density);
+            int first = surfaces.Count;
+            surfaces.AddRange(copied.Surfaces.Count > 0 ? copied.Surfaces : [new Surface("Default")]);
+            Scattering.Add(mesh, spots, copied.DeformedMesh(frame), first);
         }
         mesh.Touch();
         return new GrownFrame(mesh, surfaces, soft, viewOnly);

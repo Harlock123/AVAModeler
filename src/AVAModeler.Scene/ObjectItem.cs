@@ -63,6 +63,9 @@ public sealed class ObjectItem : SceneItem
     /// <summary>A rigid body on the object, or null for none (set a new record to change it): see <see cref="RigidBodyWorld"/>.</summary>
     public RigidBodySettings? RigidBody { get; set; }
 
+    /// <summary>Copies of another object scattered over this one's faces, or null for none (set a new record to change it).</summary>
+    public ScatterSettings? Scatter { get; set; }
+
     internal readonly object GrownLock = new();
     /// <summary>The last frame's mesh with its hair and particles, by what it was grown from.</summary>
     internal (object Key, Scene.GrownFrame Frame)? GrownCache;

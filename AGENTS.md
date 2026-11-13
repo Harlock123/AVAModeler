@@ -278,7 +278,7 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     share.
   - `Rendering/EnvironmentMap.cs`: an environment picture by direction (lat-long, turned by its heading), its 64 × 32
     blurred copy and irradiance table for lighting, loading and caching (`.hdr` through `Hdr`, else `TextureImages`),
-    and the built-in `builtin:sky` and `builtin:studio`. `Rendering/RayTracer.cs` does every effect: depth of field and
+    and the built-in `builtin:sky`, `builtin:studio` and `builtin:sun` (`SunSky(heading, elevation, turbidity)` names one: the sun's disc, glow and sunset colours, dusk and night; the last 16 kept). `Rendering/RayTracer.cs` does every effect: depth of field and
     motion blur in the pixel loop (one `Tracer` per moment across the shutter), ambient occlusion, environment
     lighting (only the hidden light is sampled, against the irradiance table) and soft lights where rays hit.
   - `InverseKinematics.cs`: IK for bones (`Bone.IKGoal`, `FullTimeIK`, `IKAnchor`, `IKLocked`, `IKLimits` with

@@ -54,7 +54,7 @@ public sealed class SceneSettingsPanel : StackPanel
         OcclusionDistance = Box(F(ao.Distance));
         OcclusionStrength = Box(F(ao.Strength));
         var env = s.Environment;
-        Environment = new TextBox { Text = env.Image, FontSize = 11, PlaceholderText = "none: a file, or builtin:sky / builtin:studio" };
+        Environment = new TextBox { Text = env.Image, FontSize = 11, PlaceholderText = "none: a file, or builtin:sky / builtin:studio / builtin:sun" };
         EnvironmentIntensity = Box(F(env.Intensity));
         EnvironmentHeading = Box(F(env.Heading));
         EnvironmentLighting = Check("Light the scene with it", env.Lighting, "Soft light from every direction of the picture, with shadows");

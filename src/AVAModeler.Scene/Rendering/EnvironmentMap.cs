@@ -20,7 +20,14 @@ public sealed class EnvironmentMap
 {
     public const string BuiltinPrefix = "builtin:";
     /// <summary>The made-up environments, by name after <see cref="BuiltinPrefix"/>.</summary>
-    public static readonly IReadOnlyList<string> Builtins = ["sky", "studio"];
+    public static readonly IReadOnlyList<string> Builtins = ["sky", "studio", "sun"];
+
+    /// <summary>
+    /// The name of a sky lit by the sun at a heading (degrees round from +Z toward +X) and elevation (degrees above the
+    /// horizon; below it, dusk and night), hazier with turbidity (2 clear to 10 hazy).
+    /// </summary>
+    public static string SunSky(double heading, double elevation, double turbidity = 3) =>
+        FormattableString.Invariant($"{BuiltinPrefix}sun?heading={heading:0.###}&elevation={elevation:0.###}&turbidity={turbidity:0.###}");
 
     private readonly HdrImage _image, _small, _irradiance;
     private readonly double _cos, _sin;
@@ -178,13 +185,19 @@ public sealed class EnvironmentMap
             {
                 if (Cache.TryGetValue(BuiltinPrefix + name, out var hit)) return hit.Image;
             }
-            HdrImage? made = name switch { "sky" => Sky(), "studio" => Studio(), _ => null };
+            HdrImage? made = name switch { "sky" => Sky(), "studio" => Studio(), _ when name.StartsWith("sun", StringComparison.Ordinal) => Sun(name), _ => null };
             if (made == null)
             {
-                problem = $"There's no built-in environment \"{name}\": the built-in ones are {string.Join(" and ", Builtins.Select(b => BuiltinPrefix + b))}.";
+                problem = $"There's no built-in environment \"{name}\": the built-in ones are {BuiltinPrefix}sky, {BuiltinPrefix}studio and {BuiltinPrefix}sun (or sun?heading=…&elevation=…&turbidity=…, as SunSky writes).";
                 return null;
             }
-            lock (CacheLock) Cache[BuiltinPrefix + name] = new Entry(default, made);
+            lock (CacheLock)
+            {
+                // A sun sky a frame (time of day keyed) would fill the cache: keep only the last few.
+                var suns = Cache.Keys.Where(k => k.StartsWith(BuiltinPrefix + "sun?", StringComparison.Ordinal)).ToList();
+                if (suns.Count >= 16) foreach (var k in suns) Cache.Remove(k);
+                Cache[BuiltinPrefix + name] = new Entry(default, made);
+            }
             return made;
         }
         string? file = Resolve(key, baseDirectory);
@@ -290,6 +303,64 @@ public sealed class EnvironmentMap
             double glow = Math.Pow(Math.Max(0, cos), 64) * 2;
             double disc = Smooth(0.9990, 0.9996, cos) * 40;
             return sky + new Vec3(1, 0.9, 0.7) * (glow + disc);
+        });
+    }
+
+    /// <summary>
+    /// A sky lit by the sun where <c>sun?heading=…&amp;elevation=…&amp;turbidity=…</c> says: deep blue overhead by day, pale
+    /// at the horizon and warm round a low sun, through dusk to a dark blue night when it's down; the sun's disc white
+    /// high up and red as it sets; the ground lit by it all.
+    /// </summary>
+    private static HdrImage? Sun(string name)
+    {
+        double heading = 135, elevation = 35, turbidity = 3;
+        int q = name.IndexOf('?');
+        if (q >= 0)
+        {
+            foreach (var part in name[(q + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = part.Split('=', 2);
+                if (kv.Length != 2 || !double.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v)) return null;
+                switch (kv[0])
+                {
+                    case "heading": heading = v; break;
+                    case "elevation": elevation = Math.Clamp(v, -90, 90); break;
+                    case "turbidity": turbidity = Math.Clamp(v, 1, 20); break;
+                    default: return null;
+                }
+            }
+        }
+        else if (name != "sun") return null;
+        double h = heading * Math.PI / 180, e = elevation * Math.PI / 180;
+        var sun = new Vec3(Math.Sin(h) * Math.Cos(e), Math.Sin(e), Math.Cos(h) * Math.Cos(e));
+        double up = Math.Sin(e);
+        double day = Smooth(-0.1, 0.3, up), dusk = Smooth(-0.2, 0.05, up), low = 1 - Smooth(0.03, 0.45, up);
+        double haze = Math.Clamp((turbidity - 1) / 9, 0, 1);
+        var zenith = Vec3.Lerp(new Vec3(0.008, 0.012, 0.035), Vec3.Lerp(new Vec3(0.16, 0.36, 0.85), new Vec3(0.4, 0.5, 0.7), haze), day);
+        var sunset = new Vec3(1.0, 0.5, 0.25);
+        var clear = Vec3.Lerp(new Vec3(0.72, 0.83, 1.0), new Vec3(0.85, 0.85, 0.85), haze);
+        var horizon = Vec3.Lerp(new Vec3(0.02, 0.03, 0.07), Vec3.Lerp(clear, sunset, low * 0.85), dusk);
+        var sunColour = Vec3.Lerp(new Vec3(1.0, 0.4, 0.15), new Vec3(1.0, 0.95, 0.85), Smooth(0.0, 0.5, up));
+        var flatSun = new Vec3(sun.X, 0, sun.Z);
+        flatSun = flatSun.Length > 1e-9 ? flatSun.Normalized() : Vec3.UnitZ;
+        return Make(d =>
+        {
+            if (d.Y < 0)
+            {
+                // The ground: lit by the sky (and the sun, when it's up), darker further down.
+                double lit = 0.12 + 0.45 * Math.Max(0, up) * day;
+                var ground = new Vec3(0.42, 0.38, 0.33) * lit + horizon * 0.15;
+                return Vec3.Lerp(Vec3.Lerp(horizon, ground, 0.5), ground, Smooth(0, -0.25, d.Y));
+            }
+            var c = Vec3.Lerp(horizon, zenith, Math.Pow(d.Y, 0.5));
+            // The glow round a low sun, along the horizon on its side.
+            var flat = new Vec3(d.X, 0, d.Z);
+            double side = flat.Length > 1e-9 ? Math.Max(0, Vec3.Dot(flat.Normalized(), flatSun)) : 0;
+            c += sunset * (Math.Pow(side, 4) * (1 - d.Y) * low * dusk * (0.8 + haze));
+            double cos = Vec3.Dot(d, sun);
+            double glow = Math.Pow(Math.Max(0, cos), 32 / (1 + 2 * haze)) * (1.5 + haze) * dusk;
+            double disc = up > -0.02 ? Smooth(0.9990, 0.9996, cos) * 40 : 0;
+            return c + sunColour * (glow + disc);
         });
     }
 

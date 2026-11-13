@@ -61,7 +61,7 @@ public sealed record AmbientOcclusion
 /// it (<see cref="Samples"/> rays a pixel, shadowed by whatever is in the way), added to the lights' and the ambient.
 /// <para>
 /// The image is a Radiance .hdr (high dynamic range: brighter than white lights more), or a PNG, JPEG or BMP (255 is
-/// 1). <c>builtin:sky</c> and <c>builtin:studio</c> are made-up environments that need no file. <see cref="Heading"/>
+/// 1). <c>builtin:sky</c>, <c>builtin:studio</c> and <c>builtin:sun?heading=…&amp;elevation=…&amp;turbidity=…</c> (<see cref="EnvironmentMap.SunSky"/>) are made-up environments that need no file. <see cref="Heading"/>
 /// turns it about the Y axis, as an item's heading turns (positive turns what was ahead toward +X).
 /// </para>
 /// </summary>

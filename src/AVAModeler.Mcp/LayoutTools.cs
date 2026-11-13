@@ -850,7 +850,7 @@ public sealed partial class ModelerTools
             if (environment_lighting is { } el) env = env with { Lighting = el };
             if (environment_samples is { } es) env = env with { Samples = es };
             env.Checked();
-            if (env.Lighting && !env.On) throw new ArgumentException("environment_lighting needs an environment: give environment too (a file, or builtin:sky or builtin:studio).");
+            if (env.Lighting && !env.On) throw new ArgumentException("environment_lighting needs an environment: give environment too (a file, or builtin:sky, builtin:studio or builtin:sun).");
             bool settings = first_frame != null || last_frame != null || fps != null || ambient_color != null || ambient_intensity != null || background_color != null
                 || gradient != null || gradient_top != null || gradient_bottom != null || fog != null || fog_min != null || fog_max != null || fog_color != null || camera != null
                 || occlusion != s.Occlusion || env != s.Environment;
@@ -1368,7 +1368,7 @@ public sealed partial class ModelerTools
         }
         string full = Path.GetFullPath(Path.Combine(host.Root, image));
         if (EnvironmentMap.Load(full, null, out var problem) == null)
-            throw new ArgumentException($"{problem} The path is relative to the working folder; or use builtin:sky or builtin:studio, which need no file.");
+            throw new ArgumentException($"{problem} The path is relative to the working folder; or use builtin:sky, builtin:studio or builtin:sun?heading=…&elevation=…&turbidity=…, which need no file.");
         return full;
     }
 

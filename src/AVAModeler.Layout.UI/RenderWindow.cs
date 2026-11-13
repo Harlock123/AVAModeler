@@ -42,6 +42,8 @@ public sealed class RenderWindow : Window
         var stop = new Button { Content = "Stop", IsEnabled = false };
         var save = new Button { Content = "Save PNG…", IsEnabled = false };
         var withAlpha = new CheckBox { Content = "Transparent backdrop", IsChecked = false, Foreground = Look.Text };
+        var denoise = new CheckBox { Content = "Denoise", IsChecked = false, Foreground = Look.Text, Name = "Denoise" };
+        ToolTip.SetTip(denoise, "Smooth away the noise of few rays (soft shadows, area lights, occlusion), keeping edges and textures sharp");
         render.Click += async (_, _) =>
         {
             if (!int.TryParse(width.Text, out int w) || !int.TryParse(height.Text, out int h) || w < 1 || h < 1 || w > 8192 || h > 8192)
@@ -53,6 +55,7 @@ public sealed class RenderWindow : Window
             {
                 Width = w, Height = h, SamplesPerPixel = int.Parse((string)samples.SelectedItem!, CultureInfo.InvariantCulture),
                 Shadows = shadows.IsChecked == true, Reflections = reflections.IsChecked == true, Transparency = transparency.IsChecked == true,
+                Denoise = denoise.IsChecked == true,
             };
             render.IsEnabled = save.IsEnabled = false;
             stop.IsEnabled = true;
@@ -75,7 +78,7 @@ public sealed class RenderWindow : Window
         {
             Children =
             {
-                Label("Size"), width, Label("×"), height, Label("Antialiasing"), samples, shadows, reflections, transparency, render, stop, save, withAlpha,
+                Label("Size"), width, Label("×"), height, Label("Antialiasing"), samples, shadows, reflections, transparency, denoise, render, stop, save, withAlpha,
             },
         };
         Content = new DockPanel

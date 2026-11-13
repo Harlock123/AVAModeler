@@ -129,6 +129,13 @@ public class EffectsHandlerTests
         await b.Tools.SetItem("Camera", blur_samples: 256, cancel: Cancel);
         var e = await Error(b.Tools.RenderAnimation("blur2", "f", 1, 60, width: 320, cancel: Cancel));
         Assert.Contains("256 rays a pixel from the camera's depth of field or motion blur samples", e);
+
+        // Passes beside each frame, and the denoiser, in render_animation and render_scene.
+        await b.Tools.SetItem("Camera", motion_blur: false, cancel: Cancel);
+        await b.Tools.RenderAnimation("passes", "f", 1, 2, width: 32, denoise: true, passes: ["depth", "object_id", "normal"], cancel: Cancel);
+        foreach (var pass in new[] { "depth", "object_id", "normal" }) Assert.True(File.Exists(b.Folder.File($"passes/f_{pass}0002.png")), pass);
+        Assert.Contains("no \"glow\" pass", await Error(b.Tools.RenderAnimation("passes2", "f", 1, 2, width: 32, passes: ["glow"], cancel: Cancel)));
+        Assert.NotNull(TextureImages.Decode(Pngs.Of(await b.Tools.RenderScene(1, 32, samples: 1, denoise: true, cancel: Cancel))));
     }
 
     [Fact]

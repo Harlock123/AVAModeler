@@ -73,12 +73,22 @@ public static class ScenePictures
     }
 
     /// <summary>A ray-traced frame of a scene (a copy), through one of its cameras.</summary>
-    public static RenderImage Render(SceneModel scene, double frame, CameraItem camera, int width, int height, int samples, bool shadows, bool reflections, bool transparency, CancellationToken cancel) =>
-        RayTracer.Render(scene, frame, new RenderSettings
+    public static RenderImage Render(SceneModel scene, double frame, CameraItem camera, int width, int height, int samples, bool shadows, bool reflections, bool transparency, CancellationToken cancel, bool denoise = false)
+    {
+        var settings = new RenderSettings
         {
             Width = width, Height = height, Camera = camera, SamplesPerPixel = samples,
-            Shadows = shadows, Reflections = reflections, Transparency = transparency,
-        }, null, cancel);
+            Shadows = shadows, Reflections = reflections, Transparency = transparency, Denoise = denoise,
+        };
+        return RayTracer.Render(scene, frame, settings, null, cancel);
+    }
+
+    /// <summary>The passes the denoiser is guided by.</summary>
+    public const RenderPass DenoiseGuides = RenderPass.Depth | RenderPass.Normal | RenderPass.ObjectId | RenderPass.Albedo;
+
+    /// <summary>A frame's passes through one of a scene's cameras.</summary>
+    public static PassImages Passes(SceneModel scene, double frame, CameraItem camera, int width, int height, RenderPass wanted, CancellationToken cancel) =>
+        RayTracer.Passes(scene, frame, new RenderSettings { Width = width, Height = height, Camera = camera }, wanted, cancel);
 
     /// <summary>Frames side by side, scaled down to <paramref name="cellWidth"/> pixels across, up to eight a row: a contact sheet.</summary>
     public static byte[] ContactSheet(IReadOnlyList<RenderImage> frames, int cellWidth)

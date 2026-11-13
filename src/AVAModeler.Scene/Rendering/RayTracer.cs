@@ -18,6 +18,8 @@ public sealed class RenderSettings
     public Dictionary<string, double> RefractionIndices = [];
     /// <summary>The most threads to use; 0 or less for as many as the machine has.</summary>
     public int MaxThreads = -1;
+    /// <summary>Smooth away the noise of few rays afterwards (<see cref="RayTracer.Denoise"/>, guided by the frame's passes).</summary>
+    public bool Denoise;
     /// <summary>For tests: counts of the work a render did (shadow rays, shadow map lookups), or null to count nothing.</summary>
     internal RenderCounters? Counters;
 }
@@ -251,7 +253,10 @@ public static partial class RayTracer
             DrawFlares(flares, scene, camera, frame, tanH, tanV, tracers[moments / 2], options);
             flares.WriteTo(rgba);
         }
-        return new RenderImage(width, height, rgba);
+        var image = new RenderImage(width, height, rgba);
+        if (!settings.Denoise) return image;
+        var guideSettings = new RenderSettings { Width = width, Height = height, Camera = camera, Shadows = settings.Shadows, Reflections = settings.Reflections, Transparency = settings.Transparency, MaxThreads = settings.MaxThreads };
+        return Denoise(image, Passes(scene, frame, guideSettings, RenderPass.Depth | RenderPass.Normal | RenderPass.ObjectId | RenderPass.Albedo, cancel));
     }
 
     /// <summary>

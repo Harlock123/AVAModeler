@@ -24,6 +24,7 @@ public sealed class AnimationWindow : Window
     private readonly TextBlock _status = new() { Foreground = Look.Text, FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private readonly TextBox _first, _last, _step, _width, _height, _fps, _folder;
     private readonly ComboBox _samples = new() { ItemsSource = new[] { "1", "4", "9", "16" }, SelectedItem = "4" };
+    private readonly CheckBox _denoise = Check("Denoise", false);
     private readonly CheckBox _shadows = Check("Shadows", true), _reflections = Check("Reflections", true), _transparency = Check("Transparency", true);
     private readonly CheckBox _png = Check("PNG frames", true), _mp4 = Check("MP4", false), _gif = Check("GIF", false);
     private readonly Button _render = new() { Content = "Render" }, _cancelButton = new() { Content = "Cancel", IsEnabled = false };
@@ -88,7 +89,7 @@ public sealed class AnimationWindow : Window
             Children =
             {
                 Row(Label("Frames"), _first, Label("to"), _last, Label("step"), _step, Label("Frames per second"), _fps),
-                Row(Label("Size"), _width, Label("×"), _height, Label("Antialiasing"), _samples, _shadows, _reflections, _transparency),
+                Row(Label("Size"), _width, Label("×"), _height, Label("Antialiasing"), _samples, _shadows, _reflections, _transparency, _denoise),
                 Row(Label("Folder"), _folder, browse),
                 Row(Label("Save"), _png, _mp4, _gif, formatNote),
                 Row(_render, _cancelButton, _openFolder),
@@ -140,6 +141,7 @@ public sealed class AnimationWindow : Window
             First = first, Last = last, Step = step, Width = w, Height = h,
             Samples = int.Parse((string)_samples.SelectedItem!, CultureInfo.InvariantCulture),
             Shadows = _shadows.IsChecked == true, Reflections = _reflections.IsChecked == true, Transparency = _transparency.IsChecked == true,
+            Denoise = _denoise.IsChecked == true,
             Folder = (_folder.Text ?? "").Trim(),
         };
         if (settings.Problem() is { } problem)

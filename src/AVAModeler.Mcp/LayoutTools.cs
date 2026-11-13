@@ -915,6 +915,7 @@ public sealed partial class ModelerTools
         [Description("Ray-traced shadows (default true).")] bool shadows = true,
         [Description("Mirror reflections (default true).")] bool reflections = true,
         [Description("Transparency and refraction (default true).")] bool transparency = true,
+        [Description("Smooth away the noise of few rays (soft shadows, area lights, ambient occlusion), guided by the frame's depth, normals, objects and colours, so edges and textures stay sharp (default false).")] bool denoise = false,
         CancellationToken cancel = default)
     {
         if (samples < 1 || samples > MaxSamples) throw new McpException($"samples must be from 1 to {MaxSamples}.");
@@ -927,7 +928,7 @@ public sealed partial class ModelerTools
             return (copy, fr, (CameraItem)copy.Items[IndexOf(l.Scene, cm)], pw, ph, l.ImageProblems());
         }, cancel, changes: false).ConfigureAwait(false);
         var clock = Stopwatch.StartNew();
-        var image = await Rendering(t => ScenePictures.Render(copy, f, cam, w, h, samples, shadows, reflections, transparency, t), RenderTimeLimit,
+        var image = await Rendering(t => ScenePictures.Render(copy, f, cam, w, h, samples, shadows, reflections, transparency, t, denoise), RenderTimeLimit,
             "The render took longer than {0} and was stopped: try a smaller size or fewer samples.", cancel).ConfigureAwait(false);
         int rays = RayTracer.RaysPerPixel(new RenderSettings { SamplesPerPixel = samples }, cam);
         string about = FormattableString.Invariant($"Frame {f:0.###} through {cam.Name}, {w}×{h}, {rays} ray{(rays == 1 ? "" : "s")} a pixel{(rays != samples ? " (raised by depth of field or motion blur)" : "")}, in {clock.Elapsed.TotalSeconds:0.0} s.");
@@ -976,9 +977,15 @@ public sealed partial class ModelerTools
         [Description("The camera, by name (default: the current camera).")] string? camera = null,
         [Description("Replace files that already exist.")] bool overwrite = false,
         [Description("Also make a movie of the frames: mp4, gif or both (default: none). Needs ffmpeg.")] string? movie = null,
+        [Description("Smooth away the noise of few rays, guided by each frame's depth, normals, objects and colours (default false).")] bool denoise = false,
+        [Description("Passes to save beside each frame as <name>_<pass><n>.png: depth (white near), normal, object_id (flat colours), albedo, emission, shadow (white: in shadow), reflection.")] string[]? passes = null,
         CancellationToken cancel = default)
     {
         var formats = MovieFormats(movie);
+        var wanted = RenderPass.None;
+        foreach (var p in passes ?? [])
+            wanted |= PassImages.Names.TryGetValue((p ?? "").Trim(), out var pass) ? pass
+                : throw new McpException($"There's no \"{p}\" pass: they are {string.Join(", ", PassImages.Names.Keys)}.");
         if (samples < 1 || samples > MaxAnimationSamples) throw new McpException($"samples must be from 1 to {MaxAnimationSamples}.");
         if (step < 1) throw new McpException("step must be 1 or more.");
         if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains('/') || name.Contains('\\'))
@@ -1001,8 +1008,10 @@ public sealed partial class ModelerTools
             var files = Files(c);
             string dir = Path.GetDirectoryName(files.Resolve(Path.Combine(folder, "frame.png")))!;
             var paths = frames.Select(fr => Path.Combine(dir, FormattableString.Invariant($"{name}{fr:0000}.png"))).ToList();
+            var passPaths = PassImages.Names.Where(kv => wanted.HasFlag(kv.Value))
+                .SelectMany(kv => frames.Select(fr => Path.Combine(dir, FormattableString.Invariant($"{name}_{kv.Key}{fr:0000}.png")))).ToList();
             var movies = Movies.Available ? formats.Select(f => MovieEncoder.MoviePath(dir, name, f)).ToList() : [];
-            files.CheckWritable(paths.Concat(movies), overwrite);
+            files.CheckWritable(paths.Concat(passPaths).Concat(movies), overwrite);
             var copy = ScenePictures.Copy(s);
             return (copy, frames, cam: (CameraItem)copy.Items[IndexOf(s, cm)], pw, ph, paths, files, movies, fps: s.FramesPerSecond / step);
         }, cancel, changes: false).ConfigureAwait(false);
@@ -1012,8 +1021,19 @@ public sealed partial class ModelerTools
             var list = new List<RenderImage>();
             for (int i = 0; i < job.frames.Count; i++)
             {
-                var img = ScenePictures.Render(job.copy, job.frames[i], job.cam, job.pw, job.ph, samples, true, true, true, t);
+                var img = ScenePictures.Render(job.copy, job.frames[i], job.cam, job.pw, job.ph, samples, true, true, true, t, denoise);
                 File.WriteAllBytes(job.paths[i], img.ToPng(alpha: false));
+                if (wanted != RenderPass.None)
+                {
+                    var p = ScenePictures.Passes(job.copy, job.frames[i], job.cam, job.pw, job.ph, wanted, t);
+                    string dir = Path.GetDirectoryName(job.paths[i])!;
+                    foreach (var (passName, pass) in PassImages.Names.Where(kv => wanted.HasFlag(kv.Value)))
+                    {
+                        string file = Path.Combine(dir, FormattableString.Invariant($"{name}_{passName}{job.frames[i]:0000}.png"));
+                        File.WriteAllBytes(file, p.ToImage(pass).ToPng(alpha: pass == RenderPass.Depth));
+                        job.files.Wrote(file);
+                    }
+                }
                 job.files.Wrote(job.paths[i]);
                 list.Add(img);
             }

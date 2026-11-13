@@ -18,6 +18,8 @@ public sealed record AnimationSettings
     public bool Shadows { get; init; } = true;
     public bool Reflections { get; init; } = true;
     public bool Transparency { get; init; } = true;
+    /// <summary>Denoise each frame (see <see cref="RenderSettings.Denoise"/>).</summary>
+    public bool Denoise { get; init; }
     /// <summary>The folder the PNGs go in; made if needed.</summary>
     public string Folder { get; init; } = "";
     /// <summary>The PNGs' names before the number: frame0001.png, frame0002.png and so on.</summary>
@@ -147,7 +149,7 @@ public sealed class AnimationRender
         var render = new RenderSettings
         {
             Width = s.Width, Height = s.Height, Camera = _camera, SamplesPerPixel = s.Samples,
-            Shadows = s.Shadows, Reflections = s.Reflections, Transparency = s.Transparency,
+            Shadows = s.Shadows, Reflections = s.Reflections, Transparency = s.Transparency, Denoise = s.Denoise,
         };
         for (int i = 0; i < frames.Count; i++)
         {

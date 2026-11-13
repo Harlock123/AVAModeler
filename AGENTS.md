@@ -199,6 +199,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     (work counts the tests read through `RenderSettings.Counters`). A new light effect gets its own branch in the
     `Tracer`, built in `PrepareLightEffects`; count expensive work through `RenderCounters` so tests assert work, not time.
     `Lws/LwsLightBits.cs` holds the flare bits for .lws.
+  - `Rendering/RenderPasses.cs`: `RayTracer.Passes` (one ray through each pixel's centre: depth along the view, the
+    shading normal, the object's index, albedo, emission, the share of direct light in shadow, the reflected colour;
+    `Tracer.Probe`) as `PassImages` (`ToImage`, `Names`), and `RayTracer.Denoise`, an edge-stopping à-trous filter on
+    the picture divided by albedo, never across objects, normals or depth jumps, its colour tolerance each pixel's
+    local noise (halved a pass). render_scene's and render_animation's `denoise`, render_animation's `passes`.
   - Light linking: `LightItem.LinkMode` (`LightLinkMode` All, Only, Except) and `LinkedObjects` (references: relinked in
     `Scene.Copy`, kept in snapshots, by index in .avascene, dropped by `Scene.Remove`); the ray tracer's `Material.Owner`
     is the object a surface is on, and the shading loop skips a light that doesn't light it (the off path, All, is as it

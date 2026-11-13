@@ -53,11 +53,27 @@ public class MotionModifierHandlerTests
     }
 
     [Fact]
+    public async Task An_expression_sets_a_channel_from_a_formula()
+    {
+        using var b = await WithLeader();
+        var f = b.Scene.Find("Follower")!;
+        var r = await Parse(b.Tools.AddMotionModifier("Follower", "expression", channel: "heading", formula: "[Leader.world.x] * 10", cancel: Cancel));
+        var e = (JsonObject)r["modifiers"]![0]!;
+        Assert.Equal(("expression", "heading", "[Leader.world.x] * 10"), ((string)e["kind"]!, (string)e["channel"]!, (string)e["formula"]!));
+        var leader = b.Scene.Find("Leader")!;
+        Assert.Equal(leader.WorldPosition(4).X * 10, f.MotionRotationAt(4).X, 9);
+        Assert.Contains("needs a formula", await Error(b.Tools.AddMotionModifier("Follower", "expression", cancel: Cancel)));
+        Assert.Contains("character", await Error(b.Tools.AddMotionModifier("Follower", "expression", formula: "1 +* 2", cancel: Cancel)));
+        Assert.Contains("no item of that name", await Error(b.Tools.AddMotionModifier("Follower", "expression", formula: "[Nobody.heading]", cancel: Cancel)));
+        Assert.Contains("isn't a setting of an expression", await Error(b.Tools.AddMotionModifier("Follower", "expression", formula: "1", delay: 2, cancel: Cancel)));
+    }
+
+    [Fact]
     public async Task Bad_modifiers_are_refused_and_change_nothing()
     {
         using var b = await WithLeader();
         int depth = b.Layout.History.Count;
-        Assert.Contains("lag, jitter, cycle or oscillate", await Error(b.Tools.AddMotionModifier("Follower", "wobble", cancel: Cancel)));
+        Assert.Contains("lag, jitter, cycle, oscillate or expression", await Error(b.Tools.AddMotionModifier("Follower", "wobble", cancel: Cancel)));
         Assert.Contains("needs a leader", await Error(b.Tools.AddMotionModifier("Follower", "lag", cancel: Cancel)));
         Assert.Contains("itself", await Error(b.Tools.AddMotionModifier("Follower", "lag", leader: "Follower", cancel: Cancel)));
         Assert.Contains("isn't a setting of a jitter", await Error(b.Tools.AddMotionModifier("Follower", "jitter", delay: 2, cancel: Cancel)));

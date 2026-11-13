@@ -211,7 +211,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     `InSlope`; a TCB span leaves a Bezier key at its `OutSlope` and a stepped key flat. `Slopes(i)` gives the curve's
     slopes at a key; `ScaleTime` divides slopes.
   - `MotionModifiers.cs`: `MotionModifier` records (`LagModifier`, `JitterModifier`, `CycleModifier`,
-    `OscillateModifier`), `MotionPose`, `Checked` and `Problem`, on `SceneItem.Modifiers` (immutable: set a new list).
+    `OscillateModifier`, and `ExpressionModifier` in `Expressions.cs`), `MotionPose`, `Checked` and `Problem`, on
+    `SceneItem.Modifiers` (immutable: set a new list). `Expressions` parses a formula once (cached by its text) into a
+    tree that only reads: the frame, time, the channel's value, other items' motion channels by name (`[Car.position.z]`,
+    `[Ball.world.y]`), and maths; names are looked up when it's evaluated, so copies and renames need no relinking (a
+    missing name gives NaN, which leaves the channel as it was), and `Problem` says when a name isn't in the scene.
     `MotionSolver` applies them after the path and IK (`Unmodified`, `Scale`); `LocalMatrix` uses `MotionScaleAt`.
   - `Particles.cs` and `Hair.cs`: `ObjectItem.Particles` (`ParticleSettings`) and `ObjectItem.Hair`
     (`HairSettings`), immutable records with `Checked()`, in `Scene.Copy`, `SceneSnapshot` and SceneJson (written only

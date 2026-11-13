@@ -28,7 +28,7 @@ public readonly record struct MotionPose(Vec3 Position, Vec3 Rotation, Vec3 Scal
 /// so views, renders, deformation and exports all see it). Immutable records: change an item's by setting a new list.
 /// The kinds: <see cref="LagModifier"/> (follow another item a few frames behind), <see cref="JitterModifier"/> (smooth
 /// noise), <see cref="CycleModifier"/> (play the item's keys by another item's channel, as Layout 5's Cyclist) and
-/// <see cref="OscillateModifier"/> (a damped sine on one channel).
+/// <see cref="OscillateModifier"/> (a damped sine on one channel) and <see cref="ExpressionModifier"/> (a channel set by a formula).
 /// </summary>
 public abstract record MotionModifier
 {
@@ -55,6 +55,11 @@ public abstract record MotionModifier
     /// </summary>
     public static string? Problem(SceneItem item, MotionModifier modifier)
     {
+        if (modifier is ExpressionModifier e && item.Scene is { } scene)
+        {
+            var missing = e.ReadsFrom.Where(n => scene.Find(n) == null).ToList();
+            if (missing.Count > 0) return $"The formula reads {string.Join(", ", missing.Select(n => $"[{n}…]"))}, but there's no item of that name in the scene.";
+        }
         if (modifier.Reference is not { } other) return null;
         string role = modifier is LagModifier ? "lag behind" : "drive";
         if (other == item) return $"{item.Name} can't {(modifier is LagModifier ? "lag behind itself" : "drive itself")}: choose another item.";

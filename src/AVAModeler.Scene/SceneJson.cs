@@ -834,6 +834,7 @@ public static class SceneJson
         public double? Phase { get; set; }
         public double? Damping { get; set; }
         public double? Start { get; set; }
+        public string? Formula { get; set; }
 
         public static ModifierDto? Of(MotionModifier m, List<SceneItem> items)
         {
@@ -847,6 +848,7 @@ public static class SceneJson
                 {
                     Kind = o.Kind, Channel = o.Channel, Amplitude = o.Amplitude, Period = o.Period, Phase = o.Phase, Damping = o.Damping, Start = o.Start,
                 },
+                ExpressionModifier e => new ModifierDto { Kind = e.Kind, Channel = e.Channel, Formula = e.Formula },
                 _ => null,
             };
         }
@@ -885,6 +887,11 @@ public static class SceneJson
                         Channel = Channel ?? d.Channel, Amplitude = Amplitude ?? d.Amplitude, Period = Period ?? d.Period, Phase = Phase ?? d.Phase,
                         Damping = Damping ?? d.Damping, Start = Start ?? d.Start,
                     };
+                }
+                case "expression":
+                {
+                    var d = new ExpressionModifier();
+                    return d with { Channel = Channel ?? d.Channel, Formula = Formula ?? d.Formula };
                 }
                 default:
                     return null;

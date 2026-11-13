@@ -435,6 +435,10 @@ internal static partial class SceneCensus
                 o["low"] = Round(c.Low);
                 o["high"] = Round(c.High);
                 break;
+            case ExpressionModifier e:
+                o["channel"] = ChannelNames[(int)e.Channel];
+                o["formula"] = e.Formula;
+                break;
             case OscillateModifier w:
                 o["channel"] = ChannelNames[(int)w.Channel];
                 o["amplitude"] = Round(w.Amplitude);

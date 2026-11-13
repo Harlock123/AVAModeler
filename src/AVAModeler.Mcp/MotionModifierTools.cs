@@ -19,13 +19,14 @@ public sealed partial class ModelerTools
         "lag: follow another item (leader) delay frames behind: the item's position becomes where the leader's pivot was in the world delay frames ago (seen from the item's parent), plus the item's own keyed position as an offset, strength 0 to 1 of it; rotation true adds the leader's rotation then too. " +
         "jitter: smooth, repeatable noise (Perlin, never random) added to position (position_amount, metres per axis either way) and rotation (rotation_amount, degrees of heading, pitch, bank either way), at frequency wobbles per second; another seed gives another wobble. " +
         "cycle (Layout 5's Cyclist): the item's own keys, first key to last, play once as the driver's driver_channel goes from low to high, repeating beyond (a crank turning with a wheel null's heading, a stride with a body's position.z); the driver's value is as it moves, in its parent's space. " +
-        "oscillate: adds amplitude · sin(2π(frame − start)/period + phase°) · e^(−damping·(frame − start)) to one channel from the start frame (a bounce, a sway, a wobble dying away).";
+        "oscillate: adds amplitude · sin(2π(frame − start)/period + phase°) · e^(−damping·(frame − start)) to one channel from the start frame (a bounce, a sway, a wobble dying away). " +
+        "expression: sets one channel (channel) from a formula at every frame: variables frame, time (seconds), fps, value (the channel before it), pi, e; another item's channel in brackets, [Wheel.position.x], [Arm.heading], [Ball.scale.y] (in its parent's space) or [Ball.world.y] (its pivot in the world); + - * / ^ %, comparisons (1 or 0), && || !; sin cos tan asin acos atan atan2 (radians), deg rad sqrt abs sign min max floor ceil round clamp(x, lo, hi) lerp(a, b, t) step(edge, x) smoothstep(a, b, x) pow exp log if(c, a, b) noise(x[, y, z]). E.g. a wheel turning as it rolls: channel pitch, formula \"[Car.position.z] / 0.3 * 57.2958\"; a bob: \"value + sin(time * 4) * 0.1\". It only reads the scene.";
 
     [McpServerTool(Name = "add_motion_modifier", Destructive = true)]
     [Description("Adds a motion modifier to an item, as one undo step: something that moves it beyond its keys, applied after its keys, path and IK, in the order the modifiers are listed (views, renders, bones and glTF export all see it; its keys stay as they are). Kinds: " + ModifierKinds + " Give only the chosen kind's settings; the rest are refused. Returns the item with its modifiers (numbered from 1) and modified_motion (where they put it at the current frame). LightWave scenes (.lws) and motion files can't hold modifiers: the .avascene keeps them.")]
     public Task<string> AddMotionModifier(
         [Description("The item to modify, by name or #index.")] string item,
-        [Description("lag, jitter, cycle or oscillate.")] string kind,
+        [Description("lag, jitter, cycle, oscillate or expression.")] string kind,
         [Description("lag: the item to follow, by name (not the item itself, nor anything it carries).")] string? leader = null,
         [Description("lag: frames behind the leader, 0 or more, fractions allowed (default 5).")] double? delay = null,
         [Description("lag: how much of the leader's motion to take, 0 to 1 (default 1).")] double? strength = null,
@@ -44,13 +45,14 @@ public sealed partial class ModelerTools
         [Description("oscillate: where in its swing it starts, degrees (default 0; 90 starts at the top).")] double? phase = null,
         [Description("oscillate: how fast it dies away per frame, 0 or more (default 0: never; 0.05 halves it in about 14 frames).")] double? damping = null,
         [Description("oscillate: the frame it starts at (default the scene's first frame); nothing is added before it.")] double? start = null,
+        [Description("expression: the formula (see the kind's description); with channel, the channel it sets (default position.y).")] string? formula = null,
         [Description("Where in the list it goes, from 1 (default: last, applied after the others).")] int? at = null,
         CancellationToken cancel = default) =>
         DoScene("added a motion modifier", (c, l) =>
         {
             var it = Item(l.Scene, item);
             var args = new ModifierArgs(leader, delay, strength, rotation, position_amount, rotation_amount, frequency, seed, driver, driver_channel, low, high,
-                channel, amplitude, period, phase, damping, start);
+                channel, amplitude, period, phase, damping, start, formula);
             var m = BuildModifier(l, kind, null, args);
             var list = it.Modifiers.ToList();
             int place = at ?? list.Count + 1;
@@ -83,6 +85,7 @@ public sealed partial class ModelerTools
         [Description("oscillate: degrees.")] double? phase = null,
         [Description("oscillate: per frame, 0 or more.")] double? damping = null,
         [Description("oscillate: the frame it starts at.")] double? start = null,
+        [Description("expression: the formula.")] string? formula = null,
         CancellationToken cancel = default) =>
         DoScene("changed a motion modifier", (c, l) =>
         {
@@ -91,7 +94,7 @@ public sealed partial class ModelerTools
             if (list.Count == 0) throw new ArgumentException($"{it.Name} has no motion modifiers: add_motion_modifier adds one.");
             if (number < 1 || number > list.Count) throw new ArgumentException($"{it.Name}'s modifiers are numbered 1 to {list.Count}, not {number}.");
             var args = new ModifierArgs(leader, delay, strength, rotation, position_amount, rotation_amount, frequency, seed, driver, driver_channel, low, high,
-                channel, amplitude, period, phase, damping, start);
+                channel, amplitude, period, phase, damping, start, formula);
             if (args.None) throw new ArgumentException($"Give a setting to change (modifier {number} is a {list[number - 1].Kind}).");
             list[number - 1] = BuildModifier(l, list[number - 1].Kind, list[number - 1], args);
             l.SetModifiers(it, list);
@@ -125,7 +128,7 @@ public sealed partial class ModelerTools
     private sealed record ModifierArgs(
         string? Leader, double? Delay, double? Strength, bool? Rotation, double[]? PositionAmount, double[]? RotationAmount, double? Frequency, int? Seed,
         string? Driver, string? DriverChannel, double? Low, double? High, string? Channel, double? Amplitude, double? Period, double? Phase, double? Damping,
-        double? Start)
+        double? Start, string? Formula = null)
     {
         /// <summary>Each setting's name with whether it was given, by the kind it belongs to.</summary>
         public IEnumerable<(string Kind, string Name, bool Given)> All() =>
@@ -136,6 +139,7 @@ public sealed partial class ModelerTools
             ("cycle", "driver", Driver != null), ("cycle", "driver_channel", DriverChannel != null), ("cycle", "low", Low != null), ("cycle", "high", High != null),
             ("oscillate", "channel", Channel != null), ("oscillate", "amplitude", Amplitude != null), ("oscillate", "period", Period != null),
             ("oscillate", "phase", Phase != null), ("oscillate", "damping", Damping != null), ("oscillate", "start", Start != null),
+            ("expression", "formula", Formula != null),
         ];
 
         public bool None => All().All(a => !a.Given);
@@ -145,9 +149,10 @@ public sealed partial class ModelerTools
     private static MotionModifier BuildModifier(LayoutSession l, string kind, MotionModifier? existing, ModifierArgs a)
     {
         kind = (kind ?? "").Trim().ToLowerInvariant();
-        if (kind is not ("lag" or "jitter" or "cycle" or "oscillate")) throw new ArgumentException($"kind is lag, jitter, cycle or oscillate, not \"{kind}\".");
-        var stray = a.All().Where(x => x.Given && x.Kind != kind).Select(x => x.Name).ToList();
-        if (stray.Count > 0) throw new ArgumentException($"{string.Join(", ", stray)} {(stray.Count == 1 ? "isn't a setting" : "aren't settings")} of a {kind} modifier.");
+        if (kind is not ("lag" or "jitter" or "cycle" or "oscillate" or "expression")) throw new ArgumentException($"kind is lag, jitter, cycle, oscillate or expression, not \"{kind}\".");
+        // An expression takes channel (oscillate's too) and formula.
+        var stray = a.All().Where(x => x.Given && x.Kind != kind && !(kind == "expression" && x.Name == "channel")).Select(x => x.Name).ToList();
+        if (stray.Count > 0) throw new ArgumentException($"{string.Join(", ", stray)} {(stray.Count == 1 ? "isn't a setting" : "aren't settings")} of {(kind[0] is 'a' or 'e' or 'i' or 'o' or 'u' ? "an" : "a")} {kind} modifier.");
         var s = l.Scene;
         MotionModifier m;
         switch (kind)
@@ -181,6 +186,13 @@ public sealed partial class ModelerTools
                     DriverChannel = a.DriverChannel != null ? MotionChannel(a.DriverChannel, "driver_channel") : cy.DriverChannel,
                     Low = a.Low ?? cy.Low, High = a.High ?? cy.High,
                 };
+                break;
+            }
+            case "expression":
+            {
+                var e = existing as ExpressionModifier ?? new ExpressionModifier();
+                if (existing == null && a.Formula == null) throw new ArgumentException("An expression needs a formula, e.g. \"value + sin(time * 4) * 0.1\".");
+                m = e with { Channel = a.Channel != null ? MotionChannel(a.Channel, "channel") : e.Channel, Formula = a.Formula ?? e.Formula };
                 break;
             }
             default:

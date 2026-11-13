@@ -199,6 +199,10 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     (work counts the tests read through `RenderSettings.Counters`). A new light effect gets its own branch in the
     `Tracer`, built in `PrepareLightEffects`; count expensive work through `RenderCounters` so tests assert work, not time.
     `Lws/LwsLightBits.cs` holds the flare bits for .lws.
+  - Light linking: `LightItem.LinkMode` (`LightLinkMode` All, Only, Except) and `LinkedObjects` (references: relinked in
+    `Scene.Copy`, kept in snapshots, by index in .avascene, dropped by `Scene.Remove`); the ray tracer's `Material.Owner`
+    is the object a surface is on, and the shading loop skips a light that doesn't light it (the off path, All, is as it
+    was). Shadows, flares, beams and the views' lighting are as without it. `set_item` light_link and light_objects.
   - `Compositing.cs`: `SceneImage` (an image-list entry), `CompositingSettings` and `ForegroundKey`, `ImageSequence`
     (numbered files by frame from a cached folder scan, `Resolve`, `Problem`) and `SceneImages` (list lookup,
     `TextureFile` for sequence textures, `Picture`, and `Problems`, which feeds `Scene.Evaluate`'s warnings and

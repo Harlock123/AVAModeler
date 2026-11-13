@@ -233,6 +233,8 @@ public sealed partial class Scene
         // Nothing reaches for an item that has gone, and paths leave it out (a path left with too few points stops).
         foreach (var b in Bones)
             if (b.IKGoal != null && gone.Contains(b.IKGoal)) b.IKGoal = null;
+        foreach (var l in Lights)
+            if (l.LinkedObjects.Any(gone.Contains)) l.LinkedObjects = l.LinkedObjects.Where(o => !gone.Contains(o)).ToList();
         foreach (var x in _items)
             if (x.Path is { } path && path.Points.Any(gone.Contains))
             {
@@ -353,7 +355,7 @@ public sealed partial class Scene
                 {
                     Color = l.Color, Range = l.Range, ConeAngle = l.ConeAngle, EdgeAngle = l.EdgeAngle, Shadows = l.Shadows,
                     AreaWidth = l.AreaWidth, AreaHeight = l.AreaHeight, Radius = l.Radius, ShadowSamples = l.ShadowSamples,
-                    Flare = l.Flare, Volumetric = l.Volumetric, ShadowMap = l.ShadowMap,
+                    Flare = l.Flare, Volumetric = l.Volumetric, ShadowMap = l.ShadowMap, LinkMode = l.LinkMode,
                 };
                 light.Intensity.CopyFrom(l.Intensity);
                 light.FlareIntensity.CopyFrom(l.FlareIntensity);
@@ -398,6 +400,8 @@ public sealed partial class Scene
         SceneItem? To(SceneItem x) => map.TryGetValue(x, out var c) ? c : outside(x);
         if (item.Parent is { } p) copy.RestoreParent(To(p) ?? (copy is Bone cb ? cb.Owner : null));
         if (item is Bone { IKGoal: { } goal } && To(goal) is { } g) ((Bone)copy).IKGoal = g;
+        if (item is LightItem { LinkedObjects.Count: > 0 } linked)
+            ((LightItem)copy).LinkedObjects = linked.LinkedObjects.Select(o => To(o) as ObjectItem).OfType<ObjectItem>().ToList();
         if (item.Path is { } path)
         {
             var points = path.Points.Select(To).Where(x => x != null).Cast<SceneItem>().ToList();

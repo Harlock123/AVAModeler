@@ -99,6 +99,8 @@ public static partial class RayTracer
         public double Dissolve { get; init; }
         /// <summary>The surface's node graph, ready to evaluate, or null for none.</summary>
         public NodeProgram? Nodes { get; init; }
+        /// <summary>The object it's on (for light linking).</summary>
+        public ObjectItem? Owner { get; init; }
         public bool Textured => Layers.Count > 0 || Nodes != null;
         public bool TexturedTransparency => Layers.Any(l => l.Layer.Channel == TextureChannel.Transparency) || Nodes != null;
     }
@@ -476,6 +478,7 @@ public static partial class RayTracer
             return new(s.Color.ToVec(), s.Diffuse, s.Specular, Math.Max(1, s.Glossiness), s.Luminosity, Math.Clamp(s.Reflection, 0, 1),
                 Math.Clamp(s.Transparency, 0, 1), settings.RefractionIndices.GetValueOrDefault(s.Name, 1), o.CastShadows, o.ReceiveShadows)
             {
+                Owner = o,
                 Layers = layers,
                 Procedurals = layers.Select(l => l.t.IsImage ? null : Core.Procedurals.Prepare(l.t)).ToList(),
                 Nodes = SurfaceNodes.Compile(s.Nodes),
@@ -806,6 +809,8 @@ public static partial class RayTracer
             for (int li = 0; li < _lights.Count; li++)
             {
                 var light = _lights[li];
+                // Light linking: a light that doesn't light this object adds nothing to it.
+                if (light.Item.LinkMode != LightLinkMode.All && !light.Item.Lights(m.Owner)) continue;
                 // A light with a shadow map is lit as a point, its softness the map's.
                 var map = _shadowMaps?[li];
                 if (light.Item.IsSoft && map == null)

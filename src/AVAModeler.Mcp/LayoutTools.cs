@@ -355,6 +355,8 @@ public sealed partial class ModelerTools
         [Description("Bone: put its channels (position, rotation, scale) back at its rest pose, unanimated (after rest_position, rest_rotation and rest_at_frame).")] bool? reset_pose = null,
         [Description("Bone: how strongly it pulls.")] double? strength = null,
         [Description("Bone: whether it deforms the object.")] bool? active = null,
+        [Description("Light: light linking: all (the default: every object), only (just light_objects) or except (every object but light_objects). Shadows, flares and beams are as without it.")] string? light_link = null,
+        [Description("Light: the objects light_link names, by name.")] string[]? light_objects = null,
         CancellationToken cancel = default) =>
         DoScene("changed an item", (c, l) =>
         {
@@ -373,6 +375,17 @@ public sealed partial class ModelerTools
             Only<CameraItem>(motion_blur, "motion_blur"); Only<CameraItem>(shutter, "shutter"); Only<CameraItem>(blur_samples, "blur_samples");
             Only<CameraItem>(zoom, "zoom"); Only<CameraItem>(fov, "fov"); Only<CameraItem>(width, "width"); Only<CameraItem>(height, "height"); Only<CameraItem>(make_current, "make_current");
             Only<ObjectItem>(cast_shadows, "cast_shadows"); Only<ObjectItem>(receive_shadows, "receive_shadows");
+            Only<LightItem>(light_link, "light_link"); Only<LightItem>(light_objects, "light_objects");
+            if (it is LightItem linked && (light_link != null || light_objects != null))
+            {
+                var mode = light_link == null ? linked.LinkMode : Json.Choice<LightLinkMode>(light_link, "light_link");
+                var objects = light_objects == null ? linked.LinkedObjects
+                    : light_objects.Select(n => Item(s, n, "light_objects") as ObjectItem ?? throw new ArgumentException($"{n} isn't an object: light linking names objects.")).Distinct().ToList();
+                if (mode != LightLinkMode.All && objects.Count == 0) throw new ArgumentException($"light_link {mode.ToString().ToLowerInvariant()} needs light_objects: the objects it {(mode == LightLinkMode.Only ? "lights" : "leaves unlit")}.");
+                linked.LinkMode = mode;
+                linked.LinkedObjects = mode == LightLinkMode.All ? [] : objects;
+                s.Notify();
+            }
             Only<Bone>(rest_length, "rest_length"); Only<Bone>(strength, "strength"); Only<Bone>(active, "active");
             Only<Bone>(rest_position, "rest_position"); Only<Bone>(rest_rotation, "rest_rotation"); Only<Bone>(rest_at_frame, "rest_at_frame"); Only<Bone>(reset_pose, "reset_pose");
 

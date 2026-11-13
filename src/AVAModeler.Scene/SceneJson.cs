@@ -183,6 +183,11 @@ public static class SceneJson
                     d.AreaSize = l.AreaWidth == 1 && l.AreaHeight == 1 ? null : [l.AreaWidth, l.AreaHeight];
                     d.Radius = l.Radius == 0 ? null : l.Radius;
                     d.ShadowSamples = l.ShadowSamples == 16 ? null : l.ShadowSamples;
+                    if (l.LinkMode != LightLinkMode.All)
+                    {
+                        d.LightLink = l.LinkMode;
+                        d.LightObjects = l.LinkedObjects.Select(o => items.IndexOf(o)).Where(x => x >= 0).ToArray();
+                    }
                     d.LensFlare = l.Flare == new LensFlare() ? null : l.Flare;
                     d.FlareIntensity = l.FlareIntensity.IsConstant && l.FlareIntensity.Evaluate(0) == 1
                         && l.FlareIntensity.PreBehavior == EndBehavior.Constant && l.FlareIntensity.PostBehavior == EndBehavior.Constant ? null : Env(l.FlareIntensity);
@@ -345,6 +350,12 @@ public static class SceneJson
             }
             if (InverseKinematics.GoalProblem(bone, goal) is { } problem) warnings.Add(problem);
             else bone.IKGoal = goal;
+        }
+        for (int i = 0; i < dto.Items.Count; i++)
+        {
+            if (items[i] is not LightItem light || dto.Items[i].LightLink is not { } mode) continue;
+            light.LinkMode = mode;
+            light.LinkedObjects = (dto.Items[i].LightObjects ?? []).Where(x => x >= 0 && x < items.Count).Select(x => items[x]).OfType<ObjectItem>().ToList();
         }
         if (dto.CurrentCamera is int ci && ci >= 0 && ci < items.Count && items[ci] is CameraItem cam) scene.CurrentCamera = cam;
         return scene;
@@ -942,6 +953,8 @@ public static class SceneJson
         public double? Strength { get; set; }
         public bool? Active { get; set; }
         public int? IkGoal { get; set; }
+        public LightLinkMode? LightLink { get; set; }
+        public int[]? LightObjects { get; set; }
         public bool? FullTimeIk { get; set; }
         public bool? IkAnchor { get; set; }
         public IKChannels? IkLocked { get; set; }

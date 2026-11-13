@@ -196,6 +196,15 @@ public class LayoutHandlerTests
         Assert.False(obj.CastShadows);
         Assert.Equal(new Vec3(0, -1, 0), obj.Pivot);
 
+        // Light linking: only the object, then off again.
+        var linked = await Parse(b.Tools.SetItem("Sun", light_link: "only", light_objects: ["Modeler object"], cancel: Cancel));
+        Assert.Equal("only", (string?)linked["light_link"]);
+        Assert.Equal(obj, b.Scene.Lights.Single().LinkedObjects.Single());
+        Assert.Contains("needs light_objects", await Error(b.Tools.SetItem("Sun", light_link: "except", light_objects: [], cancel: Cancel)));
+        Assert.Contains("isn't an object", await Error(b.Tools.SetItem("Sun", light_objects: ["Camera"], cancel: Cancel)));
+        Assert.Contains("light_link is a setting of lights", await Error(b.Tools.SetItem("Camera", light_link: "all", cancel: Cancel)));
+        await b.Tools.SetItem("Sun", light_link: "all", cancel: Cancel);
+        Assert.Empty(b.Scene.Lights.Single().LinkedObjects);
         Assert.Contains("cone_angle is a setting of lights, and Camera is a camera", await Error(b.Tools.SetItem("Camera", cone_angle: 10, cancel: Cancel)));
         Assert.Contains("zoom is a setting of cameras", await Error(b.Tools.SetItem("Sun", zoom: 3, cancel: Cancel)));
         Assert.Contains("make another camera current", await Error(b.Tools.SetItem("Camera", make_current: false, cancel: Cancel)));

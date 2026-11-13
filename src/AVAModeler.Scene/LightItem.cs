@@ -5,6 +5,9 @@ namespace AVAModeler.Scene;
 /// <summary>The kinds of light, numbered as in LightWave scene files (LightWave 6 on numbers area lights 4).</summary>
 public enum LightType { Distant = 0, Point = 1, Spot = 2, Area = 4 }
 
+/// <summary>Which objects a light lights: all, only those listed, or every one but those listed.</summary>
+public enum LightLinkMode { All, Only, Except }
+
 /// <summary>
 /// A light. A distant light shines along its +Z axis from infinitely far away (straight down +Z when unrotated);
 /// a point light shines every way from its position; a spot light shines along its +Z axis inside a cone; an area light
@@ -55,6 +58,23 @@ public sealed class LightItem : SceneItem
     public override string Kind => "Light";
 
     /// <summary>The intensity (1 is LightWave's 100%).</summary>
+    /// <summary>
+    /// Light linking: which objects this light lights (<see cref="LinkedObjects"/> are the ones only lit, or the ones
+    /// left unlit). Shadows, flares and beams are as without it. All (the default) changes nothing.
+    /// </summary>
+    public LightLinkMode LinkMode;
+
+    /// <summary>The objects <see cref="LinkMode"/> names (set a new list to change it).</summary>
+    public IReadOnlyList<ObjectItem> LinkedObjects = [];
+
+    /// <summary>Whether this light lights an object (null: something that isn't one).</summary>
+    public bool Lights(ObjectItem? o) => LinkMode switch
+    {
+        LightLinkMode.Only => o != null && LinkedObjects.Contains(o),
+        LightLinkMode.Except => o == null || !LinkedObjects.Contains(o),
+        _ => true,
+    };
+
     public Envelope Intensity { get; }
 
     /// <summary>The lens flare's intensity (1 is 100%), keyable as the channel "flare.intensity".</summary>

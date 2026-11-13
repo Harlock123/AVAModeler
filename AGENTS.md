@@ -199,6 +199,15 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     in `Signature`) multiply the colour in the ray tracer (`TriangleTexture.Colors`, only when set) and become glTF's
     `COLOR_0` and OBJ's `v x y z r g b` (both read into the map "Color"). Agents: `sculpt` (`Mcp/MapTools.cs`,
     `BrushTools` names the brushes).
+  - `ProcessTools.cs`: Reduce Polygons (`Geometry/Decimate.cs`: quadric error, collapses to an end or the middle so UVs
+    and maps carry, locked borders, surface edges, seams and other faces, the link condition and a flip check), Remesh
+    (`Geometry/Remesh.cs`: surface nets; inside by ray sweeps along X, edge crossings from sweeps along each axis,
+    quads turned to face out, smoothing passes projected back with `TriangleBvh.Nearest`) and Measure (no change to the
+    object, `SelectsOnly`; `Document.Measuring` and `Dimensions`, drawn by the viewport's overlay). Mesh Info and
+    `measure` read `Geometry/Measuring.cs` (`SelectionMeasure`, `Length` for the units). Booleans' welding
+    (`BooleanOptions.Weld`, `WeldShare`): `SnapTo` moves the operand's points onto the foreground's points and onto the
+    planes of faces they're near, then `WeldPlanes` gives nearly equal planes one and projects the pieces onto it (a
+    piece must lie on its own plane, or the BSP splits it by that plane for ever).
   - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).

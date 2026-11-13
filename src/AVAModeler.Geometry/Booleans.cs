@@ -26,6 +26,16 @@ public sealed record BooleanOptions
 
     /// <summary>Whether to join the pieces of each cut face back into as few polygons as it can.</summary>
     public bool Rejoin { get; init; } = true;
+
+    /// <summary>
+    /// Whether faces whose planes nearly match (within <see cref="WeldShare"/> of the models' size) are cut as one
+    /// plane, and the operand's points that nearly meet the foreground's are moved onto them, so near-coplanar faces
+    /// don't leave slivers or cracks. On by default.
+    /// </summary>
+    public bool Weld { get; init; } = true;
+
+    /// <summary>How near, as a share of the models' size, counts as the same plane or point when welding.</summary>
+    public const double WeldShare = 5e-6;
 }
 
 /// <summary>
@@ -57,8 +67,11 @@ public static class Booleans
         options ??= new BooleanOptions();
         double tol = options.Tolerance ?? Tolerance.For(foreground, operand);
         int fgCount = foreground.Polygons.Count;
+        double weld = options.Weld ? Math.Max(tol, BooleanOptions.WeldShare * Math.Max(foreground.Bounds().Include(operand.Bounds()).Extent, 1e-3)) : 0;
+        var operandAt = weld > 0 ? SnapTo(operand, foreground, weld) : operand;
         var a = ToCsg(foreground, 0, tol);
-        var b = ToCsg(operand, fgCount, tol);
+        var b = ToCsg(operandAt, fgCount, tol);
+        if (weld > 0) WeldPlanes([.. a, .. b], weld);
 
         List<CsgPolygon> pieces;
         if (a.Count == 0 || b.Count == 0)
@@ -92,6 +105,82 @@ public static class Booleans
 
         MeshCleanup.AppendPointsAndLines(result, foreground);
         return result;
+    }
+
+    /// <summary>A copy of the operand whose points within <paramref name="weld"/> of one of the target's are moved onto it.</summary>
+    private static Mesh SnapTo(Mesh operand, Mesh target, double weld)
+    {
+        var copy = operand.Clone();
+        double cell = weld * 2;
+        var grid = new Dictionary<(long, long, long), List<Vec3>>();
+        (long, long, long) Key(Vec3 p) => ((long)Math.Floor(p.X / cell), (long)Math.Floor(p.Y / cell), (long)Math.Floor(p.Z / cell));
+        foreach (var p in target.Points)
+        {
+            var k = Key(p);
+            if (!grid.TryGetValue(k, out var l)) grid[k] = l = [];
+            l.Add(p);
+        }
+        for (int i = 0; i < copy.Points.Count; i++)
+        {
+            var p = copy.Points[i];
+            var (x, y, z) = Key(p);
+            Vec3? best = null;
+            double bestD = weld * weld;
+            for (long dx = -1; dx <= 1; dx++)
+            for (long dy = -1; dy <= 1; dy++)
+            for (long dz = -1; dz <= 1; dz++)
+                if (grid.TryGetValue((x + dx, y + dy, z + dz), out var l))
+                    foreach (var q in l)
+                        if ((q - p).LengthSquared is var d && d <= bestD && d > 0) { bestD = d; best = q; }
+            if (best is { } b) copy.Points[i] = b;
+        }
+        // Points that nearly lie on the target's face planes go onto them (onto every one they're near, so a corner
+        // stays one point for all its faces).
+        // Each face's plane, with its bounds a weld wider: a point counts as on a face only near the face itself.
+        var faces = new List<(Plane Plane, Box3 Near)>();
+        foreach (var poly in target.Polygons)
+        {
+            if (poly.Count < 3) continue;
+            var n = target.Normal(poly);
+            if (n.LengthSquared == 0) continue;
+            var box = target.Bounds(poly.Points);
+            faces.Add((Plane.FromPointNormal(target.Centroid(poly), n), new Box3(box.Min - Vec3.One * weld, box.Max + Vec3.One * weld)));
+        }
+        for (int i = 0; i < copy.Points.Count; i++)
+        {
+            var p = copy.Points[i];
+            var near = faces.Where(f => f.Near.Contains(p) && Math.Abs(f.Plane.Distance(p)) is var d && d <= weld && d > 0).Select(f => f.Plane).ToList();
+            if (near.Count == 0) continue;
+            for (int it = 0; it < 8; it++)
+                foreach (var q in near) p = q.Project(p);
+            if ((p - copy.Points[i]).Length <= weld * 2) copy.Points[i] = p;
+        }
+        copy.Touch();
+        return copy;
+    }
+
+    /// <summary>
+    /// Gives pieces whose planes nearly match (normals within a hair, facing either way, and within
+    /// <paramref name="weld"/> of each other) one plane, the first met, with their points pressed onto it.
+    /// </summary>
+    private static void WeldPlanes(List<CsgPolygon> pieces, double weld)
+    {
+        var canon = new List<Plane>();
+        foreach (var p in pieces)
+        {
+            Plane? match = null;
+            foreach (var c in canon)
+            {
+                double dot = Vec3.Dot(c.Normal, p.Plane.Normal);
+                if (Math.Abs(dot) < 1 - 1e-9) continue;
+                var same = dot > 0 ? c : c.Flipped();
+                if (Math.Abs(same.D - p.Plane.D) <= weld && p.Vertices.All(v => Math.Abs(same.Distance(v)) <= weld * 2)) { match = same; break; }
+            }
+            if (match is not { } m) { canon.Add(p.Plane); continue; }
+            // On the plane exactly, so the BSP never finds a piece across its own plane.
+            p.Plane = m;
+            for (int i = 0; i < p.Vertices.Count; i++) p.Vertices[i] = m.Project(p.Vertices[i]);
+        }
     }
 
     private static List<CsgPolygon> Combine(BooleanOperation operation, List<CsgPolygon> a, List<CsgPolygon> b, double epsilon)

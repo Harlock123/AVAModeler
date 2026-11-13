@@ -90,6 +90,14 @@ public sealed class MeshInfoPanel : Border
         foreach (var p in problems) _rows.Children.Add(Row(r, p));
         if (r.Cavities > 0) _rows.Children.Add(Text($"{r.Cavities} {(r.Cavities == 1 ? "cavity" : "cavities")}: inward shells inside others, left as they are."));
         _rows.Children.Add(Text("Checks the whole foreground layers. Select shows the problem (one undo step); Fix runs the tool named on everything in the foreground."));
+        // Measurements of the selection (two points: their distance; three: the angle at the middle one).
+        var measure = SelectionMeasure.Of(doc).Lines();
+        if (measure.Count > 0)
+        {
+            _rows.Children.Add(new Separator { Margin = new Thickness(0, 6) });
+            _rows.Children.Add(new TextBlock { Text = "Measure", FontWeight = FontWeight.Bold, Foreground = Look.Text, FontSize = 12 });
+            foreach (var line in measure) _rows.Children.Add(Text(line));
+        }
     }
 
     private Control Row(MeshReport r, MeshProblem p)

@@ -67,6 +67,12 @@ public sealed class Surface
 /// <summary>A layer's part in the work: off, in the foreground (being edited), or in the background (shown dimmed, the operand for booleans).</summary>
 public enum LayerState { Off, Foreground, Background }
 
+/// <summary>A ruler between two places, as Measure draws it.</summary>
+public sealed record Dimension(Vec3 A, Vec3 B)
+{
+    public double Length => (B - A).Length;
+}
+
 /// <summary>A layer: a mesh of its own, and whether it's in the foreground, the background, or neither.</summary>
 public sealed class Layer
 {
@@ -378,6 +384,10 @@ public sealed class Document
     /// null for the surfaces' colours. A view setting, like <see cref="Symmetry"/>.
     /// </summary>
     public string? ShownPointMap;
+    /// <summary>Rulers kept in the views (Measure's Keep): each a line between two places, labelled with its length. View state.</summary>
+    public List<Dimension> Dimensions = [];
+    /// <summary>The ruler the Measure tool is drawing now, or null.</summary>
+    public Dimension? Measuring;
     /// <summary>
     /// The reference images behind the flat views (see <see cref="Backdrop"/>). A display setting, not part of the
     /// object: it isn't saved in the object file or undone, and changing it doesn't mark the object modified.
@@ -500,7 +510,7 @@ public sealed class Document
     /// </summary>
     public Document Copy()
     {
-        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, CurrentWeightMap = CurrentWeightMap, CurrentColorMap = CurrentColorMap, ShownPointMap = ShownPointMap, Symmetry = Symmetry, Selection = Selection.Clone(), Backdrops = Backdrops };
+        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, CurrentWeightMap = CurrentWeightMap, CurrentColorMap = CurrentColorMap, ShownPointMap = ShownPointMap, Dimensions = [.. Dimensions], Measuring = Measuring, Symmetry = Symmetry, Selection = Selection.Clone(), Backdrops = Backdrops };
         d.Layers = Layers.Select(l => l.Clone()).ToList();
         d.Surfaces = Surfaces.Select(s => s.Clone()).ToList();
         return d;

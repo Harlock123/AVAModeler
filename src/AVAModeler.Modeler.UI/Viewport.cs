@@ -623,6 +623,8 @@ public sealed class ViewportControl : Panel
         private static readonly IBrush Label = new SolidColorBrush(Color.FromRgb(235, 235, 235));
         private static readonly IBrush Shadow = new SolidColorBrush(Color.FromArgb(160, 0, 0, 0));
         private static readonly Pen Band = new(new SolidColorBrush(Color.FromRgb(255, 227, 74)), 1, new DashStyle([4, 3], 0));
+        private static readonly Pen Ruler = new(new SolidColorBrush(Color.FromRgb(120, 230, 255)), 1.5);
+        private static readonly Pen Kept = new(new SolidColorBrush(Color.FromRgb(255, 170, 60)), 1.5);
 
         public override void Render(DrawingContext dc)
         {
@@ -632,6 +634,12 @@ public sealed class ViewportControl : Panel
             // UV space has no units: its grid is a fraction of the image.
             string grid = view._uv ? cam.GridStep().ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) : ViewCamera.FormatLength(cam.GridStep());
             if (!cam.IsPerspective) Text(dc, "Grid: " + grid, new Point(6, Bounds.Height - 18), 11);
+            if (!view._uv)
+            {
+                var doc = view.Session.Document;
+                foreach (var d in doc.Dimensions) Rule(dc, cam, d, Kept);
+                if (doc.Measuring is { } now && view.Session.ActiveTool is MeasureTool) Rule(dc, cam, now, Ruler);
+            }
             if (view._gesture is Gesture.Box or Gesture.Volume && view._moved)
                 dc.DrawRectangle(null, Band, new Rect(view._press, view._last).Normalize());
             if (view._gesture == Gesture.Lasso && view._lasso.Count > 1)
@@ -645,6 +653,25 @@ public sealed class ViewportControl : Panel
                 }
                 dc.DrawGeometry(null, Band, g);
             }
+        }
+
+        /// <summary>A ruler: its line, ticks at its ends and its length (and X, Y, Z parts) at its middle.</summary>
+        private static void Rule(DrawingContext dc, ViewCamera cam, Dimension d, Pen pen)
+        {
+            var a = cam.Project(d.A);
+            var b = cam.Project(d.B);
+            if (!a.Visible || !b.Visible) return;
+            var pa = new Point(a.X, a.Y);
+            var pb = new Point(b.X, b.Y);
+            dc.DrawLine(pen, pa, pb);
+            var along = pb - pa;
+            double len = Math.Max(Math.Sqrt(along.X * along.X + along.Y * along.Y), 1e-9);
+            var tick = new Vector(-along.Y / len * 5, along.X / len * 5);
+            dc.DrawLine(pen, pa - tick, pa + tick);
+            dc.DrawLine(pen, pb - tick, pb + tick);
+            var delta = d.B - d.A;
+            string label = $"{AVAModeler.Geometry.SelectionMeasure.Length(d.Length)}  (X {AVAModeler.Geometry.SelectionMeasure.Length(delta.X)}, Y {AVAModeler.Geometry.SelectionMeasure.Length(delta.Y)}, Z {AVAModeler.Geometry.SelectionMeasure.Length(delta.Z)})";
+            Text(dc, label, new Point((pa.X + pb.X) / 2 + 6, (pa.Y + pb.Y) / 2 - 16), 11);
         }
 
         private static void Text(DrawingContext dc, string s, Point at, double size)

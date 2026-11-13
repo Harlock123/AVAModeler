@@ -69,7 +69,8 @@ this engine as a submodule, so every change is additive: existing files, tools a
 
 ## Milestone D: mesh processing and measuring
 
-**Status:** not started.
+**Status:** done. `Geometry/Decimate.cs`, `Remesh.cs`, `Measuring.cs`, Booleans' welding; `ProcessTools.cs`; agents'
+`measure`. Rulers are view state, not saved with the object's setup.
 
 1. **Reduce Polygons.** Quadric-error decimation to a target share or count. It works on triangles (it triangulates
    first), keeps open borders, surface borders and UV seams, carries UVs and point maps onto the merged points, and

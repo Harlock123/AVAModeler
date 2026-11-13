@@ -180,6 +180,8 @@ public sealed class ModelerWorkspace : DockPanel
             ["Snap"] = ToggleSnap,
             ["Symmetry"] = () => SetSymmetry(D().Symmetry switch { null => Axis.X, Axis.X => Axis.Y, Axis.Y => Axis.Z, _ => null }),
             ["Show Map"] = ToggleShowMap,
+            ["Keep Ruler"] = KeepRuler,
+            ["Clear Rulers"] = () => { D().Dimensions.Clear(); D().Notify(); Session.SetStatus("Rulers cleared."); },
             ["Next Point Map"] = NextPointMap,
             ["Symmetry X"] = () => SetSymmetry(Axis.X),
             ["Symmetry Y"] = () => SetSymmetry(Axis.Y),
@@ -251,6 +253,16 @@ public sealed class ModelerWorkspace : DockPanel
     {
         Session.Preferences.PerspectiveStyle = style;
         Session.Document.Notify();
+    }
+
+    /// <summary>Tools › Keep Ruler: leaves the Measure tool's ruler drawn in the views.</summary>
+    public void KeepRuler()
+    {
+        var d = Session.Document;
+        if (d.Measuring is not { } m || m.Length == 0) { Session.SetStatus("Measure something first: the Measure tool (Tools tab), dragged between two places."); return; }
+        d.Dimensions.Add(m);
+        d.Notify();
+        Session.SetStatus($"Kept a ruler of {AVAModeler.Geometry.SelectionMeasure.Length(m.Length)}.");
     }
 
     /// <summary>View › Show Map: the shaded views colour faces by the current weight (or colour) map, or not.</summary>

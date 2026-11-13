@@ -122,3 +122,26 @@ public class SculptToolTests
         Assert.Throws<ArgumentException>(() => cmd.Run("Set Color", Args(("Color", new[] { 300.0, 0, 0 }))));
     }
 }
+
+public class MeasureToolTests
+{
+    [Fact]
+    public void The_ruler_snaps_to_points_and_changes_nothing()
+    {
+        var d = new Document();
+        var cmd = new Commands(d);
+        cmd.Run("Box", new Dictionary<string, object?> { ["Size"] = new[] { 2.0, 2, 2 } });
+        d.Modified = false;
+        var tool = new MeasureTool();
+        tool.Begin(new ToolContext(d));
+        // A drag in the Front view from near one corner to near another: both ends snap to the corners (with their depth).
+        var drag = new DragInfo { Start = new Vec3(-0.98, -1.01, 0), Current = new Vec3(0.99, 1.02, 0), Right = Vec3.UnitX, Up = Vec3.UnitY, Forward = Vec3.UnitZ, UnitsPerPixel = 0.01, First = true };
+        tool.Drag(drag);
+        tool.Commit();
+        Assert.Equal(new Vec3(-1, -1, -1), tool.From);
+        Assert.Equal(new Vec3(1, 1, -1), tool.To);
+        Assert.Equal(Math.Sqrt(8), d.Measuring!.Length, 9);
+        Assert.False(d.Modified);
+        Assert.Equal(8, d.Current.Mesh.Points.Count);
+    }
+}

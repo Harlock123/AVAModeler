@@ -429,12 +429,13 @@ public sealed class BooleanTool : Tool
     [Param("Operation")] public BooleanOperation Operation { get; set; } = BooleanOperation.Subtract;
     /// <summary>A surface for the faces the background cuts (blank: the background's own).</summary>
     [Param("Cut surface", Description = "A surface for the faces the background cuts (blank: the background's own).")] public string CutSurface { get; set; } = "";
+    [Param("Weld", Description = "Treat faces whose planes nearly match (within 5 millionths of the models' size), and points that nearly meet, as the same, so near-coplanar faces leave no slivers or cracks.")] public bool Weld { get; set; } = true;
 
     protected override void Apply()
     {
         var operand = Doc.BackgroundMesh();
         if (operand.Polygons.Count == 0) throw new InvalidOperationException("Boolean needs the other solid in a background layer.");
-        var options = new BooleanOptions { CutSurface = string.IsNullOrWhiteSpace(CutSurface) ? null : Doc.SurfaceIndex(CutSurface) };
+        var options = new BooleanOptions { CutSurface = string.IsNullOrWhiteSpace(CutSurface) ? null : Doc.SurfaceIndex(CutSurface), Weld = Weld };
         foreach (int l in Doc.ForegroundLayers)
         {
             var layer = Doc.Layers[l];

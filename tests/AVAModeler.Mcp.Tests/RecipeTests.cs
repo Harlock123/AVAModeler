@@ -15,7 +15,7 @@ namespace AVAModeler.Mcp.Tests;
 /// </summary>
 public class RecipeTests
 {
-    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table", "product_shot", "reaching_arm", "car_on_loop"];
+    private static readonly string[] Names = ["lathed_vase", "table", "chess_pawn", "three_point_lighting", "turntable_render", "bouncing_ball", "carbon_atom", "morph_smile", "wave_flag", "printable_part", "rounded_box", "marble_table", "product_shot", "reaching_arm", "car_on_loop", "model_from_images", "rigged_character", "game_asset"];
 
     /// <summary>Each recipe with arguments that keep it quick (small pictures, few frames).</summary>
     public static TheoryData<string, string> Cases => new()
@@ -35,6 +35,9 @@ public class RecipeTests
         { "product_shot", """{"width": "48", "environment": "builtin:sky"}""" },
         { "reaching_arm", """{"frames": "12", "width": "64"}""" },
         { "car_on_loop", """{"frames": "8", "width": "64"}""" },
+        { "model_from_images", """{"front": "front.png", "side": "side.png", "width": "2"}""" },
+        { "rigged_character", "{}" },
+        { "game_asset", """{"size": "64", "keep": "20"}""" },
     };
 
     /// <summary>A recipe's tool calls, read from its text as an agent reads them.</summary>
@@ -84,6 +87,12 @@ public class RecipeTests
         if (name is "three_point_lighting" or "turntable_render")
             await s.Client.Json("run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Size"] = new[] { 1.0, 1, 1 } } });
         if (name == "three_point_lighting") await s.Client.Json("add_object");
+        // Reference pictures for modeling from images: a tall subject from the front, a wide one from the side.
+        if (name == "model_from_images")
+        {
+            CompareHandlerTests.Silhouette(b, "front.png", 40, 70);
+            CompareHandlerTests.Silhouette(b, "side.png", 60, 70);
+        }
 
         var args = JsonDocument.Parse(arguments).RootElement.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.GetString());
         var text = PromptText(await s.Client.GetPromptAsync(name, args, cancellationToken: Cancel));
@@ -222,6 +231,26 @@ public class RecipeTests
                 double bored = (0.05 * 0.05 - Math.PI * 0.01 * 0.01 / 4) * 0.02;
                 Assert.InRange(check.Volume!.Value, bored, bored * 1.01);
                 Assert.True(new FileInfo(b.Folder.File("part.stl")).Length > 84);
+                Assert.True(File.Exists(b.Folder.File("part.gcode")));
+                break;
+            case "model_from_images":
+                Assert.NotNull(doc.Backdrops.Front);
+                Assert.NotNull(doc.Backdrops.Side);
+                Assert.Equal(Axis.X, doc.Symmetry);
+                Assert.False(doc.Current.Mesh.IsEmpty);
+                break;
+            case "rigged_character":
+                var figure = Obj("Figure");
+                Assert.Equal(["Chest", "Head", "Hips"], figure.Bones.Select(x => x.WeightMap ?? "").Order());
+                Assert.True(figure.BaseMesh().Points.Zip(figure.DeformedMesh(1).Points).Any(p => (p.First - p.Second).Length > 0.05), "the pose bends the body");
+                break;
+            case "game_asset":
+                Assert.True(doc.Layers[0].Mesh.IsEmpty);
+                var low = doc.Layers[1].Mesh;
+                Assert.InRange(low.Polygons.Count, 64 * 30 * 2 * 0.15, 64 * 30 * 2 * 0.25);
+                Assert.Contains(doc.Surfaces.SelectMany(x => x.Textures), t => t.Channel == TextureChannel.Normal);
+                Assert.True(File.Exists(b.Folder.File("asset.glb")));
+                Assert.Contains("normalTexture", System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(b.Folder.File("asset.glb"))));
                 break;
             case "rounded_box":
                 var box = AVAModeler.Geometry.MeshCheck.Document(doc);

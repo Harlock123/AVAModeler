@@ -130,7 +130,9 @@ public static class Recipes
         recipe.Step(null, "run_tool", new { name = "Remove" });
         recipe.Step("Back to the part.", "set_layers", new { foreground = new[] { 1 } });
         recipe.Step($"Check it. It should say \"Closed and printable (1 shell)\", with no holes, and a volume of about {Geometry.MeshReport.Num(Math.Round((w * w - Math.PI * d * d / 4) * h * 1e6, 2))} cm³ ({Geometry.MeshReport.Num((w * w - Math.PI * d * d / 4) * h)} m³, a little more with a 32-sided bit). If it doesn't, follow its how_to_fix (Align for flipped faces, Merge Points for duplicate points, Remove Degenerate for faces with no area) and check again.", "check_mesh", new { });
+        recipe.Step($"Measure it: the size should be {F(w)} × {F(h)} × {F(w)} m. If a dimension is off, Stretch it (run_tool) and measure again.", "measure", new { });
         recipe.Step("Save it as binary STL: Z up for the slicer, so it stands on the bed the way it stands here.", "save", new { path });
+        recipe.Step("Slice it for a printer too (a generic 220 mm bed and PLA unless you name others), to see the print time, filament and any warnings.", "slice_to_gcode", new { path = Path.ChangeExtension(path, ".gcode") });
         recipe.Step("Look at it.", "render_view", new { view = "perspective", width = 320, height = 240 });
         return recipe.Text("For a print, keep walls at least a millimetre or two thick (0.001 to 0.002), and check_mesh again after any further boolean.");
     }
@@ -188,6 +190,84 @@ public static class Recipes
         recipe.Step("Look at it, textured (the view shows the colour procedurals).", "render_view", new { view = "perspective", mode = "textured", width = 320, height = 240 });
         recipe.Step("Ray-trace it: the bump shows here.", "render", new { width = 320, height = 240, samples = 2, pitch = 25 });
         return recipe.Text("Try other kinds on the same surfaces (fractal_noise, grid, dots, crumple...), or put a procedural on another channel (e.g. specular) with value; describe them with get_document.");
+    }
+
+    [McpServerPrompt(Name = "model_from_images", Title = "Model from reference pictures")]
+    [Description("Models something from reference pictures (front and side, plain backgrounds): sets them as backdrops at the subject's size, blocks out the form with symmetry on, and compares the outline with each picture (compare_to_reference) to refine it.")]
+    public static string ModelFromImages(
+        [Description("The front picture, in the working folder.")] string? front = null,
+        [Description("The side picture, in the working folder (optional).")] string? side = null,
+        [Description("How wide each picture is in the world, metres (default 2): set it so the subject in the picture is its real size.")] string? width = null,
+        [Description("What it is, for the surface's name (default Subject).")] string? subject = null)
+    {
+        string f = Text(front, "front.png"), name = Text(subject, "Subject");
+        double w = Number(width, 2, "width", 0.01, 1000);
+        var recipe = new Recipe($"Model {name} from its reference pictures: {f} from the front{(side != null ? $" and {side.Trim()} from the side" : "")}, each {F(w)} m across in the world.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("Put the front picture behind the Front view, centred on the origin, at its real size.", "set_backdrop", new { view = "front", image = f, center = V(0, 0, 0)[..2], width = R(w) });
+        if (side != null) recipe.Step("And the side picture behind the Side view.", "set_backdrop", new { view = "side", image = side.Trim(), center = V(0, 0, 0)[..2], width = R(w) });
+        recipe.Step("Most subjects are symmetric left to right: work on both sides at once.", "set_symmetry", new { axis = "x" });
+        recipe.Step("Block out the main form with a box with room to shape (segments on every axis), sized to most of the picture; then compare.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Size"] = V(w * 0.4, w * 0.4, w * 0.4), ["SegmentsX"] = 4, ["SegmentsY"] = 6, ["SegmentsZ"] = 4, ["Surface"] = name } });
+        recipe.Step("Compare the outline with the front picture. overlap is 1 for a perfect match; missing and extra say how much of each picture the model lacks or overshoots, and where.", "compare_to_reference", new { view = "front" });
+        if (side != null) recipe.Step("And from the side.", "compare_to_reference", new { view = "side" });
+        recipe.Step("Refine where it says: select the points on that side (select_box) and Move, Stretch or Taper them (run_tool), or pull with Magnet or the Grab Brush (sculpt grab), then compare again. Repeat until overlap is above 0.9 in each view. Here, a first look at the block against the pictures:", "render_view", new { view = "front", width = 320, height = 320 });
+        recipe.Step("Smooth it into a rounded form once the outline matches (MetaNURBS-style: Subdivide, smooth), then check it.", "check_mesh", new { });
+        return recipe.Text("Turn symmetry off (set_symmetry off) for one-sided details, and save the object when it looks right.");
+    }
+
+    [McpServerPrompt(Name = "rigged_character", Title = "Rigged character: skelegons, weights and a pose")]
+    [Description("Rigs a simple figure: a body to bend, a chain of skelegons inside it, weight maps made automatically from them (auto_weights, shown in colour), then bones in Layout that follow the maps, and a test pose.")]
+    public static string RiggedCharacter(
+        [Description("The figure's height in metres (default 1.8).")] string? height = null,
+        [Description("How far to bend it at the chest for the test pose, degrees (default 40).")] string? bend = null)
+    {
+        double h = Number(height, 1.8, "height", 0.1, 100), a = Number(bend, 40, "bend", -150, 150);
+        // The column's points: every place on its surface where the rows and the box's edges cross.
+        const int rows = 18;
+        int j0 = 2 * (rows + 1) * 2;
+        var recipe = new Recipe($"Rig a {F(h)} m figure: a body with enough rows to bend, three skelegons up its middle (hips, chest, head), weights from them, and bones that follow the weights.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("The body: a column with many rows up its height, so it bends smoothly.", "run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Size"] = V(h * 0.22, h, h * 0.16), ["Center"] = V(0, h / 2, 0), ["SegmentsY"] = rows, ["Surface"] = "Skin" } });
+        recipe.Step("The skelegons' joints up the middle: the base of the hips, the waist, the neck and the top of the head.", "add_points", new { points = new[] { V(0, h * 0.05, 0), V(0, h * 0.5, 0), V(0, h * 0.8, 0), V(0, h, 0) } });
+        recipe.Step($"The hips, from base to waist (in a fresh object the joints are points {j0} to {j0 + 3}: use the indices add_points returned).", "add_polygons", new { polygons = new[] { new[] { j0, j0 + 1 } }, surface = "Skelegon_Hips" });
+        recipe.Step("The chest, waist to neck.", "add_polygons", new { polygons = new[] { new[] { j0 + 1, j0 + 2 } }, surface = "Skelegon_Chest" });
+        recipe.Step("The head, neck to top.", "add_polygons", new { polygons = new[] { new[] { j0 + 2, j0 + 3 } }, surface = "Skelegon_Head" });
+        recipe.Step("Weights: one map per skelegon, named Hips, Chest and Head, shared by distance and adding to 1.", "auto_weights", new { });
+        recipe.Step("Look at the chest's weights (the current map, blue 0 to red 1). Paint fixes with sculpt paint_weights or set_weights where a bone takes too much or too little.", "render_view", new { view = "front", width = 240, height = 320 });
+        recipe.Step("Into Layout.", "add_object", new { name = "Figure" });
+        recipe.Step("Bones from the skelegons: each follows the weight map of its name.", "skelegons_to_bones", new { @object = "Figure" });
+        recipe.Step("A test pose: bend at the chest.", "set_transform", new { item = "Chest", frame = 1, rotation = V(0, a, 0), key = true });
+        recipe.Step("Look at the pose.", "render_scene_view", new { view = "front", frame = 1, width = 240, height = 320 });
+        return recipe.Text("Arms and legs work the same way: a skelegon chain each (Skelegon_UpperArm.L and so on), auto_weights, then mirror fixes with run_tool \"Mirror Weights\".");
+    }
+
+    [McpServerPrompt(Name = "game_asset", Title = "Low-poly game asset with baked maps")]
+    [Description("Makes a game asset: a detailed model, a low-poly copy (Reduce Polygons), UVs, the detailed one's surface baked onto it as a normal map, and a .glb with the map.")]
+    public static string GameAsset(
+        [Description("The .glb to save (default asset.glb).")] string? file = null,
+        [Description("The share of triangles to keep in the low version, percent (default 15).")] string? keep = null,
+        [Description("The baked map's size in pixels (default 512).")] string? size = null)
+    {
+        string path = Text(file, "asset.glb");
+        if (!path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)) throw new McpException("file must end in .glb.");
+        double k = Number(keep, 15, "keep", 1, 90);
+        int px = Whole(size, 512, "size", 32, 4096);
+        var recipe = new Recipe($"Make a game asset: a detailed ball with bumps in layer 1, a low version keeping {F(k)}% of its triangles in layer 2, the detail baked into a {px} × {px} normal map, saved as {path}.");
+        recipe.Step("Start an empty object (save the current one first if new refuses).", "new", new { });
+        recipe.Step("The detailed model: a fine ball.", "run_tool", new { name = "Ball", @params = new Dictionary<string, object> { ["Radius"] = V(0.5, 0.5, 0.5), ["Sides"] = 64, ["Segments"] = 32, ["Surface"] = "Asset" } });
+        recipe.Step("Give it detail worth baking: a few raised ridges.", "sculpt", new { brush = "crease", stroke = new[] { V(-0.4, 0.3, -0.2), V(0, 0.45, -0.2), V(0.4, 0.3, -0.2) }, radius = 0.12, strength = 1, invert = true, passes = 3 });
+        recipe.Step("Copy it to layer 2 for the low version.", "copy_layer", new { from = 1, to = 2 });
+        recipe.Step("Work on the copy.", "set_layers", new { foreground = new[] { 2 } });
+        recipe.Step("Reduce it.", "run_tool", new { name = "Reduce Polygons", @params = new Dictionary<string, object> { ["Percent"] = k } });
+        recipe.Step("Lay it out in a UV map, each face its own place.", "make_uvs", new { map = "UV", projection = "atlas" });
+        recipe.Step("The detailed model in the background, the low one in front: the bake looks from one to the other.", "set_layers", new { foreground = new[] { 2 }, background = new[] { 1 } });
+        recipe.Step("Bake the detail into a normal map, laid on the low model's surface.", "bake_maps", new { kind = "normal", file = Path.ChangeExtension(path, null) + "_normal.png", size = px });
+        recipe.Step("Clear the detailed model out of layer 1, so only the asset is saved.", "set_layers", new { foreground = new[] { 1 } });
+        recipe.Step(null, "run_tool", new { name = "Remove" });
+        recipe.Step("Back to the asset.", "set_layers", new { foreground = new[] { 2 } });
+        recipe.Step("Render it: the normal map gives the low version the ridges back.", "render", new { width = 240, height = 240, samples = 2 });
+        recipe.Step("Save it as glTF binary, its normal map inside.", "save", new { path });
+        return recipe.Text("For more: bake_maps ambient_occlusion before clearing the detail (with the low model alone in the foreground), and check the triangle count with get_document.");
     }
 
     // ───────────────────────────── scenes ─────────────────────────────

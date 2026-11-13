@@ -226,6 +226,10 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     tools are `InstanceTool` and `FreezeInstancesTool` (ProcessTools.cs). Photo match: `Geometry/PhotoMatch.cs`
     (`Solve` by normalised DLT, `FromProjection`, `Triangulate`, `Jacobi` for the eigenvectors), `Document.Photos`
     (`PhotoSetup`, view state), `PhotoMatchWindow.cs`, and `match_photo` and `point_from_photos` (`Mcp/PhotoTools.cs`).
+  - Comparing with references: `Geometry/Silhouettes.cs` (`Model` rasterises faces through a projection, `Reference`
+    finds a picture's subject, `Compare` scores and draws the difference) and `compare_to_reference`
+    (`Mcp/CompareTools.cs`: a flat view projects through `BackdropMapping.ImagePoint` when the picture is that view's
+    backdrop, a matched photo through its `CameraMatch`, else the outline is fitted by height).
   - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).

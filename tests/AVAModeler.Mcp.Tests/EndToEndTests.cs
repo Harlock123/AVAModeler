@@ -21,8 +21,8 @@ public class EndToEndTests
     private static async Task BuildATable(McpClient client, string folder)
     {
         var tools = await client.ListToolsAsync(cancellationToken: Cancel);
-        Assert.Equal(101, tools.Count);
-        Assert.Equal(15, (await client.ListPromptsAsync(cancellationToken: Cancel)).Count);
+        Assert.Equal(102, tools.Count);
+        Assert.Equal(18, (await client.ListPromptsAsync(cancellationToken: Cancel)).Count);
         Assert.All(tools, t => Assert.False(string.IsNullOrWhiteSpace(t.Description), $"{t.Name} has no description"));
         var listed = await client.Json("list_tools");
         Assert.Contains(listed["tools"]!.AsArray(), t => (string?)t!["name"] == "Lathe");

@@ -127,7 +127,8 @@ shared glTF meshes). `HistoryPanel.cs`, `Core/Instancing.cs`, `Geometry/PhotoMat
 
 ## Milestone G: agents
 
-**Status:** not started.
+**Status:** done in the engine: `compare_to_reference`, the `model_from_images`, `rigged_character` and `game_asset` recipes,
+and `printable_part` measuring and slicing. AVALightWave's submodule and build steps follow (item 4).
 
 1. **`compare_to_reference`.** Renders the object's silhouette from a reference picture's view (front, side, top, or
    a matched photo camera). It returns the overlap score (intersection over union), the parts too big and too small

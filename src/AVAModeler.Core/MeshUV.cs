@@ -110,6 +110,23 @@ public sealed partial class Mesh
     }
 
     /// <summary>
+    /// Adds a point a share <paramref name="t"/> of the way from point <paramref name="a"/> to <paramref name="b"/>,
+    /// with UVs (where both have them) and point-map values in between: for tools that cut edges. Corners with UVs of
+    /// their own are each polygon's business (see <see cref="SetCornerUV"/>).
+    /// </summary>
+    public int AddPointBetween(int a, int b, double t)
+    {
+        int n = AddPoint(Vec3.Lerp(Points[a], Points[b], t));
+        foreach (var m in UVMaps)
+            if (m.Points.TryGetValue(a, out var ua) && m.Points.TryGetValue(b, out var ub)) m.Points[n] = ua + (ub - ua) * t;
+        BlendPointMaps(n, a, b, t);
+        return n;
+    }
+
+    /// <summary>Gives point <paramref name="to"/> the point maps' values a share t of the way from a to b (stage B fills this in).</summary>
+    partial void BlendPointMaps(int to, int a, int b, double t);
+
+    /// <summary>
     /// Gives a new point the UVs of another in every map (where it has any): for tools that copy points. Corners with
     /// their own UVs are a polygon's business (see <see cref="InheritUVs"/>).
     /// </summary>

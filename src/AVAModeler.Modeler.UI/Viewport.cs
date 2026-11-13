@@ -444,7 +444,9 @@ public sealed class ViewportControl : Panel
     {
         if (!_uv)
         {
+            var before = Session.Document.Selection.Clone();
             pick(Session.Document);
+            Symmetry.MirrorPick(Session.Document, before);
             return;
         }
         if (Session.Document.ActiveUVMap is not { } map) return;

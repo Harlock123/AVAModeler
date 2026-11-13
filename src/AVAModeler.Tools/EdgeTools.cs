@@ -173,3 +173,41 @@ public sealed class ChamferTool : Tool
         Doc.Selection.Clear(allModes: true);
     }
 }
+
+/// <summary>Knife: cuts the faces under a line drawn across a view, along the view's depth.</summary>
+public sealed class KnifeTool : Tool
+{
+    public override string Name => "Knife";
+    public override string Tab => "Polygon";
+    public override string Help => "Drag a line across the faces to cut them along it, straight through the view.";
+    public override string Summary => "Cuts the selected faces (every face, with none selected) along the plane through the line from Start to End that runs along Axis (the view's depth: Z for the Front view, Y for Top, X for Side). Only crossings between the line's ends count. Each crossed edge gets a new point, put into every polygon on that edge so a closed mesh stays closed, and each face the plane crosses splits along it, keeping its surface and winding; UVs are interpolated. With symmetry on, the mirrored line cuts too.";
+
+    [Param("Start", Distance = true, Description = "One end of the knife's line, in metres.")] public Vec3 Start { get; set; }
+    [Param("End", Distance = true, Description = "The other end of the line.")] public Vec3 End { get; set; }
+    [Param("Axis", Description = "The direction the cut runs through the model (the view's depth).")] public Axis Axis { get; set; } = Axis.Z;
+
+    protected override void OnDrag(DragInfo d)
+    {
+        if (d.First) Start = Context.SnapPoint(d.Start);
+        End = Context.SnapPoint(d.Constrain ? d.Start + Axes.Dominant(d.Delta) : d.Current);
+        Axis = d.ViewAxis;
+    }
+
+    protected override void Apply()
+    {
+        var depth = Vec3.Unit(Axis);
+        var along = End - Start;
+        if ((along - depth * Vec3.Dot(along, depth)).LengthSquared < 1e-18) return; // a click, not yet a line
+        foreach (var (_, mesh, polygons) in ActivePolygons().ToList())
+        {
+            var faces = polygons.ToHashSet();
+            int count = mesh.Polygons.Count;
+            Knife.Cut(mesh, faces, Start, End, depth);
+            if (Doc.Symmetry is { } axis)
+            {
+                faces.UnionWith(Enumerable.Range(count, mesh.Polygons.Count - count));
+                Knife.Cut(mesh, faces, Symmetry.Mirror(Start, axis), Symmetry.Mirror(End, axis), Symmetry.Mirror(depth, axis));
+            }
+        }
+    }
+}

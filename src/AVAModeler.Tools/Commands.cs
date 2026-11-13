@@ -409,6 +409,16 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
         Run("Make UVs", new Dictionary<string, object?> { ["MapName"] = map, ["Projection"] = projection, ["Axis"] = axis });
 
     /// <summary>Chooses the UV map to work on (the UV view shows it); not an undoable edit.</summary>
+    /// <summary>Turns modeling with symmetry on across an axis, or off (null). A view setting, not an undo step.</summary>
+    public void SetSymmetry(Axis? axis)
+    {
+        Document.Symmetry = axis;
+        Document.Notify();
+    }
+
+    /// <summary>The symmetry setting as "x", "y", "z" or "off".</summary>
+    public string SymmetryName => Document.Symmetry?.ToString().ToLowerInvariant() ?? "off";
+
     public void SetUVMap(string map)
     {
         Document.CurrentUVMap = map;

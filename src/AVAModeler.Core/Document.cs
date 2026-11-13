@@ -90,10 +90,15 @@ public sealed class Selection
     /// <summary>The volume in Volume mode: what's inside (or, when <see cref="VolumeExclusive"/>, what's wholly inside).</summary>
     public Box3 Volume = Box3.Empty;
     public bool VolumeExclusive;
+    /// <summary>
+    /// The mirror axis while modeling with symmetry (the document's <see cref="Document.Symmetry"/>), or null: the
+    /// active points, edges and polygons then include each one's mirror partner (<see cref="Core.Symmetry"/>).
+    /// </summary>
+    public Axis? Symmetry;
 
     public Selection Clone()
     {
-        var s = new Selection { Mode = Mode, Volume = Volume, VolumeExclusive = VolumeExclusive };
+        var s = new Selection { Mode = Mode, Volume = Volume, VolumeExclusive = VolumeExclusive, Symmetry = Symmetry };
         foreach (var (k, v) in Points) s.Points[k] = [.. v];
         foreach (var (k, v) in Polygons) s.Polygons[k] = [.. v];
         foreach (var (k, v) in Edges) s.Edges[k] = [.. v];
@@ -168,7 +173,11 @@ public sealed class Selection
     /// The points a tool should move in a layer: those selected in Points mode; those of the selected polygons or
     /// edges; those in the volume; or, with nothing selected, every point.
     /// </summary>
-    public IReadOnlyCollection<int> ActivePoints(int layer, Mesh mesh)
+    public IReadOnlyCollection<int> ActivePoints(int layer, Mesh mesh) =>
+        Symmetry is { } axis && Any ? Core.Symmetry.Widen(mesh, axis, ActivePointsAsSelected(layer, mesh)) : ActivePointsAsSelected(layer, mesh);
+
+    /// <summary>The active points without symmetry's partners: those the person (or agent) chose.</summary>
+    public IReadOnlyCollection<int> ActivePointsAsSelected(int layer, Mesh mesh)
     {
         HashSet<int>? chosen = Mode switch
         {
@@ -188,7 +197,10 @@ public sealed class Selection
     /// selected (Points mode); every edge of the selected polygons (Polygons mode) or of the polygons in the volume; or,
     /// with nothing selected, every edge.
     /// </summary>
-    public IReadOnlyCollection<Edge> ActiveEdges(int layer, Mesh mesh)
+    public IReadOnlyCollection<Edge> ActiveEdges(int layer, Mesh mesh) =>
+        Symmetry is { } axis && Any ? Core.Symmetry.WidenEdges(mesh, axis, ActiveEdgesAsSelected(layer, mesh)) : ActiveEdgesAsSelected(layer, mesh);
+
+    private IReadOnlyCollection<Edge> ActiveEdgesAsSelected(int layer, Mesh mesh)
     {
         var map = mesh.EdgeMap();
         if (!Any) return map.Keys.ToArray();
@@ -216,7 +228,10 @@ public sealed class Selection
     /// The polygons a tool should work on in a layer: those selected; those using a selected point (Points mode)
     /// or edge (Edges mode); those in the volume; or, with nothing selected, every polygon.
     /// </summary>
-    public IReadOnlyCollection<int> ActivePolygons(int layer, Mesh mesh)
+    public IReadOnlyCollection<int> ActivePolygons(int layer, Mesh mesh) =>
+        Symmetry is { } axis && Any ? Core.Symmetry.WidenPolygons(mesh, axis, ActivePolygonsAsSelected(layer, mesh)) : ActivePolygonsAsSelected(layer, mesh);
+
+    private IReadOnlyCollection<int> ActivePolygonsAsSelected(int layer, Mesh mesh)
     {
         if (!Any) return Enumerable.Range(0, mesh.Polygons.Count).ToArray();
         switch (Mode)
@@ -322,7 +337,26 @@ public sealed class Document
 
     public List<Layer> Layers = [];
     public List<Surface> Surfaces = [new Surface("Default")];
-    public Selection Selection = new();
+
+    private Selection _selection = new();
+    private Axis? _symmetry;
+
+    /// <summary>What's selected. Setting a new selection gives it the document's <see cref="Symmetry"/>.</summary>
+    public Selection Selection
+    {
+        get => _selection;
+        set { _selection = value; _selection.Symmetry = _symmetry; }
+    }
+
+    /// <summary>
+    /// Modeling with symmetry: the axis across which tools mirror (X, Y or Z, the plane through the origin square to
+    /// it), or null for off. A view setting, not an undo step, and not kept in the object file.
+    /// </summary>
+    public Axis? Symmetry
+    {
+        get => _symmetry;
+        set { _symmetry = value; _selection.Symmetry = value; }
+    }
     public UndoStack Undo { get; } = new();
     public string? FilePath;
     public bool Modified;
@@ -452,7 +486,7 @@ public sealed class Document
     /// </summary>
     public Document Copy()
     {
-        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, Selection = Selection.Clone(), Backdrops = Backdrops };
+        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, Symmetry = Symmetry, Selection = Selection.Clone(), Backdrops = Backdrops };
         d.Layers = Layers.Select(l => l.Clone()).ToList();
         d.Surfaces = Surfaces.Select(s => s.Clone()).ToList();
         return d;

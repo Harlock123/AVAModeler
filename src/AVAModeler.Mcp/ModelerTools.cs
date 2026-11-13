@@ -161,6 +161,29 @@ public sealed partial class ModelerTools(IModelerHost host)
     public Task<string> SelectAll(CancellationToken cancel) =>
         Do("selected all", c => { c.SelectAll(); return Census.Selection(c.Document); }, cancel);
 
+    [McpServerTool(Name = "set_symmetry", Idempotent = true)]
+    [Description("Models with symmetry across the plane through the origin square to an axis (x: the plane X = 0, left and right; y: Y = 0; z: Z = 0), or turns it off. While it's on, every tool also acts on each selected point's and polygon's mirror partner (the point at the mirrored place, within 0.01 mm), and tools that move points (Move, Rotate, Size, Magnet, Jitter, the sculpt brushes and so on) move the partner to the mirror of where its point went, so both sides stay matched; points on the plane stay on it. Build one half (or a symmetric block) and work on both at once. Not an undo step, not kept in the file; get_document reports it.")]
+    public Task<string> SetSymmetry(
+        [Description("x, y, z or off.")] string axis,
+        CancellationToken cancel) =>
+        Do($"set symmetry {axis}", c =>
+        {
+            Axis? a;
+            try { a = Symmetry.Parse(axis); }
+            catch (ArgumentException e) { throw new McpException(e.Message); }
+            c.SetSymmetry(a);
+            var result = new JsonObject { ["symmetry"] = c.SymmetryName };
+            if (a is { } ax)
+            {
+                int unmatched = 0;
+                foreach (int l in c.Document.ForegroundLayers)
+                    unmatched += Symmetry.Pairs(c.Document.Layers[l].Mesh, ax).Count(p => p < 0);
+                result["points_without_partner"] = unmatched;
+                if (unmatched > 0) result["note"] = $"{unmatched} foreground points have no mirror partner: they move on their own. A symmetric model built with Mirror has every point paired.";
+            }
+            return result;
+        }, cancel);
+
     [McpServerTool(Name = "select_none", Idempotent = true)]
     [Description("Clears the selection in the current mode, so tools act on everything in the foreground layers again. Not an undo step.")]
     public Task<string> SelectNone(CancellationToken cancel) =>

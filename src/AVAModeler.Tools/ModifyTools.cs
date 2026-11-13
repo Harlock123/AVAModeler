@@ -359,6 +359,11 @@ public sealed class DragTool : Tool
         var mesh = Doc.Layers[t.Layer].Mesh;
         if (t.Point >= mesh.Points.Count) return;
         mesh.Points[t.Point] += Offset;
+        if (Doc.Symmetry is { } axis && Symmetry.Pairs(Original(t.Layer), axis) is var pairs && t.Point < pairs.Length && pairs[t.Point] is int j and >= 0)
+        {
+            if (j == t.Point) mesh.Points[t.Point] = mesh.Points[t.Point].With(axis, 0);
+            else mesh.Points[j] = Symmetry.Mirror(mesh.Points[t.Point], axis);
+        }
         mesh.Touch();
     }
 }
@@ -376,20 +381,16 @@ public sealed class JitterTool : Tool
 
     protected override void Apply()
     {
-        foreach (var (layer, mesh, points) in ActivePoints())
+        MapPoints((layer, i, p) =>
         {
-            foreach (int i in points)
+            double R(int k)
             {
-                double R(int k)
-                {
-                    uint h = (uint)(i * 73856093) ^ (uint)(Seed * 19349663) ^ (uint)(k * 83492791) ^ (uint)(layer * 2654435761u);
-                    h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15;
-                    return h / (double)uint.MaxValue * 2 - 1;
-                }
-                mesh.Points[i] += new Vec3(R(0) * Amount.X, R(1) * Amount.Y, R(2) * Amount.Z);
+                uint h = (uint)(i * 73856093) ^ (uint)(Seed * 19349663) ^ (uint)(k * 83492791) ^ (uint)(layer * 2654435761u);
+                h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15;
+                return h / (double)uint.MaxValue * 2 - 1;
             }
-            mesh.Touch();
-        }
+            return p + new Vec3(R(0) * Amount.X, R(1) * Amount.Y, R(2) * Amount.Z);
+        });
     }
 }
 

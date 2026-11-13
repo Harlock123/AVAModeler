@@ -351,12 +351,62 @@ public abstract class Tool
     }
 
     /// <summary>Moves every active point through a function of its position.</summary>
-    protected void MapPoints(Func<Vec3, Vec3> f)
+    protected void MapPoints(Func<Vec3, Vec3> f) => MapPoints((_, _, p) => f(p));
+
+    /// <summary>
+    /// Moves every active point through a function of its layer, index and position. With symmetry on, each pair of
+    /// partners moves together: the point that was chosen (or, with both chosen, the one on the positive side) goes
+    /// through the function and its partner goes to the mirror of where it went; a point on the mirror plane stays on it.
+    /// </summary>
+    protected void MapPoints(Func<int, int, Vec3, Vec3> f)
     {
-        foreach (var (_, mesh, points) in ActivePoints())
+        foreach (var (layer, mesh, points) in ActivePoints())
         {
-            foreach (int i in points) mesh.Points[i] = f(mesh.Points[i]);
+            if (Doc.Symmetry is { } axis) MapSymmetric(layer, mesh, points, axis, f);
+            else foreach (int i in points) mesh.Points[i] = f(layer, i, mesh.Points[i]);
             mesh.Touch();
+        }
+    }
+
+    private void MapSymmetric(int layer, Mesh mesh, IReadOnlyCollection<int> points, Axis axis, Func<int, int, Vec3, Vec3> f)
+    {
+        var pairs = Symmetry.Pairs(mesh, axis);
+        HashSet<int>? chosen = Doc.Selection.Any ? [.. Doc.Selection.ActivePointsAsSelected(layer, mesh)] : null;
+        var before = mesh.Points.ToArray();
+        var done = new HashSet<int>();
+        foreach (int i in points)
+        {
+            if (!done.Add(i)) continue;
+            int j = i < pairs.Length ? pairs[i] : -1;
+            if (j < 0) { mesh.Points[i] = f(layer, i, before[i]); continue; }
+            if (j == i)
+            {
+                var q = f(layer, i, before[i]);
+                mesh.Points[i] = q.With(axis, 0);
+                continue;
+            }
+            done.Add(j);
+            bool iChosen = chosen == null || chosen.Contains(i), jChosen = chosen == null || chosen.Contains(j);
+            Vec3 moved;
+            int driver;
+            if (iChosen != jChosen)
+            {
+                driver = iChosen ? i : j;
+                moved = f(layer, driver, before[driver]);
+            }
+            else
+            {
+                // Both (or neither) chosen: the side the tool moves more leads (a magnet pulled on one side), ties
+                // going to the positive side (a move of everything).
+                var a = f(layer, i, before[i]);
+                var b = f(layer, j, before[j]);
+                double da = (a - before[i]).Length, db = (b - before[j]).Length;
+                bool iLeads = Math.Abs(da - db) <= 1e-12 * (1 + da + db) ? before[i][axis] >= before[j][axis] : da > db;
+                (driver, moved) = iLeads ? (i, a) : (j, b);
+            }
+            int follower = driver == i ? j : i;
+            mesh.Points[driver] = moved;
+            mesh.Points[follower] = Symmetry.Mirror(moved, axis);
         }
     }
 

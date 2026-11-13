@@ -140,11 +140,11 @@ public sealed class Keymap
         ["Triple"] = "Shift+T", ["Subdivide"] = "Shift+D", ["Extrude"] = "E", ["Lathe"] = "L", ["Mirror"] = "V",
         ["Bevel"] = "B", ["Smooth Shift"] = "Shift+F", ["Metaform"] = "Shift+Tab", ["Merge Polygons"] = "Shift+Z", ["Split"] = "Ctrl+L",
         ["Align"] = "Ctrl+F", ["Unify"] = "Ctrl+U", ["Clone"] = "Ctrl+C", ["Array"] = "Ctrl+Y", ["Path Extrude"] = "Ctrl+P", ["Rail Extrude"] = "Ctrl+E", ["Boolean"] = "Shift+R", ["Drill"] = "Ctrl+R",
-        ["Inset"] = "I", ["Chamfer"] = "Ctrl+B", ["Loop Cut"] = "Ctrl+Shift+R", ["Bridge"] = "Ctrl+Shift+B", ["Fill Hole"] = "Ctrl+Shift+F",
+        ["Inset"] = "I", ["Chamfer"] = "Ctrl+B", ["Loop Cut"] = "Ctrl+Shift+R", ["Knife"] = "K", ["Bridge"] = "Ctrl+Shift+B", ["Fill Hole"] = "Ctrl+Shift+F",
         // Commands.
         ["Undo"] = "Ctrl+Z", ["Redo"] = "Ctrl+Shift+Z", ["Cut"] = "X", ["Copy"] = "C", ["Paste"] = "Ctrl+V",
         ["Cycle Selection Mode"] = "Space", ["Commit"] = "Enter", ["Cancel"] = "Escape", ["Deselect"] = "OemQuestion",
-        ["Invert Selection"] = "OemQuotes", ["Select Connected"] = "OemCloseBrackets", ["Select Loop"] = "Alt+L", ["Select Ring"] = "Alt+R", ["Fit All"] = "A", ["Fit Selected"] = "Shift+A",
+        ["Invert Selection"] = "OemQuotes", ["Select Connected"] = "OemCloseBrackets", ["Select Loop"] = "Alt+L", ["Select Ring"] = "Alt+R", ["Fit All"] = "A", ["Fit Selected"] = "Shift+A", ["Symmetry"] = "Alt+Y",
         ["Maximize View"] = "D0", ["Backdrop"] = "D", ["Numeric Panel"] = "N", ["Mesh Info"] = "W", ["UV View"] = "U", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
         ["New"] = "Ctrl+N", ["Open"] = "Ctrl+O", ["Save"] = "Ctrl+S", ["Quit"] = "Ctrl+Q",
     };

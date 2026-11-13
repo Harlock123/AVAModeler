@@ -178,6 +178,15 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).
     Edge tools read their edges through `Selection.ActiveEdges` (Core), which follows the app's selection rules.
+    `KnifeTool` (EdgeTools.cs) is `Knife.Cut` in Geometry: the plane through a line along a depth, new points
+    (`Mesh.AddPointBetween`, which carries UVs and point maps) on every polygon sharing a cut edge.
+  - Symmetry: `Document.Symmetry` (an `Axis?`, not an undo step) is copied onto every `Selection` the document is
+    given (`Selection.Symmetry`), so `ActivePoints`, `ActiveEdges` and `ActivePolygons` include the partners
+    (`Core/Symmetry.cs`: `Pairs` by position within `Symmetry.Tolerance`, cached by mesh version; `PolygonPairs`;
+    `MirrorPick`, which the views call after a pick). `ActivePointsAsSelected` is the selection without them.
+    `Tool.MapPoints` moves each pair together (the chosen one, or the one moved more, leads; the other gets its mirror;
+    the plane's points stay on it), so a tool that moves points should go through `MapPoints` (its layer-and-index
+    overload, as Jitter does) rather than writing `mesh.Points` itself.
 - `src/AVAModeler.Rendering/`: `IRenderer` with the software and OpenGL (Silk.NET) renderers, view cameras and
   picking. `Texturing.cs` is what both renderers' textured faces share (`Texturing.Fragment` is the C# twin of the GL
   fragment shader): image layers by their corners' UVs, procedural layers from each pixel's interpolated point

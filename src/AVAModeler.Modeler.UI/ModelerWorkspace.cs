@@ -178,6 +178,11 @@ public sealed class ModelerWorkspace : DockPanel
             ["Style ShadedWireframe"] = () => SetStyle(DisplayStyle.ShadedWireframe),
             ["Backface Tint"] = () => { s.Preferences.BackfaceTint = !s.Preferences.BackfaceTint; D().Notify(); },
             ["Snap"] = ToggleSnap,
+            ["Symmetry"] = () => SetSymmetry(D().Symmetry switch { null => Axis.X, Axis.X => Axis.Y, Axis.Y => Axis.Z, _ => null }),
+            ["Symmetry X"] = () => SetSymmetry(Axis.X),
+            ["Symmetry Y"] = () => SetSymmetry(Axis.Y),
+            ["Symmetry Z"] = () => SetSymmetry(Axis.Z),
+            ["Symmetry Off"] = () => SetSymmetry(null),
             ["Center Selection"] = () => SetCenter(ActionCenter.Selection),
             ["Center Mouse"] = () => SetCenter(ActionCenter.Mouse),
             ["Center Origin"] = () => SetCenter(ActionCenter.Origin),
@@ -244,6 +249,14 @@ public sealed class ModelerWorkspace : DockPanel
     {
         Session.Preferences.PerspectiveStyle = style;
         Session.Document.Notify();
+    }
+
+    /// <summary>Models with symmetry across an axis, or not (null); says so in the status bar.</summary>
+    public void SetSymmetry(Axis? axis)
+    {
+        Session.Document.Symmetry = axis;
+        Session.Document.Notify();
+        Session.SetStatus(axis is { } a ? $"Symmetry: {a} (tools work on both sides of {a} = 0)." : "Symmetry off.");
     }
 
     private void ToggleSnap()
@@ -573,7 +586,8 @@ public sealed class ModelerWorkspace : DockPanel
                 Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), Item("Mesh _Info", "Mesh Info"), Item("_Backdrop…", "Backdrop"), "-",
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
                     Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",
-                    Item("Meta_NURBS", "MetaNURBS"), Item("Backface _Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-", Item("_Layout", "Show Layout")),
+                    Item("Meta_NURBS", "MetaNURBS"), Item("Backface _Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-",
+                    Group("S_ymmetry", Item("_Next (Off, X, Y, Z)", "Symmetry"), Item("_X", "Symmetry X"), Item("_Y", "Symmetry Y"), Item("_Z", "Symmetry Z"), Item("_Off", "Symmetry Off")), "-", Item("_Layout", "Show Layout")),
                 Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin"), "-", ChatItem(), _agents),
                 Group("_Help", Item("_Keyboard", "Keyboard"), Item("_About", "About")),
             },

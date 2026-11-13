@@ -66,7 +66,7 @@ public sealed class ToolTabs : DockPanel
         ["Tools"] = [("Cut", "Cut"), ("Copy", "Copy"), ("Paste", "Paste"), ("Swap Layers", "Swap Layers"), ("Run Macro", "Run Macro")],
         ["Display"] = [("Fit All", "Fit All"), ("Fit Selected", "Fit Selected"), ("Maximize", "Maximize View"), ("Numeric", "Numeric Panel"), ("Mesh Info", "Mesh Info"), ("Backdrop…", "Backdrop"), ("UV View", "UV View"), ("Next UV Map", "Next UV Map"), ("Wireframe", "Style Wireframe"),
             ("Shaded", "Style Shaded"), ("Shaded + Wire", "Style ShadedWireframe"), ("MetaNURBS", "MetaNURBS"), ("Backfaces", "Backface Tint"),
-            ("Snap to Grid", "Snap"), ("Center: Selection", "Center Selection"), ("Center: Mouse", "Center Mouse"), ("Center: Origin", "Center Origin"),
+            ("Snap to Grid", "Snap"), ("Symmetry", "Symmetry"), ("Center: Selection", "Center Selection"), ("Center: Mouse", "Center Mouse"), ("Center: Origin", "Center Origin"),
             ("Surfaces…", "Surface Editor"), ("Preferences…", "Preferences")],
     };
 

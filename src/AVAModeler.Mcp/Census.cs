@@ -124,6 +124,7 @@ internal static class Census
             : new JsonArray(doc.Surfaces.Select(s => (JsonNode)Surface(doc, s)).ToArray());
         result["uv_maps"] = new JsonArray(doc.UVMapNames().Select(n => (JsonNode)n).ToArray());
         result["current_uv_map"] = doc.ActiveUVMap;
+        result["symmetry"] = doc.Symmetry?.ToString().ToLowerInvariant() ?? "off";
         result["selection"] = Selection(doc);
         result["undo"] = UndoState(doc);
         if (!doc.Backdrops.IsEmpty) result["backdrops"] = Backdrops(doc);

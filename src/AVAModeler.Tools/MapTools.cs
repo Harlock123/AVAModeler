@@ -37,14 +37,18 @@ public abstract class BrushTool : Tool
     {
         _stroke = null;
         _last = null;
+        _cache = null;
     }
+
+    /// <summary>Whether dabs land on the surface as it is now (sculpting) rather than as it was when the stroke began (painting).</summary>
+    protected virtual bool HitsCurrentSurface => false;
 
     protected override void OnDrag(DragInfo d)
     {
         _stroke ??= [];
         if (d.Ray is not { } ray) return;
         var layers = Doc.ForegroundLayers.ToList();
-        var hit = Brushes.Raycast([.. layers.Select(Original)], ray);
+        var hit = Brushes.Raycast([.. layers.Select(l => HitsCurrentSurface ? Doc.Layers[l].Mesh : Original(l))], ray);
         if (hit is not { } h) { _last = null; return; }
         int layer = layers[h.Mesh];
         var at = h.Hit.Point;
@@ -53,10 +57,26 @@ public abstract class BrushTool : Tool
         foreach (var p in Brushes.Space([last, at], Spacing).Skip(1)) { _stroke.Add((layer, p, pressure)); _last = p; }
     }
 
+    // The stroke as far as the last update went, so each update lays only the new dabs.
+    private Dictionary<int, Mesh>? _cache;
+    private int _cached;
+    private string? _cacheKey;
+
+    private string Key() => string.Join("|", Parameters.Select(p => $"{p.Name}={p.Value}")) + $"|{Doc.Symmetry}|{Doc.Selection.Any}";
+
     protected override void Apply()
     {
-        foreach (var (layer, at, pressure) in Dabs)
+        var dabs = Dabs;
+        int start = 0;
+        string key = Key();
+        if (_stroke != null && _cache != null && _cacheKey == key && _cached <= dabs.Count && _cache.Keys.All(l => l < Doc.Layers.Count))
         {
+            foreach (var (l, m) in _cache) Doc.Layers[l].Mesh.TakeFrom(m.Clone());
+            start = _cached;
+        }
+        for (int i = start; i < dabs.Count; i++)
+        {
+            var (layer, at, pressure) = dabs[i];
             if (layer >= Doc.Layers.Count) continue;
             var mesh = Doc.Layers[layer].Mesh;
             var allowed = Doc.Selection.Any ? Doc.Selection.ActivePoints(layer, mesh).ToHashSet() : null;
@@ -65,7 +85,16 @@ public abstract class BrushTool : Tool
                 DabAt(layer, mesh, allowed, Symmetry.Mirror(at, axis), pressure, mirrored: true);
         }
         foreach (int l in Doc.ForegroundLayers) Doc.Layers[l].Mesh.Touch();
+        if (_stroke != null && Cacheable)
+        {
+            _cache = Doc.ForegroundLayers.ToDictionary(l => l, l => Doc.Layers[l].Mesh.Clone());
+            _cached = dabs.Count;
+            _cacheKey = key;
+        }
     }
+
+    /// <summary>Whether a stroke's result so far can be kept and built on (not for a brush whose dabs all change together, as Grab's do).</summary>
+    protected virtual bool Cacheable => true;
 
     /// <summary>One dab: change the points under <paramref name="at"/>. <paramref name="mirrored"/> for symmetry's twin.</summary>
     protected abstract void DabAt(int layer, Mesh mesh, IReadOnlySet<int>? allowed, Vec3 at, double pressure, bool mirrored);
@@ -230,5 +259,166 @@ public sealed class WeightsFromSkelegonsTool : Tool
             if (names.Count > 0) { Doc.CurrentWeightMap = names[0]; Doc.ShownPointMap = names[0]; }
         }
         if (made == 0) throw new InvalidOperationException("Weights from Skelegons needs skelegons in a foreground layer: 2-point polygons on a surface named Skelegon… (Points, then Make Polygon with two points, on a Skelegon surface).");
+    }
+}
+
+/// <summary>
+/// A sculpt brush (the Sculpt tab): drag over the model and the surface under the brush moves, dab by dab, on the
+/// mesh's points (with MetaNURBS on, the cage's). One undo step a stroke. From a script, one dab at Center.
+/// </summary>
+public abstract class SculptTool : BrushTool
+{
+    public override string Tab => "Sculpt";
+    public abstract SculptBrush Brush { get; }
+    protected override bool HitsCurrentSurface => true;
+
+    [Param("Invert", Description = "Dig in instead of building up (Draw, Inflate, Crease), or push apart instead of pinching.")] public bool Invert { get; set; }
+
+    protected override void DabAt(int layer, Mesh mesh, IReadOnlySet<int>? allowed, Vec3 at, double pressure, bool mirrored) =>
+        Sculpting.Dab(mesh, Brushes.Under(mesh, allowed, at, Radius, Falloff), Brush, at, Radius, Strength * pressure, Invert);
+}
+
+public sealed class DrawBrushTool : SculptTool
+{
+    public override string Name => "Draw Brush";
+    public override SculptBrush Brush => SculptBrush.Draw;
+    public override string Help => "Drag over the surface to build it up (Invert digs in).";
+    public override string Summary => "A sculpt brush that raises the surface under it along its average normal (Invert lowers it): at Strength 1, a tenth of Radius at the centre each dab, fading by Falloff. Run from a script it lays one dab at Center; sculpt (MCP) lays a stroke.";
+}
+
+public sealed class InflateBrushTool : SculptTool
+{
+    public override string Name => "Inflate Brush";
+    public override SculptBrush Brush => SculptBrush.Inflate;
+    public override string Help => "Drag to swell the surface out along each point's normal.";
+    public override string Summary => "A sculpt brush that pushes each point under it out along its own normal (Invert shrinks), swelling a shape evenly round.";
+}
+
+public sealed class SmoothBrushTool : SculptTool
+{
+    public override string Name => "Smooth Brush";
+    public override SculptBrush Brush => SculptBrush.Smooth;
+    public override string Help => "Drag to smooth the surface under the brush.";
+    public override string Summary => "A sculpt brush that eases each point under it toward its neighbours' average, by Strength at the centre.";
+}
+
+public sealed class PinchBrushTool : SculptTool
+{
+    public override string Name => "Pinch Brush";
+    public override SculptBrush Brush => SculptBrush.Pinch;
+    public override string Help => "Drag along an edge to pinch the surface toward the brush (sharpens creases and ridges).";
+    public override string Summary => "A sculpt brush that draws points toward its centre across the surface (Invert spreads them), tightening edges and ridges.";
+}
+
+public sealed class FlattenBrushTool : SculptTool
+{
+    public override string Name => "Flatten Brush";
+    public override SculptBrush Brush => SculptBrush.Flatten;
+    public override string Help => "Drag to flatten the surface onto its plane under the brush.";
+    public override string Summary => "A sculpt brush that moves the points under it onto the plane of the surface there (their weighted average place and normal), by Strength.";
+}
+
+public sealed class CreaseBrushTool : SculptTool
+{
+    public override string Name => "Crease Brush";
+    public override SculptBrush Brush => SculptBrush.Crease;
+    public override string Help => "Drag to cut a sharp groove (Invert raises a ridge).";
+    public override string Summary => "A sculpt brush that pinches points toward its centre and pushes them in: a sharp groove along the stroke (Invert: a ridge).";
+}
+
+/// <summary>Grab: moves the points under the brush with the drag, as one piece.</summary>
+public sealed class GrabBrushTool : SculptTool
+{
+    public override string Name => "Grab Brush";
+    public override SculptBrush Brush => SculptBrush.Grab;
+    public override string Help => "Press on the surface and drag: what's under the brush comes along, fading toward its edge.";
+    public override string Summary => "A sculpt brush that moves the points within Radius of Center by Offset, fully at the centre and fading by Falloff: pulling out a nose, an ear or a horn. From the mouse, Center is where the press lands and Offset the drag.";
+
+    [Param("Offset", Distance = true, Description = "How far, and which way, the points under the brush move.")] public Vec3 Offset { get; set; }
+
+    private bool _grabbed;
+    protected override bool Cacheable => false;
+
+    protected override void OnBegin()
+    {
+        base.OnBegin();
+        _grabbed = false;
+    }
+
+    protected override void OnDrag(DragInfo d)
+    {
+        if (d.First || !_grabbed)
+        {
+            if (d.Ray is not { } ray) return;
+            var layers = Doc.ForegroundLayers.ToList();
+            if (Brushes.Raycast([.. layers.Select(Original)], ray) is not { } hit) return;
+            Center = hit.Hit.Point;
+            _grabbed = true;
+        }
+        Offset = d.Delta;
+    }
+
+    protected override void Apply()
+    {
+        foreach (int layer in Doc.ForegroundLayers)
+        {
+            var mesh = Doc.Layers[layer].Mesh;
+            var allowed = Doc.Selection.Any ? Doc.Selection.ActivePoints(layer, mesh).ToHashSet() : null;
+            var under = Brushes.Under(mesh, allowed, Center, Radius, Falloff);
+            var mirrored = Doc.Symmetry is { } axis && !Symmetry.OnPlane(Center, axis)
+                ? Brushes.Under(mesh, allowed, Symmetry.Mirror(Center, axis), Radius, Falloff) : null;
+            Sculpting.Dab(mesh, under, SculptBrush.Grab, Center, Radius, Strength, Invert, Offset);
+            if (mirrored != null) Sculpting.Dab(mesh, mirrored, SculptBrush.Grab, Center, Radius, Strength, Invert, Symmetry.Mirror(Offset, Doc.Symmetry!.Value));
+            mesh.Touch();
+        }
+    }
+
+    protected override void DabAt(int layer, Mesh mesh, IReadOnlySet<int>? allowed, Vec3 at, double pressure, bool mirrored) { }
+}
+
+/// <summary>Paint Colors: a brush that paints a colour map.</summary>
+public sealed class PaintColorsTool : BrushTool
+{
+    public override string Name => "Paint Colors";
+    public override string Tab => "Maps";
+    public override string Help => "Drag over the model to paint the colour map.";
+    public override string Summary => "A brush that paints Color ([r, g, b], 0 to 255) into a colour map (Map, made if new; the current one if empty), mixing toward it by Strength at the centre, fading over Radius. A surface shows the map in renders when its vertex colour map names it (set_surface vertex_color_map); the shaded views show it with Show Map. Run from a script it lays one dab at Center.";
+
+    [Param("Map", Description = "The colour map to paint (made if new); empty for the current one.")] public string Map { get; set; } = "";
+    [Param("Color", Step = 1, Min = 0, Max = 255, Description = "The colour, [r, g, b] from 0 to 255.")] public Vec3 Color { get; set; } = new(255, 64, 32);
+
+    protected override void DabAt(int layer, Mesh mesh, IReadOnlySet<int>? allowed, Vec3 at, double pressure, bool mirrored)
+    {
+        var map = MapChoice.Color(Doc, mesh, Map);
+        Doc.ShownPointMap = map.Name;
+        var target = Color / 255;
+        foreach (var (p, w) in Brushes.Under(mesh, allowed, at, Radius, Falloff))
+        {
+            var was = map.Color(p) ?? Vec3.One;
+            map.SetColor(p, Vec3.Lerp(was, target, Math.Clamp(Strength * pressure * w, 0, 1)));
+        }
+    }
+}
+
+/// <summary>Set Color: fills the selection's points with a colour.</summary>
+public sealed class SetColorTool : Tool
+{
+    public override string Name => "Set Color";
+    public override string Tab => "Maps";
+    public override ToolKind Kind => ToolKind.Requester;
+    public override string Summary => "Gives the selected points (every point, with none selected) Color ([r, g, b], 0 to 255) in the colour map Map (made if new; the current one if empty).";
+
+    [Param("Map", Description = "The colour map (made if new); empty for the current one.")] public string Map { get; set; } = "";
+    [Param("Color", Step = 1, Min = 0, Max = 255, Description = "The colour, [r, g, b] from 0 to 255.")] public Vec3 Color { get; set; } = new(255, 255, 255);
+
+    protected override void Apply()
+    {
+        foreach (var (_, mesh, points) in ActivePoints())
+        {
+            var map = MapChoice.Color(Doc, mesh, Map);
+            foreach (int p in points) map.SetColor(p, Color / 255);
+            mesh.Touch();
+        }
+        Doc.ShownPointMap = Doc.CurrentColorMap;
     }
 }

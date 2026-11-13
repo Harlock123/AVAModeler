@@ -107,3 +107,78 @@ public sealed partial class ModelerTools
     internal static JsonArray MapsJson(Mesh mesh) =>
         new([.. mesh.PointMaps.Select(m => (JsonNode)new JsonObject { ["name"] = m.Name, ["kind"] = m.Kind.ToString().ToLowerInvariant(), ["points"] = m.Values.Count })]);
 }
+
+public sealed partial class ModelerTools
+{
+    /// <summary>The brushes sculpt takes, by the name agents give, and the tool each is.</summary>
+    internal static readonly Dictionary<string, string> BrushTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["draw"] = "Draw Brush", ["inflate"] = "Inflate Brush", ["smooth"] = "Smooth Brush", ["pinch"] = "Pinch Brush",
+        ["flatten"] = "Flatten Brush", ["crease"] = "Crease Brush", ["grab"] = "Grab Brush",
+        ["paint_weights"] = "Paint Weights", ["paint_colors"] = "Paint Colors",
+    };
+
+    [McpServerTool(Name = "sculpt", Destructive = true)]
+    [Description("Runs a brush along a stroke over the current layer's surface, as dragging it in the app does, as one undo step: draw (raises along the surface's normal; invert digs), inflate (swells along each point's normal), smooth, pinch (draws points toward the stroke; sharpens), flatten, crease (a groove; invert a ridge), grab (moves what's under the stroke's first point by the stroke's last point minus its first), paint_weights or paint_colors. Each stroke point is moved onto the nearest place on the surface, then the stroke is spaced into dabs a quarter of the radius apart. A draw dab at strength 1 raises the centre by a tenth of the radius, so several passes (or a longer stroke) build up. With set_symmetry on, the mirror of the stroke works too. Brushes move the mesh's points: give the area enough points first (Subdivide, or Remesh). Check with render_view.")]
+    public Task<string> Sculpt(
+        [Description("draw, inflate, smooth, pinch, flatten, crease, grab, paint_weights or paint_colors.")] string brush,
+        [Description("The stroke: points [x, y, z] in metres on (or near) the surface, in order. One point is one dab.")] double[][] stroke,
+        [Description("How far a dab reaches, metres (default 0.25).")] double radius = 0.25,
+        [Description("How much a dab does at its centre, 0 to 1 (default 0.5).")] double strength = 0.5,
+        [Description("smooth (default), linear, sharp, dome or constant.")] string falloff = "smooth",
+        [Description("Sculpt brushes: dig in instead of building up (or spread instead of pinching).")] bool invert = false,
+        [Description("paint_weights: the weight map (made if new); paint_colors: the colour map.")] string? map = null,
+        [Description("paint_weights: add (default), subtract, set or smooth.")] string? mode = null,
+        [Description("paint_weights with mode set: the weight, 0 to 1.")] double? value = null,
+        [Description("paint_colors: the colour [r, g, b], 0 to 255.")] double[]? color = null,
+        [Description("How many times to run the stroke (default 1).")] int passes = 1,
+        CancellationToken cancel = default) =>
+        Do($"sculpted with {brush}", c =>
+        {
+            if (!BrushTools.TryGetValue(brush.Trim(), out var toolName))
+                throw new ArgumentException($"There's no brush \"{brush}\": use {string.Join(", ", BrushTools.Keys)}.");
+            if (stroke.Length == 0) throw new ArgumentException("A stroke needs at least one point.");
+            if (!(radius > 0) || !double.IsFinite(radius)) throw new ArgumentException("radius must be more than 0 metres.");
+            if (passes < 1 || passes > 50) throw new ArgumentException("passes must be from 1 to 50.");
+            var points = stroke.Select((p, i) => Json.Vector(p, $"stroke point {i}")).ToList();
+            int layer = c.Document.CurrentLayer;
+            var mesh = c.Document.Layers[layer].Mesh;
+            if (mesh.Polygons.All(p => p.Count < 3)) throw new ArgumentException("The current layer has no faces to sculpt: make or open an object first.");
+            var bvh = Brushes.BvhOf(mesh);
+            var onSurface = points.Select(p => bvh.Nearest(p)?.Point ?? p).ToList();
+            var before = Census.Of(c.Document);
+            var args = new Dictionary<string, object?>
+            {
+                ["Radius"] = radius, ["Strength"] = strength, ["Falloff"] = Json.Choice<BrushFalloff>(falloff, "falloff").ToString(),
+            };
+            var probe = c.Registry.Create(toolName);
+            if (probe.Parameter("Invert") != null) args["Invert"] = invert;
+            if (map != null) args["Map"] = map;
+            if (mode != null) args["Mode"] = Json.Choice<WeightPaintMode>(mode, "mode").ToString();
+            if (value is { } v) args["Value"] = v;
+            if (color != null) args["Color"] = new Vec3(Json.Colour(color, "color").R, Json.Colour(color, "color").G, Json.Colour(color, "color").B);
+            c.Document.Group($"Sculpt ({brush})", () =>
+            {
+                for (int pass = 0; pass < passes; pass++)
+                {
+                    var tool = (BrushTool)c.Registry.Create(toolName);
+                    foreach (var (k, val) in args) tool.Parameter(k)!.Assign(val);
+                    if (tool is GrabBrushTool grab)
+                    {
+                        grab.Center = onSurface[0];
+                        grab.Offset = points[^1] - points[0];
+                        tool.Run(c.Context);
+                        continue;
+                    }
+                    tool.Begin(c.Context);
+                    tool.SetStroke(layer, onSurface);
+                    tool.Update();
+                    tool.Commit();
+                }
+            });
+            var result = Census.Changes(c.Document, before, toolName);
+            result["dabs_per_pass"] = toolName == "Grab Brush" ? 1 : Brushes.Space(onSurface, Math.Max(radius * 0.25, 1e-6)).Count;
+            if (c.Document.ShownPointMap is { } shown) result["shown_map"] = shown;
+            return result;
+        }, cancel);
+}

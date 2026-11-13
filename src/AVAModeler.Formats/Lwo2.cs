@@ -160,6 +160,16 @@ public static class Lwo2
                     if (s.Smoothing) s.SmoothingAngle = angle;
                     break;
                 case "SIDE": s.DoubleSided = c.U2() == 3; break;
+                case "VCOL":
+                    Lenient(() =>
+                    {
+                        float intensity = c.F4();
+                        c.VX();
+                        c.Id4();
+                        s.VertexColorMap = c.S0() is { Length: > 0 } name ? name : null;
+                        s.VertexColorIntensity = Math.Clamp(intensity, 0, 1);
+                    });
+                    break;
             }
         }
     }

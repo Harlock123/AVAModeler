@@ -789,6 +789,8 @@ public static class SceneJson
         public bool Smoothing { get; set; }
         public bool DoubleSided { get; set; }
         public List<TextureDto>? Textures { get; set; }
+        public string? VertexColorMap { get; set; }
+        public double? VertexColorIntensity { get; set; }
 
         public static SurfaceDto Of(Surface s) => new()
         {
@@ -796,6 +798,8 @@ public static class SceneJson
             Glossiness = s.Glossiness, Luminosity = s.Luminosity, Reflection = s.Reflection, Transparency = s.Transparency,
             SmoothingAngle = s.SmoothingAngle, Smoothing = s.Smoothing, DoubleSided = s.DoubleSided,
             Textures = s.Textures.Count == 0 ? null : s.Textures.Select(TextureDto.Of).ToList(),
+            VertexColorMap = s.VertexColorMap,
+            VertexColorIntensity = s.VertexColorMap == null || s.VertexColorIntensity == 1 ? null : s.VertexColorIntensity,
         };
 
         private static byte Channel(int v) => (byte)Math.Clamp(v, 0, 255);
@@ -806,6 +810,8 @@ public static class SceneJson
             Diffuse = Diffuse, Specular = Specular, Glossiness = Glossiness, Luminosity = Luminosity, Reflection = Reflection,
             Transparency = Transparency, SmoothingAngle = SmoothingAngle, Smoothing = Smoothing, DoubleSided = DoubleSided,
             Textures = Textures?.Select(t => t.ToLayer()).ToList() ?? [],
+            VertexColorMap = VertexColorMap,
+            VertexColorIntensity = VertexColorIntensity ?? 1,
         };
     }
 

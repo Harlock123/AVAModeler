@@ -46,6 +46,8 @@ public static class Lwob
 
     /// <summary>The SURF sub-chunk AVA keeps a surface's node graph in.</summary>
     public const string NodesId = "AVND";
+    /// <summary>A surface's vertex colour map, as LWO2's VCOL sub-chunk: intensity, envelope, map type and name.</summary>
+    public const string VertexColorId = "VCOL";
 
     /// <summary>The SURF sub-chunks that map onto <see cref="Surface"/>'s typed fields, in the order they're written.</summary>
     private static readonly string[] TypedIds =
@@ -219,6 +221,15 @@ public static class Lwob
                 throw new FormatException($"{context}'s node graph can't be read: {e.Message}", e);
             }
         }
+        if (chunks.Find(c => c.Id == VertexColorId) is { } vcol)
+        {
+            var r = new IffReader(vcol.Data, 0, vcol.Data.Length, $"{context} VCOL");
+            float intensity = r.F4();
+            r.VX();
+            r.Id4();
+            s.VertexColorMap = r.S0() is { Length: > 0 } name ? name : null;
+            s.VertexColorIntensity = Math.Clamp(intensity, 0, 1);
+        }
         foreach (var c in chunks.Where(c => TypedIds.Contains(c.Id)).OrderBy(c => c.Id == "FLAG" ? 0 : c.Id[0] == 'V' ? 2 : 1))
         {
             var r = new IffReader(c.Data, 0, c.Data.Length, $"{context} {c.Id}");
@@ -290,8 +301,17 @@ public static class Lwob
         Set("VTRN", s.Transparency > 0, w => w.F4((float)s.Transparency));
         Set("SMAN", s.Smoothing, w => w.F4((float)(s.SmoothingAngle * Math.PI / 180.0)));
         var chunks = WithTextures(list, s.Textures);
-        // The node graph last, or none.
-        chunks = [.. chunks.Where(c => c.Id != NodesId)];
+        // The vertex colour map and the node graph last, or none.
+        chunks = [.. chunks.Where(c => c.Id != NodesId && c.Id != VertexColorId)];
+        if (s.VertexColorMap != null)
+        {
+            var w = new IffWriter();
+            w.F4((float)s.VertexColorIntensity);
+            w.VX(0);
+            w.Id4("RGB ");
+            w.S0(s.VertexColorMap);
+            chunks.Add(new RawChunk(VertexColorId, w.ToArray()));
+        }
         if (s.Nodes != null)
         {
             var json = System.Text.Encoding.UTF8.GetBytes(s.Nodes.ToJson());

@@ -190,6 +190,15 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     on `Geometry/WeightMaps.cs` (`Dab`, `Smooth`, `Normalize`, `Mirror`, `FromSkelegons`, `HeatColor`) and
     `Geometry/Brushes.cs` (`BrushFalloff`, `Under`, `Space`, `Raycast` with a cached BVH per mesh). Agents:
     `set_weights`, `get_weights`, `auto_weights` (`Mcp/MapTools.cs`); macros `setweight` and `getweight`.
+  - Sculpting: `SculptTool` (MapTools.cs, `HitsCurrentSurface`: dabs land on the surface as it is now) and its brushes
+    (Draw, Inflate, Smooth, Pinch, Flatten, Crease Brush; `GrabBrushTool` moves the points under Center by Offset) on
+    `Geometry/Sculpting.cs` (`Dab`, heights a tenth of the radius at strength 1, `PointNormal`, `AreaNormal`).
+    `BrushTool` keeps the stroke's result so far (`_cache`, keyed by every parameter, symmetry and whether anything is
+    selected), so each update lays only the new dabs. Colours: Paint Colors and Set Color (0 to 255 in, 0 to 1 in the
+    map); `Surface.VertexColorMap` and `VertexColorIntensity` (LWOB/LWO2 `VCOL` sub-chunk, .avascene's `SurfaceDto`,
+    in `Signature`) multiply the colour in the ray tracer (`TriangleTexture.Colors`, only when set) and become glTF's
+    `COLOR_0` and OBJ's `v x y z r g b` (both read into the map "Color"). Agents: `sculpt` (`Mcp/MapTools.cs`,
+    `BrushTools` names the brushes).
   - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).

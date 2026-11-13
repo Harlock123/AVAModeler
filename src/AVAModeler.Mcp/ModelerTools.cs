@@ -341,6 +341,8 @@ public sealed partial class ModelerTools(IModelerHost host)
         [Description("Smooth-shade it (faces meeting at under smoothing_angle look like one curved surface).")] bool? smoothing = null,
         [Description("Smoothing angle in degrees, 0 to 180 (default 89.5).")] double? smoothing_angle = null,
         [Description("Draw and render both sides of its faces.")] bool? double_sided = null,
+        [Description("A colour map (painted with run_tool \"Paint Colors\" or \"Set Color\", or read from glTF or OBJ) whose colours multiply the surface's colour in renders and glTF; \"\" for none.")] string? vertex_color_map = null,
+        [Description("With vertex_color_map: how much the map's colours count, 0 to 1 (default 1).")] double? vertex_color_intensity = null,
         [Description("Give the surface to the selected polygons (all of the foreground's if none are selected). False only changes the look.")] bool assign = true,
         CancellationToken cancel = default) =>
         Do($"set the {name} surface", c =>
@@ -357,6 +359,7 @@ public sealed partial class ModelerTools(IModelerHost host)
             Json.Fraction(reflection, "reflection");
             Json.Fraction(transparency, "transparency");
             if (glossiness is { } g && (g < 1 || g > 1024 || !double.IsFinite(g))) throw new ArgumentException("glossiness must be from 1 to 1024 (16 low, 64 medium, 256 high, 1024 very high).");
+            Json.Fraction(vertex_color_intensity, "vertex_color_intensity");
             if (smoothing_angle is { } a && (a < 0 || a > 180 || !double.IsFinite(a))) throw new ArgumentException("smoothing_angle must be from 0 to 180 degrees.");
             var before = Census.Of(c.Document);
             c.Group($"Surface {name}", () =>
@@ -376,6 +379,8 @@ public sealed partial class ModelerTools(IModelerHost host)
                     if (smoothing is { } sm) s.Smoothing = sm;
                     if (smoothing_angle is { } an) s.SmoothingAngle = an;
                     if (double_sided is { } ds) s.DoubleSided = ds;
+                    if (vertex_color_map != null) s.VertexColorMap = vertex_color_map.Trim() is { Length: > 0 } vc ? vc : null;
+                    if (vertex_color_intensity is { } vi) s.VertexColorIntensity = vi;
                 }, []);
                 return 0;
             });

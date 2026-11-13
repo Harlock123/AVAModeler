@@ -51,7 +51,8 @@ this engine as a submodule, so every change is additive: existing files, tools a
 
 ## Milestone C: sculpting and vertex colours
 
-**Status:** not started.
+**Status:** done. `Geometry/Sculpting.cs`, `SculptTool` and its brushes (the Sculpt tab), Paint Colors and Set Color,
+`Surface.VertexColorMap`; agents' `sculpt`.
 
 1. **Sculpt brushes** (a Sculpt tab): Draw, Inflate, Smooth, Grab, Pinch, Flatten and Crease. Each has Radius,
    Strength, Falloff, Invert and Pen Pressure. A stroke is a run of dabs where the mouse ray meets the mesh, spaced at

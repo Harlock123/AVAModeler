@@ -15,6 +15,8 @@ public static class Gltf
 {
     /// <summary>The UV map that TEXCOORD_0 goes into when a glTF file is read.</summary>
     public const string UVMapName = Obj.UVMapName;
+    /// <summary>The colour map COLOR_0 goes into when a glTF file is read (and the surfaces using it take it as their vertex colours).</summary>
+    public const string ColorMapName = "Color";
 
     /// <summary>
     /// Writes an object: a node and a mesh for each layer with faces (named after the layer, or "Layer n"), one
@@ -208,6 +210,13 @@ public static class Gltf
                 int[] indices = Int(primitive["indices"]) is int ia and >= 0
                     ? [.. Accessor(ia, out _).Select(v => (int)v)]
                     : [.. Enumerable.Range(0, count)];
+                double[]? colors = null;
+                int colorSize = 0;
+                if (Int(attributes?["COLOR_0"]) is int ca and >= 0)
+                {
+                    colors = Accessor(ca, out colorSize);
+                    if (colorSize is not (3 or 4) || colors.Length / colorSize != count) colors = null;
+                }
                 double[]? normals = null;
                 if (Int(attributes?["NORMAL"]) is int na and >= 0)
                 {
@@ -225,6 +234,15 @@ public static class Gltf
                         mesh.Points.Add(p);
                     }
                     points[i] = at;
+                }
+                if (colors != null)
+                {
+                    // glTF's vertex colours are linear; the map keeps them as they are (0 to 1), and the surface multiplies them in.
+                    var map = mesh.FindPointMap(ColorMapName, PointMapKind.Rgb) ?? mesh.AddPointMap(ColorMapName, PointMapKind.Rgb);
+                    for (int i = 0; i < count; i++)
+                        map.SetColor(points[i], new Vec3(colors[i * colorSize], colors[i * colorSize + 1], colors[i * colorSize + 2]));
+                    var s = _doc.Surfaces[surface];
+                    s.VertexColorMap = ColorMapName;
                 }
                 foreach (var (a, b, c) in Triangles(indices, mode))
                 {

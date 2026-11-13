@@ -188,6 +188,21 @@ public sealed class SurfaceEditor : Window
         both.IsCheckedChanged += (_, _) => { s.DoubleSided = both.IsChecked == true; Changed(); };
         _fields.Children.Add(smooth);
         _fields.Children.Add(both);
+        // Vertex colours: a colour map (Maps tab) whose colours multiply the surface's in renders.
+        var colorMaps = new List<string> { "(none)" };
+        colorMaps.AddRange(_session.Document.Layers.SelectMany(l => l.Mesh.PointMaps).Where(m => m.IsColor).Select(m => m.Name).Distinct());
+        if (s.VertexColorMap != null && !colorMaps.Contains(s.VertexColorMap)) colorMaps.Add(s.VertexColorMap);
+        var vcol = new ComboBox { Name = "VertexColorMap", ItemsSource = colorMaps, SelectedItem = s.VertexColorMap ?? "(none)", HorizontalAlignment = HorizontalAlignment.Stretch };
+        vcol.SelectionChanged += (_, _) =>
+        {
+            string? chosen = vcol.SelectedItem as string is "(none)" or null ? null : (string)vcol.SelectedItem;
+            if (chosen == s.VertexColorMap) return;
+            s.VertexColorMap = chosen;
+            Changed();
+        };
+        _fields.Children.Add(Label("Vertex colours"));
+        _fields.Children.Add(vcol);
+        _fields.Children.Add(Slider("Vertex colour %", s.VertexColorIntensity * 100, 0, 100, v => s.VertexColorIntensity = v / 100));
         Button? nodes = null;
         nodes = Look.MakeButton("Nodes…", () => OpenNodes(s, nodes), "The surface's node graph: textures, gradients and sums wired into its settings (seen in renders)");
         Look.SetOn(nodes, s.Nodes?.Output?.Links.Count > 0);

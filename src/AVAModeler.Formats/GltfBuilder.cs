@@ -92,6 +92,11 @@ public sealed class GltfBuilder
             var positions = new List<float>();
             var normals = new List<float>();
             var texcoords = new List<float>();
+            var colors = new List<float>();
+            // A surface taking a colour map writes it as COLOR_0, which glTF multiplies into the base colour as the ray tracer does.
+            var colorMap = surface?.VertexColorMap is { } vcName ? mesh.FindPointMap(vcName, PointMapKind.Rgb) : null;
+            if (colorMap is { IsColor: false }) colorMap = null;
+            double vcIntensity = Math.Clamp(surface?.VertexColorIntensity ?? 1, 0, 1);
             var indices = new List<int>();
             var vertexOf = new Dictionary<(int Point, Vec3 Normal, Vec2 UV), int>();
             double limit = Math.Cos(Mat4.Deg(Math.Clamp(surface?.SmoothingAngle ?? 0, 0, 180)));
@@ -126,6 +131,11 @@ public sealed class GltfBuilder
                         normals.AddRange([(float)gn.X, (float)gn.Y, (float)gn.Z]);
                         // glTF's V runs down the image from its top; LightWave's up from its bottom.
                         if (uvs) texcoords.AddRange([(float)uv.X, (float)(1 - uv.Y)]);
+                        if (colorMap != null)
+                        {
+                            var vc = Vec3.Lerp(Vec3.One, colorMap.Color(point) ?? Vec3.One, vcIntensity);
+                            colors.AddRange([(float)vc.X, (float)vc.Y, (float)vc.Z]);
+                        }
                     }
                     vertex[c] = v;
                 }
@@ -140,6 +150,7 @@ public sealed class GltfBuilder
                 ["NORMAL"] = FloatAccessor(normals, 3, ArrayBuffer, withBounds: false),
             };
             if (uvs) attributes["TEXCOORD_0"] = FloatAccessor(texcoords, 2, ArrayBuffer, withBounds: false);
+            if (colorMap != null) attributes["COLOR_0"] = FloatAccessor(colors, 3, ArrayBuffer, withBounds: false);
             var primitive = new JsonObject { ["attributes"] = attributes, ["indices"] = IndexAccessor(indices, positions.Count / 3), ["mode"] = 4 };
             if (surface != null) primitive["material"] = bake != null ? BakedMaterial(surface, bake) : Material(surface, imageBase, uvs ? texture : null);
             primitives.Add(primitive);

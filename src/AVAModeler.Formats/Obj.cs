@@ -12,6 +12,8 @@ public static class Obj
 {
     /// <summary>The UV map that an OBJ file's <c>vt</c> coordinates go into, and textures from its .mtl use.</summary>
     public const string UVMapName = "UV";
+    /// <summary>The colour map vertex colours ("v x y z r g b") go into when an OBJ file is read.</summary>
+    public const string ColorMapName = "Color";
 
     /// <summary>
     /// Reads an OBJ file. <c>v</c> become points; <c>f</c> faces (any of the v, v/vt, v//vn, v/vt/vn forms, with
@@ -29,6 +31,8 @@ public static class Obj
     {
         var doc = new Document { Surfaces = [] };
         var vertices = new List<Vec3>();
+        // Vertex colours, as the common "v x y z r g b" extension writes them (0 to 1), by vertex.
+        var vertexColors = new Dictionary<int, Vec3>();
         var texcoords = new List<Vec2>();
         // Each face's corners' vt numbers, in its point order, for those that have them.
         var faceUVs = new Dictionary<Polygon, int[]>();
@@ -102,6 +106,7 @@ public static class Obj
             {
                 case "v":
                     if (words.Length < 3) throw Error("a vertex needs x, y and z");
+                    if (words.Length >= 6) vertexColors[vertices.Count] = new Vec3(Number(words[3], Error), Number(words[4], Error), Number(words[5], Error));
                     vertices.Add(new Vec3(Number(words[0], Error), Number(words[1], Error), Negate(Number(words[2], Error))));
                     declaredIn.Add(layer);
                     referenced.Add(false);
@@ -148,7 +153,10 @@ public static class Obj
         for (int i = 0; i < occupied.Count; i++)
         {
             var mesh = doc.Layers[i].Mesh;
-            GivePoints(mesh, vertices, loose[i]);
+            GivePoints(mesh, vertices, loose[i], vertexColors);
+            if (mesh.FindPointMap(ColorMapName) != null)
+                foreach (int si in mesh.Polygons.Select(p => p.Surface).Distinct())
+                    if (si >= 0 && si < doc.Surfaces.Count) doc.Surfaces[si].VertexColorMap ??= ColorMapName;
             foreach (var poly in mesh.Polygons)
                 if (faceUVs.TryGetValue(poly, out var uvs))
                     for (int c = 0; c < poly.Count; c++) mesh.SetCornerUV(UVMapName, poly, poly.Points[c], texcoords[uvs[c]]);
@@ -163,12 +171,17 @@ public static class Obj
     /// Turns a layer's polygons from global vertex indices into its own points: the vertices it uses plus any extra
     /// ones, kept in file order.
     /// </summary>
-    private static void GivePoints(Mesh mesh, List<Vec3> vertices, IEnumerable<int> extra)
+    private static void GivePoints(Mesh mesh, List<Vec3> vertices, IEnumerable<int> extra, Dictionary<int, Vec3>? colors = null)
     {
         var used = mesh.Polygons.SelectMany(p => p.Points).Concat(extra).Distinct().Order().ToList();
         var local = new Dictionary<int, int>(used.Count);
         foreach (int v in used) local[v] = local.Count;
         mesh.Points = used.Select(v => vertices[v]).ToList();
+        if (colors is { Count: > 0 } && used.Any(colors.ContainsKey))
+        {
+            var map = mesh.AddPointMap(ColorMapName, PointMapKind.Rgb);
+            foreach (int v in used) if (colors.TryGetValue(v, out var c)) map.SetColor(local[v], c);
+        }
         foreach (var p in mesh.Polygons)
             for (int i = 0; i < p.Points.Count; i++) p.Points[i] = local[p.Points[i]];
         mesh.Touch();
@@ -281,7 +294,18 @@ public static class Obj
             var mesh = doc.Layers[i].Mesh;
             if (mesh.IsEmpty) continue;
             obj.Write($"o {(doc.Layers[i].Name.Length > 0 ? doc.Layers[i].Name : $"Layer {i + 1}")}\n");
-            foreach (var p in mesh.Points) obj.Write(Inv($"v {p.X:R} {p.Y:R} {Negate(p.Z):R}\n"));
+            // Vertex colours go on the v lines (r g b, 0 to 1) from the current colour map, or the first.
+            var colorMap = mesh.FindPointMap(doc.CurrentColorMap ?? "", PointMapKind.Rgb) ?? mesh.PointMaps.FirstOrDefault(m => m.IsColor);
+            for (int pi = 0; pi < mesh.Points.Count; pi++)
+            {
+                var p = mesh.Points[pi];
+                if (colorMap == null) obj.Write(Inv($"v {p.X:R} {p.Y:R} {Negate(p.Z):R}\n"));
+                else
+                {
+                    var c = colorMap.Color(pi) ?? Vec3.One;
+                    obj.Write(Inv($"v {p.X:R} {p.Y:R} {Negate(p.Z):R} {(float)c.X:R} {(float)c.Y:R} {(float)c.Z:R}\n"));
+                }
+            }
             // The layer's UVs as a list of distinct coordinates, and each face's corners' places in it.
             var map = mesh.FindUVMap(doc.ActiveUVMap ?? "") ?? mesh.UVMaps.FirstOrDefault();
             var texIndex = new Dictionary<Vec2, int>();

@@ -54,7 +54,7 @@ public sealed class ToolTabs : DockPanel
     private readonly Dictionary<string, Button> _toolButtons = [];
     private string _tab = "Objects";
 
-    public static readonly string[] TabNames = ["Objects", "Modify", "Multiply", "Polygon", "Maps", "Tools", "Display"];
+    public static readonly string[] TabNames = ["Objects", "Modify", "Multiply", "Polygon", "Sculpt", "Maps", "Tools", "Display"];
 
     /// <summary>Commands that aren't tools, by tab: (label, command name).</summary>
     public Dictionary<string, List<(string Label, string Command)>> Extras { get; } = new()
@@ -63,6 +63,7 @@ public sealed class ToolTabs : DockPanel
         ["Modify"] = [],
         ["Multiply"] = [],
         ["Polygon"] = [("Select Loop", "Select Loop"), ("Select Ring", "Select Ring")],
+        ["Sculpt"] = [("Symmetry", "Symmetry"), ("MetaNURBS", "MetaNURBS")],
         ["Maps"] = [("Show Map", "Show Map"), ("Next Map", "Next Point Map")],
         ["Tools"] = [("Cut", "Cut"), ("Copy", "Copy"), ("Paste", "Paste"), ("Swap Layers", "Swap Layers"), ("Run Macro", "Run Macro")],
         ["Display"] = [("Fit All", "Fit All"), ("Fit Selected", "Fit Selected"), ("Maximize", "Maximize View"), ("Numeric", "Numeric Panel"), ("Mesh Info", "Mesh Info"), ("Backdrop…", "Backdrop"), ("UV View", "UV View"), ("Next UV Map", "Next UV Map"), ("Wireframe", "Style Wireframe"),

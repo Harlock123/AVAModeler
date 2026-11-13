@@ -103,7 +103,10 @@ public static partial class RayTracer
         public NodeProgram? Nodes { get; init; }
         /// <summary>The object it's on (for light linking).</summary>
         public ObjectItem? Owner { get; init; }
-        public bool Textured => Layers.Count > 0 || Nodes != null;
+        /// <summary>The colour map whose colours multiply the surface's (a share <see cref="VertexColorIntensity"/>), or null.</summary>
+        public string? VertexColorMap { get; init; }
+        public double VertexColorIntensity { get; init; } = 1;
+        public bool Textured => Layers.Count > 0 || Nodes != null || VertexColorMap != null;
         public bool TexturedTransparency => Layers.Any(l => l.Layer.Channel == TextureChannel.Transparency) || Nodes != null;
     }
 
@@ -117,6 +120,8 @@ public static partial class RayTracer
         public required Vec3 A, B, C, Normal;
         public required Vec2[][] Corners;
         public required bool[] Mapped;
+        /// <summary>The corners' vertex colours, when the surface takes a colour map.</summary>
+        public Vec3[]? Colors;
     }
 
     /// <summary>What a surface is like where a ray hit it, after its textures: the settings shading uses, and the normal.</summary>
@@ -487,6 +492,8 @@ public static partial class RayTracer
                 Layers = layers,
                 Procedurals = layers.Select(l => l.t.IsImage ? null : Core.Procedurals.Prepare(l.t)).ToList(),
                 Nodes = SurfaceNodes.Compile(s.Nodes),
+                VertexColorMap = s.VertexColorMap,
+                VertexColorIntensity = Math.Clamp(s.VertexColorIntensity, 0, 1),
             };
         }
 
@@ -563,7 +570,10 @@ public static partial class RayTracer
                         else mapped[k] = false;
                 corners[k] = uv;
             }
-            _textures.Add(new TriangleTexture { A = P(a), B = P(b), C = P(c), Normal = normal, Corners = corners, Mapped = mapped });
+            Vec3[]? colors = null;
+            if (m.VertexColorMap is { } vc && mesh.FindPointMap(vc, PointMapKind.Rgb) is { IsColor: true } map)
+                colors = [map.Color(a) ?? Vec3.One, map.Color(b) ?? Vec3.One, map.Color(c) ?? Vec3.One];
+            _textures.Add(new TriangleTexture { A = P(a), B = P(b), C = P(c), Normal = normal, Corners = corners, Mapped = mapped, Colors = colors });
             return _textures.Count - 1;
         }
 
@@ -581,6 +591,11 @@ public static partial class RayTracer
             var local = tex.A * w0 + tex.B * hit.U + tex.C * hit.V;
             double footprint = distance * _spread;
             var (color, diffuse, specular, luminosity, reflection, transparency, n) = look;
+            if (tex.Colors is { } vcs)
+            {
+                var vc = vcs[0] * w0 + vcs[1] * hit.U + vcs[2] * hit.V;
+                color = Vec3.Scale(color, Vec3.Lerp(Vec3.One, vc, m.VertexColorIntensity));
+            }
             for (int k = 0; k < m.Layers.Count; k++)
             {
                 var (t, img) = m.Layers[k];

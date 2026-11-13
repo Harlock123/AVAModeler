@@ -189,6 +189,11 @@ internal static class Census
             ["textures"] = new JsonArray(s.Textures.Select(t => (JsonNode)Texture(t)).ToArray()),
         };
         if (s.Nodes != null) o["nodes"] = NodeGraphJson.Write(s.Nodes);
+        if (s.VertexColorMap != null)
+        {
+            o["vertex_color_map"] = s.VertexColorMap;
+            o["vertex_color_intensity"] = Round(s.VertexColorIntensity);
+        }
         return o;
     }
 

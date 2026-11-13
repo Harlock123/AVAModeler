@@ -72,8 +72,10 @@ public sealed class MovieEncoder(string? ffmpeg)
         if (audio != null)
         {
             // The sound lined up with the frames: skipped into when the movie starts after it, delayed when before.
+            // Its input goes with the frames' input, before -frames:v (an output option).
             string at = Math.Abs(audio.OffsetSeconds).ToString("0.######", CultureInfo.InvariantCulture);
-            args.AddRange(audio.OffsetSeconds >= 0 ? ["-ss", at, "-i", audio.Path] : ["-itsoffset", at, "-i", audio.Path]);
+            int outputs = args.IndexOf("-frames:v");
+            args.InsertRange(outputs < 0 ? args.Count : outputs, audio.OffsetSeconds >= 0 ? ["-ss", at, "-i", audio.Path] : ["-itsoffset", at, "-i", audio.Path]);
             args.AddRange(["-map", "0:v:0", "-map", "1:a:0"]);
         }
         if (width % 2 != 0 || height % 2 != 0) args.AddRange(["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]);

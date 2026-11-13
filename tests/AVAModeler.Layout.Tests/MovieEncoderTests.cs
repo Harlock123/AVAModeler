@@ -129,6 +129,7 @@ public class MovieEncoderTests : IDisposable
         int s = later.IndexOf("-ss");
         Assert.Equal(["-ss", "2.5", "-i", "v.wav"], later.Skip(s).Take(4));
         Assert.Contains("-shortest", later);
+        Assert.True(later.LastIndexOf("-i") < later.IndexOf("-frames:v"), "the sound's input must come before the output options");
         Assert.Equal("volume=0.5", later[later.IndexOf("-af") + 1]);
         Assert.Equal("1:a:0", later[later.LastIndexOf("-map") + 1]);
         Assert.Equal("m.mp4", later[^1]);

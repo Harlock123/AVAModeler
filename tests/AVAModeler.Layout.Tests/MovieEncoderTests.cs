@@ -121,4 +121,20 @@ public class MovieEncoderTests : IDisposable
     }
 
     private static int IndexOf(byte[] data, byte[] what) => data.AsSpan().IndexOf(what);
+
+    [Fact]
+    public void An_mp4_carries_the_sound_lined_up_with_its_frames()
+    {
+        var later = MovieEncoder.Mp4Arguments("f", "frame", 30, 10, 64, 48, "m.mp4", new MovieAudio("v.wav", 2.5, 0.5));
+        int s = later.IndexOf("-ss");
+        Assert.Equal(["-ss", "2.5", "-i", "v.wav"], later.Skip(s).Take(4));
+        Assert.Contains("-shortest", later);
+        Assert.Equal("volume=0.5", later[later.IndexOf("-af") + 1]);
+        Assert.Equal("1:a:0", later[later.LastIndexOf("-map") + 1]);
+        Assert.Equal("m.mp4", later[^1]);
+        var sooner = MovieEncoder.Mp4Arguments("f", "frame", 30, 10, 64, 48, "m.mp4", new MovieAudio("v.wav", -1, 1));
+        Assert.Equal(["-itsoffset", "1", "-i", "v.wav"], sooner.Skip(sooner.IndexOf("-itsoffset")).Take(4));
+        Assert.DoesNotContain("-af", sooner);
+        Assert.Single(MovieEncoder.Mp4Arguments("f", "frame", 30, 10, 64, 48, "m.mp4"), a => a == "-i");
+    }
 }

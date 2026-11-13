@@ -146,3 +146,30 @@ public sealed record MotionBlur
         return this;
     }
 }
+
+/// <summary>
+/// The scene's sound track: a WAV file, the scene frame its start plays at (null: the scene's first frame), and its
+/// volume. Movies made from the scene's frames carry it; AVALightWave shows its waveform and plays it. Immutable:
+/// change it with <c>with</c> and <see cref="Checked"/> it.
+/// </summary>
+public sealed record SceneAudio
+{
+    /// <summary>The sound file (full path in memory; relative to the scene in .avascene), or empty for none.</summary>
+    public string Path { get; init; } = "";
+    /// <summary>The frame the sound's start plays at, or null for the scene's first frame.</summary>
+    public double? StartFrame { get; init; }
+    /// <summary>Its loudness, 0 (silent) to 2 (twice as loud).</summary>
+    public double Volume { get; init; } = 1;
+
+    public bool On => !string.IsNullOrWhiteSpace(Path);
+
+    public SceneAudio Checked()
+    {
+        if (!double.IsFinite(Volume) || Volume < 0 || Volume > 2) throw new ArgumentException($"The sound's volume must be from 0 to 2 (it's {Volume}).");
+        if (StartFrame is { } s && !double.IsFinite(s)) throw new ArgumentException("The sound's start frame must be a number.");
+        return this;
+    }
+
+    /// <summary>Seconds into the sound at a scene frame (negative before it starts).</summary>
+    public double SecondsAt(double frame, double firstFrame, double fps) => (frame - (StartFrame ?? firstFrame)) / (fps > 0 ? fps : 30);
+}

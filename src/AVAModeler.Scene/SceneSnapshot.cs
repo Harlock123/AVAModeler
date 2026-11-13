@@ -25,6 +25,7 @@ public sealed class SceneSnapshot
     private readonly CompositingSettings _compositing;
     private readonly IReadOnlyList<SceneImage> _images;
     private readonly IReadOnlyDictionary<string, string> _extras;
+    private readonly SceneAudio _audio;
     private readonly CameraItem? _camera;
     private readonly List<SceneItem> _items;
     private readonly List<ItemState> _states;
@@ -40,6 +41,7 @@ public sealed class SceneSnapshot
         (_occlusion, _environment) = (scene.Occlusion, scene.Environment);
         (_compositing, _images) = (scene.Compositing, scene.Images);
         _extras = scene.Extras;
+        _audio = scene.Audio;
         _camera = scene.CameraField;
         _items = [.. scene.ItemList];
         _states = _items.Select(i => new ItemState(i)).ToList();
@@ -67,6 +69,7 @@ public sealed class SceneSnapshot
         (Scene.Occlusion, Scene.Environment) = (_occlusion, _environment);
         (Scene.Compositing, Scene.Images) = (_compositing, _images);
         Scene.Extras = _extras;
+        Scene.Audio = _audio;
         Scene.Notify();
     });
 

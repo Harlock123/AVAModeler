@@ -42,6 +42,8 @@ public sealed partial class Scene
     public EnvironmentSettings Environment = new();
     /// <summary>The background and foreground images laid behind and over the render (none by default).</summary>
     public CompositingSettings Compositing = new();
+    /// <summary>The scene's sound track (none by default).</summary>
+    public SceneAudio Audio = new();
 
     private IReadOnlyList<SceneImage> _images = [];
 
@@ -258,7 +260,7 @@ public sealed partial class Scene
             AmbientColor = AmbientColor, AmbientIntensity = AmbientIntensity, BackgroundColor = BackgroundColor,
             GradientBackground = GradientBackground, GradientTop = GradientTop, GradientBottom = GradientBottom,
             Fog = Fog, FogMinDistance = FogMinDistance, FogMaxDistance = FogMaxDistance, FogColor = FogColor,
-            Occlusion = Occlusion, Environment = Environment, Compositing = Compositing, _images = _images, _extras = _extras,
+            Occlusion = Occlusion, Environment = Environment, Compositing = Compositing, _images = _images, _extras = _extras, Audio = Audio,
         };
         var docs = new Dictionary<Document, Document>(ReferenceEqualityComparer.Instance);
         var map = new Dictionary<SceneItem, SceneItem>();

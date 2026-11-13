@@ -96,6 +96,7 @@ public static class SceneJson
                     Path = Relative(i.Path, baseDir) ?? i.Path, Sequence = i.Sequence ? true : null, Offset = i.Offset == 0 ? null : i.Offset, Loop = i.Loop ? true : null,
                 }).ToList(),
                 Compositing = scene.Compositing == new CompositingSettings() ? null : CompositingDto.Of(scene.Compositing, p => Relative(p, baseDir) ?? p),
+                Audio = scene.Audio.On ? scene.Audio with { Path = Relative(scene.Audio.Path, baseDir) ?? scene.Audio.Path } : null,
                 Extras = scene.Extras.Count == 0 ? null : scene.Extras.ToDictionary(kv => kv.Key, kv => JsonDocument.Parse(kv.Value).RootElement.Clone()),
             },
             CurrentCamera = scene.CurrentCamera is { } cam ? items.IndexOf(cam) : null,
@@ -228,6 +229,11 @@ public static class SceneJson
             Images = (s.Images ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Path))
                 .Select(i => new SceneImage { Path = Absolute(i.Path, baseDir)!, Sequence = i.Sequence == true, Offset = i.Offset ?? 0, Loop = i.Loop == true }).ToList(),
         };
+        if (s.Audio is { On: true } audio)
+        {
+            try { scene.Audio = (audio with { Path = Absolute(audio.Path, baseDir) ?? audio.Path }).Checked(); }
+            catch (ArgumentException e) { warnings.Add(e.Message); }
+        }
         if (s.Extras is { Count: > 0 } extras) scene.Extras = extras.ToDictionary(kv => kv.Key, kv => kv.Value.GetRawText());
         if (s.Compositing is { } comp)
         {
@@ -549,6 +555,7 @@ public static class SceneJson
         public List<ImageDto>? Images { get; set; }
         public CompositingDto? Compositing { get; set; }
         public Dictionary<string, JsonElement>? Extras { get; set; }
+        public SceneAudio? Audio { get; set; }
     }
 
     /// <summary>An entry in the scene's image list; its path relative to the scene's folder when it's in it or below it.</summary>

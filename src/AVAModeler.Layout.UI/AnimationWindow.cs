@@ -229,7 +229,10 @@ public sealed class AnimationWindow : Window
                 {
                     _status.Text += " Making the movie…";
                     var name = string.IsNullOrEmpty(_session.ScenePath) ? "animation" : Path.GetFileNameWithoutExtension(_session.ScenePath);
-                    var movies = Movies = await Encoder.EncodeAsync(settings.Folder, settings.Name, fps, result.Files.Count, settings.Width, settings.Height, formats, name, token);
+                    var s = _session.Scene;
+                    var sound = s.Audio.On && settings.Frames.Count > 0
+                        ? new MovieAudio(s.Audio.Path, s.Audio.SecondsAt(settings.Frames[0], s.FirstFrame, s.FramesPerSecond), s.Audio.Volume) : null;
+                    var movies = Movies = await Encoder.EncodeAsync(settings.Folder, settings.Name, fps, result.Files.Count, settings.Width, settings.Height, formats, name, sound, token);
                     _status.Text = $"Rendered {result.Files.Count} frames in {AnimationRender.Duration(result.Elapsed)}";
                     _status.Text += movies.Files.Count > 0 ? $" and made {string.Join(" and ", movies.Files.Select(Path.GetFileName))}." : ".";
                     if (movies.Problem != null) _status.Text += " " + movies.Problem;

@@ -278,6 +278,10 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     ("path.position"), and `MotionPath`, the centripetal Catmull–Rom curve measured by length (`At`, `PointAt`,
     `TangentAt`, `TurnAt`, `Polyline`). `MotionSolver` puts a following item where its path says
     (`MotionPositionAt`, used by `LocalMatrix`; `PositionAt` stays the keys').
+  - `Scene.Audio` (`SceneAudio`, in `RenderEffects.cs`): the scene's sound track (a WAV file, the frame its start plays
+    at, its volume), relative in .avascene, in `Scene.Copy` and snapshots; `MovieEncoder.EncodeAsync`'s `MovieAudio`
+    puts it in MP4s lined up with the frames (`SecondsAt`), as render_animation, make_movie and the Render Animation
+    window do. Not in .lws. AVALightWave draws its waveform and plays it.
   - `Scene.Extras` (`Extra`, `SetExtra`): JSON text by name that a program keeps with the scene and the engine never
     reads (AVALightWave's camera bookmarks and action clips), in .avascene's settings, `Scene.Copy` and snapshots.
     Name keys after the program ("avalightwave.bookmarks"). Not in .lws.

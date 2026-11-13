@@ -1018,7 +1018,7 @@ public sealed partial class ModelerTools
         };
         if (formats.Count > 0)
         {
-            var (made, problem) = await MakeMovies(job.paths, job.movies, formats, job.fps, job.pw, job.ph, job.files, RenderTimeLimit, cancel).ConfigureAwait(false);
+            var (made, problem) = await MakeMovies(job.paths, job.movies, formats, job.fps, job.pw, job.ph, job.files, RenderTimeLimit, cancel, Sound(job.copy, job.frames[0])).ConfigureAwait(false);
             info["movies"] = Strings(made);
             info["movie_fps"] = Census.Round(job.fps, 3);
             if (problem != null) info["movie_problem"] = problem;
@@ -1059,12 +1059,12 @@ public sealed partial class ModelerTools
                 throw new ArgumentException($"{missing.Count} of the {paths.Count} frames aren't in {folder}: {string.Join(", ", missing.Take(5))}{(missing.Count > 5 ? "…" : "")}. Render them with render_animation first.");
             var movies = formats.Select(f => MovieEncoder.MoviePath(dir, name, f)).ToList();
             files.CheckWritable(movies, overwrite);
-            return (paths, movies, files, fps: fps ?? s.FramesPerSecond / step);
+            return (paths, movies, files, fps: fps ?? s.FramesPerSecond / step, audio: Sound(s, a));
         }, cancel, changes: false).ConfigureAwait(false);
         var (w, h) = PngSize(job.paths[0]);
         var odd = job.paths.Skip(1).FirstOrDefault(p => PngSize(p) != (w, h));
         if (odd != null) throw new McpException($"{Path.GetFileName(odd)} isn't {w}×{h} like {Path.GetFileName(job.paths[0])}; every frame of a movie must be the same size.");
-        var (made, problem) = await MakeMovies(job.paths, job.movies, formats, job.fps, w, h, job.files, AnimationTimeLimit, cancel).ConfigureAwait(false);
+        var (made, problem) = await MakeMovies(job.paths, job.movies, formats, job.fps, w, h, job.files, AnimationTimeLimit, cancel, job.audio).ConfigureAwait(false);
         var info = new JsonObject
         {
             ["frames"] = job.paths.Count,
@@ -1096,6 +1096,10 @@ public sealed partial class ModelerTools
         set => _movies = value;
     }
 
+    /// <summary>The scene's sound for a movie whose first frame is <paramref name="first"/>, or null for none.</summary>
+    private static MovieAudio? Sound(AVAModeler.Scene.Scene s, double first) =>
+        s.Audio.On ? new MovieAudio(s.Audio.Path, s.Audio.SecondsAt(first, s.FirstFrame, s.FramesPerSecond), s.Audio.Volume) : null;
+
     private static List<MovieFormat> MovieFormats(string? movie)
     {
         string key = new((movie ?? "").ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
@@ -1114,7 +1118,7 @@ public sealed partial class ModelerTools
     /// and <see cref="MovieEncoder"/> reads name0001.png onwards, so copies numbered 1, 2, 3… go in a temporary folder
     /// outside the working folder, which is deleted afterwards; the movies are then copied into place.
     /// </summary>
-    private async Task<(List<string> Made, string? Problem)> MakeMovies(List<string> frames, List<string> targets, List<MovieFormat> formats, double fps, int width, int height, Workspace files, TimeSpan limit, CancellationToken cancel)
+    private async Task<(List<string> Made, string? Problem)> MakeMovies(List<string> frames, List<string> targets, List<MovieFormat> formats, double fps, int width, int height, Workspace files, TimeSpan limit, CancellationToken cancel, MovieAudio? audio = null)
     {
         if (!Movies.Available) return ([], MovieEncoder.NotInstalled);
         string temp = Path.Combine(Path.GetTempPath(), "avamodeler-movie-" + Guid.NewGuid().ToString("N"));
@@ -1124,7 +1128,7 @@ public sealed partial class ModelerTools
             for (int i = 0; i < frames.Count; i++) File.Copy(frames[i], Path.Combine(temp, FormattableString.Invariant($"frame{i + 1:0000}.png")));
             using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancel);
             timer.CancelAfter(limit);
-            var result = await Movies.EncodeAsync(temp, "frame", fps, frames.Count, width, height, formats, "movie", timer.Token).ConfigureAwait(false);
+            var result = await Movies.EncodeAsync(temp, "frame", fps, frames.Count, width, height, formats, "movie", audio, timer.Token).ConfigureAwait(false);
             cancel.ThrowIfCancellationRequested();
             List<string> made = [];
             foreach (var file in result.Files)

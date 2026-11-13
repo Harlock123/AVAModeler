@@ -9,6 +9,9 @@ public enum MovieFormat { Mp4, Gif }
 /// <summary>What an encode made, and what went wrong if anything did (null when all went well).</summary>
 public sealed record MovieResult(IReadOnlyList<string> Files, string? Problem);
 
+/// <summary>A sound to put in an MP4: its file, the seconds into it at the movie's first frame (negative: it starts later), its volume.</summary>
+public sealed record MovieAudio(string Path, double OffsetSeconds, double Volume = 1);
+
 /// <summary>
 /// Joins numbered PNG frames (name0001.png, name0002.png…) into an MP4 (H.264, yuv420p, faststart) and a looping GIF
 /// (one palette, ordered dither, only the changed rectangle of each frame stored) with ffmpeg, if it's on the PATH.
@@ -63,11 +66,24 @@ public sealed class MovieEncoder(string? ffmpeg)
     ];
 
     /// <summary>The MP4's arguments. H.264 in yuv420p needs an even size, so an odd one is padded by a pixel.</summary>
-    public static List<string> Mp4Arguments(string folder, string name, double fps, int count, int width, int height, string output)
+    public static List<string> Mp4Arguments(string folder, string name, double fps, int count, int width, int height, string output, MovieAudio? audio = null)
     {
         var args = InputArguments(folder, name, fps, count);
+        if (audio != null)
+        {
+            // The sound lined up with the frames: skipped into when the movie starts after it, delayed when before.
+            string at = Math.Abs(audio.OffsetSeconds).ToString("0.######", CultureInfo.InvariantCulture);
+            args.AddRange(audio.OffsetSeconds >= 0 ? ["-ss", at, "-i", audio.Path] : ["-itsoffset", at, "-i", audio.Path]);
+            args.AddRange(["-map", "0:v:0", "-map", "1:a:0"]);
+        }
         if (width % 2 != 0 || height % 2 != 0) args.AddRange(["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]);
-        args.AddRange(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart", output]);
+        args.AddRange(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18"]);
+        if (audio != null)
+        {
+            args.AddRange(["-c:a", "aac", "-b:a", "192k", "-shortest"]);
+            if (audio.Volume != 1) args.AddRange(["-af", "volume=" + audio.Volume.ToString("0.###", CultureInfo.InvariantCulture)]);
+        }
+        args.AddRange(["-movflags", "+faststart", output]);
         return args;
     }
 
@@ -90,8 +106,13 @@ public sealed class MovieEncoder(string? ffmpeg)
     /// as <paramref name="movieName"/>.mp4 and .gif. Cancelling stops ffmpeg. Never throws for ffmpeg's failures: the
     /// result says what went wrong.
     /// </summary>
-    public async Task<MovieResult> EncodeAsync(string folder, string name, double fps, int count, int width, int height, IEnumerable<MovieFormat> formats, string movieName, CancellationToken cancel = default)
+    public Task<MovieResult> EncodeAsync(string folder, string name, double fps, int count, int width, int height, IEnumerable<MovieFormat> formats, string movieName, CancellationToken cancel = default) =>
+        EncodeAsync(folder, name, fps, count, width, height, formats, movieName, null, cancel);
+
+    /// <summary>As the other, with a sound put in the MP4 (GIFs have none); a missing sound file is left out.</summary>
+    public async Task<MovieResult> EncodeAsync(string folder, string name, double fps, int count, int width, int height, IEnumerable<MovieFormat> formats, string movieName, MovieAudio? audio, CancellationToken cancel = default)
     {
+        if (audio != null && !File.Exists(audio.Path)) audio = null;
         var wanted = formats.Distinct().ToList();
         if (wanted.Count == 0) return new MovieResult([], null);
         if (Ffmpeg == null) return new MovieResult([], NotInstalled);
@@ -101,7 +122,7 @@ public sealed class MovieEncoder(string? ffmpeg)
         {
             string output = MoviePath(folder, movieName, format);
             var args = format == MovieFormat.Mp4
-                ? Mp4Arguments(folder, name, fps, count, width, height, output)
+                ? Mp4Arguments(folder, name, fps, count, width, height, output, audio)
                 : GifArguments(folder, name, fps, count, width, output);
             var problem = await Run(args, cancel).ConfigureAwait(false);
             if (problem != null) return new MovieResult(made, $"ffmpeg couldn't make {Path.GetFileName(output)}: {problem}");

@@ -96,6 +96,7 @@ public static class SceneJson
                     Path = Relative(i.Path, baseDir) ?? i.Path, Sequence = i.Sequence ? true : null, Offset = i.Offset == 0 ? null : i.Offset, Loop = i.Loop ? true : null,
                 }).ToList(),
                 Compositing = scene.Compositing == new CompositingSettings() ? null : CompositingDto.Of(scene.Compositing, p => Relative(p, baseDir) ?? p),
+                Extras = scene.Extras.Count == 0 ? null : scene.Extras.ToDictionary(kv => kv.Key, kv => JsonDocument.Parse(kv.Value).RootElement.Clone()),
             },
             CurrentCamera = scene.CurrentCamera is { } cam ? items.IndexOf(cam) : null,
             Documents = docDtos,
@@ -227,6 +228,7 @@ public static class SceneJson
             Images = (s.Images ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Path))
                 .Select(i => new SceneImage { Path = Absolute(i.Path, baseDir)!, Sequence = i.Sequence == true, Offset = i.Offset ?? 0, Loop = i.Loop == true }).ToList(),
         };
+        if (s.Extras is { Count: > 0 } extras) scene.Extras = extras.ToDictionary(kv => kv.Key, kv => kv.Value.GetRawText());
         if (s.Compositing is { } comp)
         {
             try
@@ -546,6 +548,7 @@ public static class SceneJson
         public EnvironmentSettings? Environment { get; set; }
         public List<ImageDto>? Images { get; set; }
         public CompositingDto? Compositing { get; set; }
+        public Dictionary<string, JsonElement>? Extras { get; set; }
     }
 
     /// <summary>An entry in the scene's image list; its path relative to the scene's folder when it's in it or below it.</summary>

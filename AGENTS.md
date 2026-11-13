@@ -264,6 +264,9 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     ("path.position"), and `MotionPath`, the centripetal Catmull–Rom curve measured by length (`At`, `PointAt`,
     `TangentAt`, `TurnAt`, `Polyline`). `MotionSolver` puts a following item where its path says
     (`MotionPositionAt`, used by `LocalMatrix`; `PositionAt` stays the keys').
+  - `Scene.Extras` (`Extra`, `SetExtra`): JSON text by name that a program keeps with the scene and the engine never
+    reads (AVALightWave's camera bookmarks and action clips), in .avascene's settings, `Scene.Copy` and snapshots.
+    Name keys after the program ("avalightwave.bookmarks"). Not in .lws.
   - `SceneSnapshot.cs` (`Scene.Snapshot()`) puts a scene back as it was, items by reference (with every setting an
     edit can change, morphs' and displacements' included: extend it when you add one); `Scene.Copy` makes one
     that shares nothing that changes, to render on another thread; `Scene.CopyItems` copies chosen items into a scene,

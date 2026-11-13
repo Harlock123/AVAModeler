@@ -55,6 +55,46 @@ public sealed partial class Scene
         set => _images = [.. value];
     }
 
+    private IReadOnlyDictionary<string, string> _extras = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Data a program keeps with the scene that the engine doesn't use itself (camera bookmarks, action clips…): JSON
+    /// text by name, kept in .avascene files, copied with the scene and put back by undo. Setting it copies it, so the
+    /// one set can't change underneath the scene (or its snapshots). Name keys after the program, e.g.
+    /// "avalightwave.bookmarks".
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Extras
+    {
+        get => _extras;
+        set => _extras = new Dictionary<string, string>(value, StringComparer.Ordinal);
+    }
+
+    /// <summary>One of <see cref="Extras"/>, or null.</summary>
+    public string? Extra(string key) => _extras.TryGetValue(key, out var v) ? v : null;
+
+    /// <summary>Sets (or, with null, removes) one of <see cref="Extras"/>, as JSON text, and notifies.</summary>
+    /// <exception cref="ArgumentException">The text isn't JSON.</exception>
+    public void SetExtra(string key, string? json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        if (json != null)
+        {
+            try
+            {
+                using var _ = System.Text.Json.JsonDocument.Parse(json);
+            }
+            catch (System.Text.Json.JsonException e)
+            {
+                throw new ArgumentException($"The scene's extra \"{key}\" must be JSON: {e.Message}", nameof(json), e);
+            }
+        }
+        var d = new Dictionary<string, string>(_extras, StringComparer.Ordinal);
+        if (json == null) d.Remove(key);
+        else d[key] = json;
+        _extras = d;
+        Notify();
+    }
+
     public IReadOnlyList<SceneItem> Items => _items;
     public IEnumerable<ObjectItem> Objects => _items.OfType<ObjectItem>();
     public IEnumerable<NullItem> Nulls => _items.OfType<NullItem>();
@@ -214,7 +254,7 @@ public sealed partial class Scene
             AmbientColor = AmbientColor, AmbientIntensity = AmbientIntensity, BackgroundColor = BackgroundColor,
             GradientBackground = GradientBackground, GradientTop = GradientTop, GradientBottom = GradientBottom,
             Fog = Fog, FogMinDistance = FogMinDistance, FogMaxDistance = FogMaxDistance, FogColor = FogColor,
-            Occlusion = Occlusion, Environment = Environment, Compositing = Compositing, _images = _images,
+            Occlusion = Occlusion, Environment = Environment, Compositing = Compositing, _images = _images, _extras = _extras,
         };
         var docs = new Dictionary<Document, Document>(ReferenceEqualityComparer.Instance);
         var map = new Dictionary<SceneItem, SceneItem>();

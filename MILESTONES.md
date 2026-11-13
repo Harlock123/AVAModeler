@@ -87,7 +87,8 @@ this engine as a submodule, so every change is additive: existing files, tools a
 
 ## Milestone E: baking, normal maps and glTF
 
-**Status:** not started.
+**Status:** done. `TextureChannel.Normal`, `Geometry/Baking.cs`, `BakeMapsTool`; glTF normal, occlusion, emissive and
+metallic-roughness maps, skins and morph targets; agents' `bake_maps`.
 
 1. **Normal maps.** A Normal texture channel: an image of tangent-space normals through a UV map. The ray tracer
    bends the shading normal with each triangle's tangent frame. The views leave it out, as they do bumps.

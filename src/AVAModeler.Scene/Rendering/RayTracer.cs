@@ -632,6 +632,11 @@ public static partial class RayTracer
                     n = Bump(t, img, uv, n, du, dv, texels);
                     continue;
                 }
+                if (t.Channel == TextureChannel.Normal)
+                {
+                    n = NormalMapped(img.SampleFiltered(uv.X, uv.Y, t.WidthTiling, t.HeightTiling, t.PixelBlending, texels).Item1, n, du, dv, Math.Clamp(t.Opacity, 0, 1));
+                    continue;
+                }
                 var (col, alpha) = img.SampleFiltered(uv.X, uv.Y, t.WidthTiling, t.HeightTiling, t.PixelBlending, texels);
                 if (t.Negative) col = Vec3.One - col;
                 double weight = Math.Clamp(t.Opacity, 0, 1) * alpha;
@@ -704,6 +709,24 @@ public static partial class RayTracer
             if (Math.Abs(det) < 1e-18) return (Vec3.Zero, Vec3.Zero);
             double r = 1 / det;
             return ((tri.E1 * d2.Y - tri.E2 * d1.Y) * r, (tri.E2 * d1.X - tri.E1 * d2.X) * r);
+        }
+
+        /// <summary>
+        /// A normal bent by a tangent-space normal map's colour: red along the image's U direction, green along its V
+        /// (up the image), blue out along the normal, each 0 to 1 for -1 to 1; <paramref name="amount"/> blends from the
+        /// surface's own normal (0) to the map's (1).
+        /// </summary>
+        private static Vec3 NormalMapped(Vec3 color, Vec3 n, Vec3 du, Vec3 dv, double amount)
+        {
+            if (du.LengthSquared == 0 || dv.LengthSquared == 0 || amount <= 0) return n;
+            var t = (du - n * Vec3.Dot(du, n)).Normalized();
+            var b = dv - n * Vec3.Dot(dv, n) - t * Vec3.Dot(dv, t);
+            if (t.LengthSquared == 0 || b.LengthSquared == 0) return n;
+            b = b.Normalized();
+            var m = new Vec3(color.X * 2 - 1, color.Y * 2 - 1, color.Z * 2 - 1);
+            var bent = (t * m.X + b * m.Y + n * m.Z).Normalized();
+            if (bent.LengthSquared == 0) return n;
+            return Vec3.Lerp(n, bent, amount).Normalized();
         }
 
         /// <summary>

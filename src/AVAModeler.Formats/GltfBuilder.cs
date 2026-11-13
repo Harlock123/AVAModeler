@@ -86,6 +86,12 @@ public sealed class GltfBuilder
             var surface = group.Key >= 0 && group.Key < surfaces.Count ? surfaces[group.Key] : null;
             var texture = surface == null ? null : ColourTexture(surface);
             bool uvs = texture != null && ImageBytes(texture, imageBase) != null;
+            if (!uvs) texture = null;
+            // A normal map (and an occlusion map: a colour layer multiplied in) through the same UV map share TEXCOORD_0.
+            var normalMap = surface == null ? null : MapLayer(surface, TextureChannel.Normal, texture, imageBase);
+            var occlusion = surface == null ? null : MapLayer(surface, TextureChannel.Color, texture ?? normalMap, imageBase, multiply: true);
+            var uvSource = texture ?? normalMap ?? occlusion;
+            if (!uvs && uvSource != null) uvs = true;
             // A surface with colour procedurals and no image gets them baked into one.
             var bake = !uvs && surface != null ? ProceduralBake.Of(surface, mesh, group.ToList()) : null;
             if (bake != null) uvs = true;
@@ -105,7 +111,7 @@ public sealed class GltfBuilder
                 var poly = mesh.Polygons[pi];
                 var tris = Triangulator.TriangulatePolygon(mesh, poly);
                 if (tris.Length == 0) continue;
-                var cornerUV = bake != null ? bake.CornerUVs[pi] : uvs ? CornerUVs(mesh, poly, faceNormals[pi], texture!) : null;
+                var cornerUV = bake != null ? bake.CornerUVs[pi] : uvs ? CornerUVs(mesh, poly, faceNormals[pi], uvSource!) : null;
                 var vertex = new int[poly.Count];
                 for (int c = 0; c < poly.Count; c++)
                 {
@@ -152,7 +158,7 @@ public sealed class GltfBuilder
             if (uvs) attributes["TEXCOORD_0"] = FloatAccessor(texcoords, 2, ArrayBuffer, withBounds: false);
             if (colorMap != null) attributes["COLOR_0"] = FloatAccessor(colors, 3, ArrayBuffer, withBounds: false);
             var primitive = new JsonObject { ["attributes"] = attributes, ["indices"] = IndexAccessor(indices, positions.Count / 3), ["mode"] = 4 };
-            if (surface != null) primitive["material"] = bake != null ? BakedMaterial(surface, bake) : Material(surface, imageBase, uvs ? texture : null);
+            if (surface != null) primitive["material"] = bake != null ? BakedMaterial(surface, bake) : Material(surface, imageBase, texture, normalMap, occlusion);
             primitives.Add(primitive);
         }
         if (primitives.Count == 0) return -1;
@@ -178,7 +184,17 @@ public sealed class GltfBuilder
     }
 
     /// <summary>A surface's material (made once): its colour × diffuse as the base colour, glossiness as roughness, luminosity as emission, transparency as alpha.</summary>
-    private int Material(Surface s, string? imageBase, TextureLayer? texture)
+    /// <summary>
+    /// A surface's UV image layer on a channel (the first; with <paramref name="multiply"/>, the first colour layer that
+    /// multiplies, not the colour texture itself) through the same UV map as <paramref name="with"/>, if its image can be had.
+    /// </summary>
+    private TextureLayer? MapLayer(Surface s, TextureChannel channel, TextureLayer? with, string? imageBase, bool multiply = false) =>
+        s.TexturesOf(channel).FirstOrDefault(t => t.IsImage && t.Image.Length > 0 && t.Opacity > 0 && t.Projection == TextureProjection.UV
+            && (!multiply || t.Blend == TextureBlend.Multiply && t != with)
+            && (with == null || with.Projection == TextureProjection.UV && with.UVMap == t.UVMap)
+            && ImageBytes(t, imageBase) != null);
+
+    private int Material(Surface s, string? imageBase, TextureLayer? texture, TextureLayer? normalMap = null, TextureLayer? occlusion = null)
     {
         if (_materialOf.TryGetValue((s, imageBase), out int index)) return index;
         var c = s.Color.ToVec();
@@ -195,6 +211,8 @@ public sealed class GltfBuilder
         };
         if (texture != null && Texture(texture, imageBase) is int tex) pbr["baseColorTexture"] = new JsonObject { ["index"] = tex };
         var m = new JsonObject { ["name"] = s.Name, ["pbrMetallicRoughness"] = pbr };
+        if (normalMap != null && Texture(normalMap, imageBase) is int nt) m["normalTexture"] = new JsonObject { ["index"] = nt };
+        if (occlusion != null && Texture(occlusion, imageBase) is int ot) m["occlusionTexture"] = new JsonObject { ["index"] = ot };
         double glow = Math.Clamp(s.Luminosity, 0, 1);
         if (glow > 0) m["emissiveFactor"] = Numbers(linear.X * glow, linear.Y * glow, linear.Z * glow);
         if (alpha < 1) m["alphaMode"] = "BLEND";

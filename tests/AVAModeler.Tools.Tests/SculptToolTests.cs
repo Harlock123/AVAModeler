@@ -145,3 +145,37 @@ public class MeasureToolTests
         Assert.Equal(8, d.Current.Mesh.Points.Count);
     }
 }
+
+public class BakeToolTests
+{
+    [Fact]
+    public void Bake_maps_writes_a_png_beside_the_object_and_lays_it_on_the_surface()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), $"ava-bake-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var d = new Document { FilePath = Path.Combine(folder, "crate.lwo") };
+            var cmd = new Commands(d);
+            cmd.Run("Box", new Dictionary<string, object?> { ["Size"] = new[] { 1.0, 1, 1 } });
+            cmd.MakeUVs("UV", UVProjection.Atlas, Axis.Y);
+            var tool = (BakeMapsTool)cmd.Run("Bake Maps", new Dictionary<string, object?> { ["Bake"] = "AmbientOcclusion", ["Size"] = 64, ["Samples"] = 8 });
+            Assert.Equal(Path.Combine(folder, "crate_ambientocclusion.png"), tool.Written);
+            Assert.True(File.Exists(tool.Written));
+            var layer = d.Surfaces[0].Textures.Single();
+            Assert.Equal(TextureChannel.Color, layer.Channel);
+            Assert.Equal(TextureBlend.Multiply, layer.Blend);
+            Assert.Equal("UV", layer.UVMap);
+            // Undo takes the layer away again (the picture stays on disk).
+            d.UndoLast();
+            Assert.Empty(d.Surfaces[0].Textures);
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                var plain = new Commands(new Document());
+                plain.Run("Box");
+                plain.Run("Bake Maps", new Dictionary<string, object?> { ["UVMap"] = "Missing", ["File"] = Path.Combine(folder, "x.png") });
+            });
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+}

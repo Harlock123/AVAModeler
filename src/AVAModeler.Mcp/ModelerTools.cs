@@ -60,8 +60,12 @@ public sealed partial class ModelerTools(IModelerHost host)
                 throw new ArgumentException($"{probe.Name} only works with the mouse in the app. {(probe.Name == "Points" ? "Use add_points instead." : "Select the point and use Move instead.")}");
             var args = @params?.ToDictionary(kv => kv.Key, kv => Json.Plain(kv.Value, $"{probe.Name}'s {kv.Key}"), StringComparer.OrdinalIgnoreCase);
             var before = Census.Of(c.Document);
-            var tool = c.Run(name, args);
-            return Census.Changes(c.Document, before, tool.Name);
+            // A tool that writes a file (Bake Maps) writes it inside the working folder.
+            AVAModeler.Tools.Tool tool;
+            using (Files(c).Confine(c, allowDiscard: true)) tool = c.Run(name, args);
+            var result = Census.Changes(c.Document, before, tool.Name);
+            if (tool is BakeMapsTool bake && bake.Written != null) result["written"] = bake.Written;
+            return result;
         }, cancel);
 
     [McpServerTool(Name = "add_points", Destructive = true)]
@@ -395,7 +399,7 @@ public sealed partial class ModelerTools(IModelerHost host)
     public Task<string> SetTexture(
         [Description("The surface's name.")] string surface,
         [Description("The image file, relative to the working folder, e.g. \"images/wood.png\".")] string image,
-        [Description("color (default), diffuse, specular, luminosity, reflection, transparency or bump.")] string channel = "color",
+        [Description("color (default), diffuse, specular, luminosity, reflection, transparency, bump, or normal (a tangent-space normal map, through a uv projection; the ray tracer bends the shading by it).")] string channel = "color",
         [Description("planar (default), cylindrical, spherical, cubic or uv.")] string projection = "planar",
         [Description("x, y or z (default z): the axis a planar image faces along, or a cylinder or sphere wraps round.")] string axis = "z",
         [Description("For projection uv: the UV map's name (default: the current one).")] string? uv_map = null,
@@ -569,6 +573,7 @@ public sealed partial class ModelerTools(IModelerHost host)
             if (string.IsNullOrWhiteSpace(surface)) throw new ArgumentException("A surface name is needed.");
             var type = Procedurals.Find(kind) ?? throw new McpException($"kind must be one of {Procedurals.Keys}, not \"{kind}\".");
             var ch = Json.Choice<TextureChannel>(channel, "channel");
+            if (ch == TextureChannel.Normal) throw new McpException("A procedural can't be a normal map: use bump for a procedural's relief, or bake_maps normal for a normal map.");
             Rgb? rgb = color == null ? null : Json.Colour(color, "color");
             var siz = size == null ? (Vec3?)null : Json.Vector(size, "size");
             if (siz is { } sz && (sz.X <= 0 || sz.Y <= 0 || sz.Z <= 0)) throw new McpException("size must be three positive numbers [x, y, z] in metres.");

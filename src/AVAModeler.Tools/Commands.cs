@@ -171,6 +171,8 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
                 var p = tool.Parameter(k) ?? throw new ArgumentException($"{tool.Name} has no parameter \"{k}\". It has: {string.Join(", ", tool.Parameters.Select(x => x.Name))}.");
                 p.Assign(v);
             }
+        Context.FileSaver = FileSaver == WriteWhole ? null : FileSaver;
+        Context.BaseDirectory = BaseDirectory;
         try
         {
             tool.Run(Context);

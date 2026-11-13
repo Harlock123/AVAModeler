@@ -208,6 +208,15 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     (`BooleanOptions.Weld`, `WeldShare`): `SnapTo` moves the operand's points onto the foreground's points and onto the
     planes of faces they're near, then `WeldPlanes` gives nearly equal planes one and projects the pieces onto it (a
     piece must lie on its own plane, or the BSP splits it by that plane for ever).
+  - Baking: `BakeMapsTool` (MapTools.cs) on `Geometry/Baking.cs` (`Bake`: each face's triangles laid on the picture by
+    UV, every covered pixel worked out at its place: `ToTangent` from the triangle's UV directions, which the ray
+    tracer's `NormalMapped` undoes, so the two must change together; cosine-weighted occlusion rays hashed by pixel;
+    curvature per point; `ColorLook`), then a bleed. It writes through `ToolContext.FileSaver` (Commands' saver, so
+    agents' `run_tool` and `bake_maps`, both under `Workspace.Confine`, stay in the working folder) or straight to disk.
+    `TextureChannel.Normal` is LWOB's `NTEX` header (AVA's own) and glTF's `normalTexture`; `GltfBuilder.MapLayer`
+    picks the normal and occlusion layers sharing TEXCOORD_0. glTF skins become skelegons and weight maps
+    (`Gltf.AddSkelegons`, run after every node's world is known, also into the morph layers so they keep the point
+    count) and morph targets layers.
   - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).

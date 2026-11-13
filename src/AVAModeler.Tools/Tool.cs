@@ -180,6 +180,14 @@ public sealed class ToolContext(Document document)
         return box.Center;
     }
 
+    /// <summary>
+    /// How a tool that writes a file (Bake Maps) writes it: the command API's saver, which agents' sessions keep inside
+    /// their working folder; null writes it straight to disk.
+    /// </summary>
+    public Action<string, byte[]>? FileSaver;
+    /// <summary>The folder a tool's relative file names start from (null: the object's folder).</summary>
+    public string? BaseDirectory;
+
     public double SnapValue(double v) => Snap > 0 ? Math.Round(v / Snap) * Snap : v;
     public Vec3 SnapPoint(Vec3 p) => Snap > 0 ? new Vec3(SnapValue(p.X), SnapValue(p.Y), SnapValue(p.Z)) : p;
 }

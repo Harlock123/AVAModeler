@@ -1,7 +1,11 @@
 namespace AVAModeler.Core;
 
 /// <summary>Which of a surface's settings a texture layer changes.</summary>
-public enum TextureChannel { Color, Diffuse, Specular, Luminosity, Reflection, Transparency, Bump }
+/// <summary>
+/// What a texture layer changes. <see cref="Normal"/> is a tangent-space normal map (red along U, green along V, blue
+/// out of the surface, each 0 to 1 for -1 to 1), through a UV map: the ray tracer bends the shading normal by it.
+/// </summary>
+public enum TextureChannel { Color, Diffuse, Specular, Luminosity, Reflection, Transparency, Bump, Normal }
 
 /// <summary>
 /// How an image is laid onto a surface, as LightWave 5 offered: flat along an axis, wrapped round it as a cylinder or

@@ -96,6 +96,6 @@ public static class ToolGroups
         "select_box", "set_symmetry", "select_all", "select_none", "select_invert", "select_connected", "select_edges", "select_loop", "select_ring",
         "set_layers", "undo", "redo", "new", "open", "save", "set_surface", "set_surface_nodes", "set_texture", "set_backdrop", "set_procedural",
         "remove_textures", "make_uvs", "set_uv_map", "run_lua", "get_document", "get_points", "get_polygons", "check_mesh",
-        "render_view", "render", "set_weights", "get_weights", "auto_weights", "sculpt", "measure", "copy_layer", "add_morph", "slice_to_gcode",
+        "render_view", "render", "set_weights", "get_weights", "auto_weights", "sculpt", "measure", "bake_maps", "copy_layer", "add_morph", "slice_to_gcode",
     };
 }

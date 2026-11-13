@@ -20,6 +20,8 @@ internal static class LwobTextures
         ["CTEX"] = TextureChannel.Color, ["DTEX"] = TextureChannel.Diffuse, ["STEX"] = TextureChannel.Specular,
         ["RTEX"] = TextureChannel.Reflection, ["TTEX"] = TextureChannel.Transparency, ["LTEX"] = TextureChannel.Luminosity,
         ["BTEX"] = TextureChannel.Bump,
+        // AVA's own: a normal map (LightWave 5 had none, and skips a sub-chunk it doesn't know).
+        ["NTEX"] = TextureChannel.Normal,
     };
 
     private static readonly Dictionary<string, TextureProjection> Types = new()

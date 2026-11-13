@@ -422,3 +422,74 @@ public sealed class SetColorTool : Tool
         Doc.ShownPointMap = Doc.CurrentColorMap;
     }
 }
+
+/// <summary>Bake Maps: normal, ambient occlusion, curvature or colour into a picture through a UV map.</summary>
+public sealed class BakeMapsTool : Tool
+{
+    public override string Name => "Bake Maps";
+    public override string Tab => "Maps";
+    public override ToolKind Kind => ToolKind.Requester;
+    public override string Summary => "Bakes into a PNG (File) through a UV map (the current one if empty), for the selected faces (all, with none selected) in the foreground: Normal (tangent-space normals of the detailed mesh in the background layers, found along the low mesh's normals within Distance; with no background, the foreground's own smoothing for a flat surface), AmbientOcclusion (Samples rays a pixel, Distance far), Curvature (edges light, creases dark) or Color (the surface's colour, procedurals and UV images). Padding bleeds the edges. With Hook up, the picture is laid on the faces' surface: a normal map on its Normal channel, occlusion and curvature multiplied into Color, colour as its colour image.";
+
+    [Param("Kind", Description = "Normal, AmbientOcclusion, Curvature or Color.")] public BakeKind Bake { get; set; } = BakeKind.Normal;
+    [Param("File", Description = "The PNG to write (relative to the object's folder, or the working folder for agents); empty: the object's name and the kind.")] public string File { get; set; } = "";
+    [Param("Size", Min = 16, Max = 8192, Step = 256, Description = "Width and height in pixels.")] public int Size { get; set; } = 1024;
+    [Param("Padding", Min = 0, Max = 64, Step = 1, Description = "Pixels the baked areas bleed outward.")] public int Padding { get; set; } = 4;
+    [Param("Samples", Min = 1, Max = 1024, Step = 8, Description = "Ambient occlusion: rays a pixel.")] public int Samples { get; set; } = 32;
+    [Param("Distance", Distance = true, Min = 0, Description = "Normal: how far either side the detailed surface is looked for; occlusion: how far things hide the sky. 0: a twentieth of the object's size.")] public double Distance { get; set; }
+    [Param("UV map", Description = "The UV map to bake through (empty: the current one).")] public string UVMap { get; set; } = "";
+    [Param("Hook up", Description = "Lay the picture on the faces' surface (Normal channel, or multiplied into Color, or as the colour image).")] public bool HookUp { get; set; } = true;
+
+    /// <summary>Where the last run wrote its picture, and how many pixels it covered.</summary>
+    public string? Written { get; private set; }
+    public int Covered { get; private set; }
+
+    protected override void Apply()
+    {
+        string map = string.IsNullOrWhiteSpace(UVMap) ? Doc.ActiveUVMap ?? "" : UVMap.Trim();
+        if (map.Length == 0) throw new InvalidOperationException("Bake Maps needs a UV map: make one with Make UVs (atlas gives every face its own place).");
+        var detail = Bake == BakeKind.Normal || Bake == BakeKind.AmbientOcclusion ? Doc.BackgroundMesh() : null;
+        if (detail is { Polygons.Count: 0 }) detail = null;
+        var settings = new BakeSettings { Kind = Bake, Size = Size, Padding = Padding, Samples = Samples, Distance = Distance, UVMap = map };
+        string? objectFolder = Doc.FilePath is { } fp ? Path.GetDirectoryName(Path.GetFullPath(fp)) : null;
+        string name = string.IsNullOrWhiteSpace(File)
+            ? $"{(Doc.FilePath is { } f ? Path.GetFileNameWithoutExtension(f) : "object")}_{Bake.ToString().ToLowerInvariant()}.png"
+            : File.Trim();
+        if (!name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) name += ".png";
+        string path = Path.IsPathRooted(name) ? name : Path.Combine(Context.BaseDirectory ?? objectFolder ?? Environment.CurrentDirectory, name);
+        BakedMap? baked = null;
+        var surfaces = new HashSet<int>();
+        var whole = new Mesh();
+        var faces = new List<int>();
+        foreach (var (_, mesh, polys) in ActivePolygons())
+        {
+            int offset = whole.Polygons.Count;
+            whole.Append(mesh);
+            faces.AddRange(polys.Select(p => p + offset));
+            foreach (int p in polys) surfaces.Add(mesh.Polygons[p].Surface);
+        }
+        baked = Baking.Bake(whole, faces, Doc.Surfaces, settings, detail, Doc.ImageBase);
+        var png = Png.Encode(baked.Width, baked.Height, baked.Rgba);
+        if (Context.FileSaver is { } save) save(path, png);
+        else Commands.WriteWhole(path, png);
+        Written = path;
+        Covered = baked.Covered;
+        TextureImages.Put(path, new TextureImage(baked.Width, baked.Height, baked.Rgba));
+        if (!HookUp) return;
+        string image = TextureImages.RelativePath(path, Doc.FilePath);
+        foreach (int si in surfaces)
+        {
+            if (si < 0 || si >= Doc.Surfaces.Count) continue;
+            var s = Doc.Surfaces[si];
+            var channel = Bake == BakeKind.Normal ? TextureChannel.Normal : TextureChannel.Color;
+            s.Textures.RemoveAll(t => t.IsImage && t.Image == image);
+            var layer = new TextureLayer
+            {
+                Channel = channel, Image = image, Projection = TextureProjection.UV, UVMap = map,
+                Blend = Bake is BakeKind.AmbientOcclusion or BakeKind.Curvature ? TextureBlend.Multiply : TextureBlend.Normal,
+            };
+            s.Textures.Add(layer);
+            s.Raw = null;
+        }
+    }
+}

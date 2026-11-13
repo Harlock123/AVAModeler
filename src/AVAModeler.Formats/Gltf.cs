@@ -133,6 +133,7 @@ public static class Gltf
             }
             var visited = new HashSet<int>();
             foreach (int n in top) Visit(n, Mat4.Identity, visited);
+            foreach (var (layer, skin, targets) in _skinned) AddSkelegons(layer, skin, targets);
             // A surface is smooth where the file's normals bend across its faces; without normals glTF shades flat.
             for (int i = 0; i < _doc.Surfaces.Count; i++) _doc.Surfaces[i].Smoothing = _smooth.Contains(i);
             if (_doc.Surfaces.Count == 0) _doc.Surfaces.Add(new Surface("Default"));
@@ -146,8 +147,9 @@ public static class Gltf
             if (index < 0 || index >= nodes.Count || !visited.Add(index)) return;
             var node = nodes[index]!;
             var world = parent * Local(node);
+            _worldOf[index] = world;
             int mesh = Int(node["mesh"]);
-            if (mesh >= 0) AddMesh(mesh, world, Str(node["name"]));
+            if (mesh >= 0) AddMesh(mesh, world, Str(node["name"]), Int(node["skin"]));
             foreach (var c in node["children"] as JsonArray ?? []) Visit(Int(c), world, visited);
         }
 
@@ -179,7 +181,50 @@ public static class Gltf
                 0, 0, 0, 1);
         }
 
-        private void AddMesh(int index, Mat4 world, string? nodeName)
+        private readonly Dictionary<int, Mat4> _worldOf = [];
+        private readonly List<(Layer Layer, int Skin, List<Layer> Targets)> _skinned = [];
+
+        /// <summary>A joint's name for its skelegon and weight map: the node's name, or "Joint n".</summary>
+        private string JointName(int node)
+        {
+            var nodes = Array("nodes");
+            string n = node >= 0 && node < nodes.Count && Str(nodes[node]?["name"]) is { Length: > 0 } s ? s : $"Joint {node + 1}";
+            return n.Trim(' ', '_', '-', '.', ':') is { Length: > 0 } t ? t : $"Joint {node + 1}";
+        }
+
+        /// <summary>
+        /// A skin's joints as skelegons in the skinned mesh's layer: each from its joint to its first child joint (or,
+        /// at the end of a chain, on half as far again), on a surface "Skelegon_" and its name, so Layout's bones made
+        /// from them follow the weight maps of their names.
+        /// </summary>
+        private void AddSkelegons(Layer layer, int skin, List<Layer> targets)
+        {
+            var skins = Array("skins");
+            if (skin < 0 || skin >= skins.Count) return;
+            var joints = (skins[skin]?["joints"] as JsonArray ?? []).Select(j => Int(j)).Where(j => j >= 0).ToList();
+            var set = joints.ToHashSet();
+            var nodes = Array("nodes");
+            Vec3 Head(int j) => GltfBuilder.FromGltf(_worldOf.TryGetValue(j, out var w) ? w.TransformPoint(Vec3.Zero) : Vec3.Zero);
+            var parentOf = new Dictionary<int, int>();
+            foreach (int j in joints)
+                foreach (var c in nodes[j]?["children"] as JsonArray ?? [])
+                    if (set.Contains(Int(c))) parentOf.TryAdd(Int(c), j);
+            var mesh = layer.Mesh;
+            foreach (int j in joints)
+            {
+                var head = Head(j);
+                int child = (nodes[j]?["children"] as JsonArray ?? []).Select(c => Int(c)).FirstOrDefault(set.Contains, -1);
+                Vec3 tail;
+                if (child >= 0 && (Head(child) - head).LengthSquared > 1e-18) tail = Head(child);
+                else if (parentOf.TryGetValue(j, out int parent) && (head - Head(parent)).LengthSquared > 1e-18) tail = head + (head - Head(parent)) * 0.5;
+                else tail = head + new Vec3(0, 0.1, 0);
+                int surface = _doc.SurfaceIndex(SkelegonNames.SurfacePrefix + "_" + JointName(j));
+                // The morph targets get them too, so they keep the base's points one for one.
+                foreach (var m in targets.Select(t => t.Mesh).Prepend(mesh)) m.AddPolygon([m.AddPoint(head), m.AddPoint(tail)], surface);
+            }
+        }
+
+        private void AddMesh(int index, Mat4 world, string? nodeName, int skin = -1)
         {
             var meshes = Array("meshes");
             if (index >= meshes.Count) throw new FormatException($"A node uses mesh {index}, which doesn't exist.");
@@ -190,6 +235,8 @@ public static class Gltf
             var pointOf = new Dictionary<Vec3, int>();
             // A mirroring transform turns faces inside out; glTF says to reverse their winding then.
             bool mirrored = world.Determinant() < 0;
+            var targetsOf = new List<(JsonArray Targets, int[] Points)>();
+            var joints = skin >= 0 && skin < Array("skins").Count ? (Array("skins")[skin]?["joints"] as JsonArray ?? []).Select(j => Int(j)).ToList() : null;
             foreach (var primitive in json["primitives"] as JsonArray ?? [])
             {
                 if (primitive == null) continue;
@@ -235,6 +282,24 @@ public static class Gltf
                     }
                     points[i] = at;
                 }
+                if (primitive["targets"] is JsonArray { Count: > 0 } targets) targetsOf.Add((targets, points));
+                // A skin's weights: each vertex's four joints and how much each moves it, as one weight map per joint.
+                if (joints != null && Int(attributes?["JOINTS_0"]) is int ja and >= 0 && Int(attributes?["WEIGHTS_0"]) is int wa and >= 0)
+                {
+                    var jv = Accessor(ja, out int jc);
+                    var wv = Accessor(wa, out int wc);
+                    if (jc == 4 && wc == 4 && jv.Length == count * 4 && wv.Length == count * 4)
+                        for (int i = 0; i < count; i++)
+                            for (int k = 0; k < 4; k++)
+                            {
+                                double weight = wv[i * 4 + k];
+                                int joint = (int)jv[i * 4 + k];
+                                if (weight <= 0 || joint < 0 || joint >= joints.Count) continue;
+                                string mapName = JointName(joints[joint]);
+                                var map = mesh.FindPointMap(mapName, PointMapKind.Weight) ?? mesh.AddPointMap(mapName, PointMapKind.Weight);
+                                map.SetWeight(points[i], Math.Clamp(weight, 0, 1));
+                            }
+                }
                 if (colors != null)
                 {
                     // glTF's vertex colours are linear; the map keeps them as they are (0 to 1), and the surface multiplies them in.
@@ -260,6 +325,36 @@ public static class Gltf
                 }
             }
             mesh.Touch();
+            var targetLayers = new List<Layer>();
+            if (joints != null) _skinned.Add((layer, skin, targetLayers));
+            // Morph targets: each a layer of its own (named as the file names it), the base's points moved by its
+            // offsets, point for point, ready to be a morph target in Layout.
+            if (targetsOf.Count > 0)
+            {
+                var names = json["extras"]?["targetNames"] as JsonArray;
+                int targets = targetsOf.Max(t => t.Targets.Count);
+                for (int k = 0; k < targets; k++)
+                {
+                    var target = Loading.LayerAt(_doc, _layers++);
+                    targetLayers.Add(target);
+                    target.Name = names != null && k < names.Count && Str(names[k]) is { Length: > 0 } tn ? tn : $"{layer.Name} target {k + 1}";
+                    var tm = target.Mesh;
+                    tm.Points = [.. mesh.Points];
+                    tm.Polygons = [.. mesh.Polygons.Select(p => p.Clone())];
+                    foreach (var (list, pts) in targetsOf)
+                    {
+                        if (k >= list.Count || Int(list[k]?["POSITION"]) is not (int pa and >= 0)) continue;
+                        var delta = Accessor(pa, out int dc);
+                        if (dc != 3 || delta.Length / 3 != pts.Length) continue;
+                        for (int i = 0; i < pts.Length; i++)
+                        {
+                            var d = GltfBuilder.FromGltf(world.TransformVector(new Vec3(delta[i * 3], delta[i * 3 + 1], delta[i * 3 + 2])));
+                            tm.Points[pts[i]] = mesh.Points[pts[i]] + d;
+                        }
+                    }
+                    tm.Touch();
+                }
+            }
         }
 
         /// <summary>Whether a triangle's vertex normals differ from its face's (by more than a degree): the file shades it smooth.</summary>
@@ -328,6 +423,16 @@ public static class Gltf
                 surface.DoubleSided = m["doubleSided"] is JsonValue ds && ds.TryGetValue(out bool two) && two;
                 if (pbr?["baseColorTexture"] is JsonNode tex && Int(tex["texCoord"], 0) == 0 && Texture(Int(tex["index"])) is { } layer)
                     surface.Textures.Add(layer);
+                // The other maps on TEXCOORD_0: normals as a normal map, occlusion multiplied into the colour,
+                // emission as luminosity, and roughness (the green of metallic-roughness, near enough) as specular.
+                void Map(JsonNode? node, Action<TextureLayer> set)
+                {
+                    if (node is JsonNode t && Int(t["texCoord"], 0) == 0 && Texture(Int(t["index"])) is { } l) { set(l); surface.Textures.Add(l); }
+                }
+                Map(m["normalTexture"], l => l.Channel = TextureChannel.Normal);
+                Map(m["occlusionTexture"], l => l.Blend = TextureBlend.Multiply);
+                Map(m["emissiveTexture"], l => l.Channel = TextureChannel.Luminosity);
+                Map(pbr?["metallicRoughnessTexture"], l => { l.Channel = TextureChannel.Specular; l.Negative = true; });
             }
             _doc.Surfaces.Add(surface);
             return _surfaceOf[material] = _doc.Surfaces.Count - 1;

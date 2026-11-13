@@ -182,3 +182,42 @@ public sealed partial class ModelerTools
             return result;
         }, cancel);
 }
+
+public sealed partial class ModelerTools
+{
+    [McpServerTool(Name = "bake_maps", Destructive = true)]
+    [Description("Bakes a map into a PNG in the working folder through a UV map (make_uvs first; atlas gives every face its own place), for the selected faces (all, with none selected) in the foreground: normal (tangent-space normals of the detailed mesh in the background layers, found along the low mesh's normals within distance either way, so a low-poly game model gets the high one's detail; with no background, its own smoothing), ambient_occlusion (samples rays a pixel, distance far), curvature (edges light, creases dark) or color (the surface's colour, procedurals and UV images in one picture). With hook_up (the default) the picture is laid on the faces' surface: the normal map on its normal channel (the ray tracer and glTF use it), occlusion and curvature multiplied into the colour, colour as the colour image. One undo step. Check with render.")]
+    public Task<string> BakeMaps(
+        [Description("normal (default), ambient_occlusion, curvature or color.")] string kind = "normal",
+        [Description("The PNG to write, relative to the working folder (default: the object's name and the kind).")] string? file = null,
+        [Description("Width and height in pixels, 16 to 8192 (default 1024).")] int size = 1024,
+        [Description("normal: how far either side of the low surface to look for the detailed one; ambient_occlusion: how far things hide the sky; metres (default a twentieth of the object's size).")] double? distance = null,
+        [Description("ambient_occlusion: rays a pixel (default 32).")] int samples = 32,
+        [Description("Pixels the baked areas bleed outward (default 4).")] int padding = 4,
+        [Description("The UV map (default the current one).")] string? uv_map = null,
+        [Description("Lay the picture on the surface (default true).")] bool hook_up = true,
+        CancellationToken cancel = default) =>
+        Do($"baked a {kind} map", c =>
+        {
+            var k = kind.Trim().ToLowerInvariant() switch
+            {
+                "normal" => BakeKind.Normal, "ambient_occlusion" or "ao" or "occlusion" => BakeKind.AmbientOcclusion,
+                "curvature" => BakeKind.Curvature, "color" or "colour" => BakeKind.Color,
+                _ => throw new ArgumentException($"kind must be normal, ambient_occlusion, curvature or color, not \"{kind}\"."),
+            };
+            var args = new Dictionary<string, object?>
+            {
+                ["Bake"] = k.ToString(), ["Size"] = size, ["Samples"] = samples, ["Padding"] = padding, ["HookUp"] = hook_up,
+                ["Distance"] = distance ?? 0, ["UVMap"] = uv_map ?? "", ["File"] = file ?? "",
+            };
+            BakeMapsTool tool;
+            using (Files(c).Confine(c, allowDiscard: true)) tool = (BakeMapsTool)c.Run("Bake Maps", args);
+            return new JsonObject
+            {
+                ["written"] = tool.Written,
+                ["pixels_covered"] = tool.Covered,
+                ["of_pixels"] = size * size,
+                ["hooked_up"] = hook_up,
+            };
+        }, cancel);
+}

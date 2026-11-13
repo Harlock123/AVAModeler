@@ -110,9 +110,11 @@ metallic-roughness maps, skins and morph targets; agents' `bake_maps`.
 
 ## Milestone F: workflow
 
-**Status:** not started.
+**Status:** done. History is Ctrl+H (H is Size). Instances are exported as real copies everywhere but .lwo (not as
+shared glTF meshes). `HistoryPanel.cs`, `Core/Instancing.cs`, `Geometry/PhotoMatch.cs`, `PhotoMatchWindow.cs`; agents'
+`get_history`, `match_photo`, `point_from_photos`.
 
-1. **Undo history.** A History panel (View › History, H) lists the undo steps by name, newest at the top. Clicking
+1. **Undo history.** A History panel (View › History, Ctrl+H) lists the undo steps by name, newest at the top. Clicking
    one goes back (or forward) to it. Agents get `get_history`, and `undo` and `redo` take `steps`.
 2. **Linked copies.** Instance (Multiply tab) puts copies of the current layer's mesh in another layer as instances:
    each a position, rotation and scale, with Number, Offset, Rotation and Scale steps as Clone has. They show in the

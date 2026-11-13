@@ -81,6 +81,7 @@ public static class Placement
     /// </summary>
     public static PrintModel Place(Document doc, PrinterProfile printer, PlacementOptions? options = null)
     {
+        doc = Instancing.Frozen(doc);
         options = (options ?? new PlacementOptions()).Checked();
         printer.Checked();
         var layers = doc.ForegroundLayers.ToList();

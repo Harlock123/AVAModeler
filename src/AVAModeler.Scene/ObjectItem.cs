@@ -159,11 +159,11 @@ public sealed class ObjectItem : SceneItem
         {
             if (Layer is int i)
             {
-                if (i >= 0 && i < Document.Layers.Count) m.Append(Document.Layers[i].Mesh);
+                if (i >= 0 && i < Document.Layers.Count) m.Append(Instancing.WithInstances(Document, i));
             }
             else
-                foreach (var l in Document.Layers)
-                    if (!l.Mesh.IsEmpty) m.Append(l.Mesh);
+                for (int k = 0; k < Document.Layers.Count; k++)
+                    if (!Document.Layers[k].Mesh.IsEmpty || Instancing.Valid(Document, k)) m.Append(Instancing.WithInstances(Document, k));
         }
         _base = m;
         _baseStamp = stamp;

@@ -97,3 +97,81 @@ public sealed class MeasureTool : Tool
 
     protected override void Apply() => Doc.Measuring = new Dimension(From, To);
 }
+
+/// <summary>Instance: linked copies of the current layer, placed in another layer, that follow it as it changes.</summary>
+public sealed class InstanceTool : Tool
+{
+    public override string Name => "Instance";
+    public override string Tab => "Multiply";
+    public override ToolKind Kind => ToolKind.Requester;
+    public override string Summary => "Puts linked copies of the current layer's mesh in another layer (Layer, numbered from 1; 0: the first empty layer after it), stepped as Clone steps them: each by Offset, turned by Rotation (HPB degrees) and scaled by Scale about Center from the one before. They're drawn and rendered like real geometry and follow every change to the source, but stay one mesh and the places (kept in .lwo; every other format and 3D printing get real copies). Run it again to change them; Freeze Instances makes them real.";
+
+    [Param("Layer", Min = 0, Max = 100, Step = 1, Description = "The layer to put the instances in (from 1); 0: the first empty one after the current layer.")] public int TargetLayer { get; set; }
+    [Param("Copies", Min = 1, Max = 100000, Step = 1)] public int Copies { get; set; } = 4;
+    [Param("Offset", Distance = true, Description = "How far each copy moves on from the last.")] public Vec3 Offset { get; set; } = new(1, 0, 0);
+    [Param("Rotation (HPB)", Angle = true, Description = "Heading (about Y), pitch (about X) and bank (about Z) per copy.")] public Vec3 Rotation { get; set; }
+    [Param("Scale", Description = "Scale factors per copy along X, Y and Z (1: unchanged).")] public Vec3 Scale { get; set; } = Vec3.One;
+    [Param("Center", Distance = true, Description = "The point copies turn and scale about.")] public Vec3 Center { get; set; }
+
+    private int Target()
+    {
+        int source = Doc.CurrentLayer;
+        if (TargetLayer > 0) return TargetLayer - 1;
+        for (int i = source + 1; i < Doc.Layers.Count; i++)
+            if (Doc.Layers[i].Mesh.IsEmpty && (Doc.Layers[i].Instances == null || Doc.Layers[i].Instances!.Source == source)) return i;
+        return Doc.Layers.Count;
+    }
+
+    protected override IEnumerable<int> Layers
+    {
+        get
+        {
+            int t = Target();
+            while (Doc.Layers.Count <= t) Doc.Layers.Add(new Layer());
+            return Doc.ForegroundLayers.Append(t).Distinct();
+        }
+    }
+
+    protected override void Apply()
+    {
+        int source = Doc.CurrentLayer, target = Target();
+        if (target == source) throw new ArgumentException("Instances go in another layer than the one they copy: choose a different Layer.");
+        if (Doc.Layers[source].Instances != null) throw new InvalidOperationException("The current layer has instances of its own: instances copy a plain layer (Freeze Instances first).");
+        while (Doc.Layers.Count <= target) Doc.Layers.Add(new Layer());
+        var step = Mat4.Translation(Offset) * Mat4.About(Center, Mat4.HeadingPitchBank(Rotation.X, Rotation.Y, Rotation.Z) * Mat4.Scaling(Scale));
+        var places = new List<Mat4>();
+        var m = Mat4.Identity;
+        for (int k = 1; k <= Copies; k++)
+        {
+            m = step * m;
+            places.Add(m);
+        }
+        var layer = Doc.Layers[target];
+        layer.Instances = new LayerInstances { Source = source, Places = places };
+        if (layer.State == LayerState.Off) layer.State = LayerState.Background;
+        Doc.Layers[target].Mesh.Touch();
+    }
+}
+
+/// <summary>Freeze Instances: makes the foreground layers' instances real geometry.</summary>
+public sealed class FreezeInstancesTool : Tool
+{
+    public override string Name => "Freeze Instances";
+    public override string Tab => "Multiply";
+    public override ToolKind Kind => ToolKind.Immediate;
+    public override string Summary => "Turns the instances in the foreground layers into real geometry, copies of their source's mesh at each place, which no longer follow it.";
+
+    protected override void Apply()
+    {
+        int frozen = 0;
+        foreach (int l in Doc.ForegroundLayers.ToList())
+        {
+            if (!Instancing.Valid(Doc, l)) continue;
+            var mesh = Doc.Layers[l].Mesh;
+            mesh.Append(Instancing.Copies(Doc, l));
+            Doc.Layers[l].Instances = null;
+            frozen++;
+        }
+        if (frozen == 0) throw new InvalidOperationException("No foreground layer has instances to freeze: put the layer with them in the foreground.");
+    }
+}

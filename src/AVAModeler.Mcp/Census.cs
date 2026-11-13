@@ -97,7 +97,7 @@ internal static class Census
         for (int i = 0; i < doc.Layers.Count; i++)
         {
             var layer = doc.Layers[i];
-            if (layer.State == LayerState.Off && layer.Mesh.IsEmpty) { quiet.Add(i + 1); continue; }
+            if (layer.State == LayerState.Off && layer.Mesh.IsEmpty && layer.Instances == null) { quiet.Add(i + 1); continue; }
             var o = new JsonObject
             {
                 ["layer"] = i + 1,
@@ -107,6 +107,8 @@ internal static class Census
             };
             if (layer.Name.Length > 0) o["name"] = layer.Name;
             if (!layer.Mesh.IsEmpty) o["bounds"] = BoxJson(layer.Mesh.Bounds());
+            if (layer.Instances is { } inst)
+                o["instances"] = new JsonObject { ["of_layer"] = inst.Source + 1, ["copies"] = inst.Places.Count, ["shown"] = AVAModeler.Core.Instancing.Valid(doc, i) };
             layers.Add(o);
         }
         var result = new JsonObject

@@ -21,6 +21,8 @@ public sealed class ModelerWorkspace : DockPanel
     public NumericPanel Numeric { get; }
     /// <summary>Mesh Info (W): the mesh check of the foreground, beside the numeric panel; hidden until asked for.</summary>
     public MeshInfoPanel MeshInfo { get; }
+    /// <summary>History (Ctrl+H): the undo steps, to go back or forward to one.</summary>
+    public HistoryPanel History { get; }
     /// <summary>Backdrop (D): the reference images behind the flat views, beside the numeric panel; hidden until asked for.</summary>
     public BackdropPanel Backdrop { get; }
     public ToolTabs Tabs { get; }
@@ -54,6 +56,7 @@ public sealed class ModelerWorkspace : DockPanel
         Views = new QuadView(session, session.Preferences.Renderer == "OpenGL");
         Numeric = new NumericPanel(session);
         MeshInfo = new MeshInfoPanel(session);
+        History = new HistoryPanel(session);
         Backdrop = new BackdropPanel(session)
         {
             AskImage = async () => TopLevel.GetTopLevel(this) is { } top ? await Dialogs.Open(top, "Choose a backdrop image", Dialogs.Images) : null,
@@ -80,6 +83,8 @@ public sealed class ModelerWorkspace : DockPanel
         Children.Add(Numeric);
         SetDock(MeshInfo, Dock.Right);
         Children.Add(MeshInfo);
+        SetDock(History, Dock.Right);
+        Children.Add(History);
         SetDock(Backdrop, Dock.Right);
         Children.Add(Backdrop);
         Children.Add(Views);
@@ -167,6 +172,7 @@ public sealed class ModelerWorkspace : DockPanel
             ["Maximize View"] = () => Views.ToggleMaximize(Views.Focused),
             ["Numeric Panel"] = () => Numeric.Collapsed = !Numeric.Collapsed,
             ["Mesh Info"] = MeshInfo.Toggle,
+            ["History"] = History.Toggle,
             ["Backdrop"] = Backdrop.Toggle,
             ["UV View"] = () => Views.ToggleUV(),
             ["Next UV Map"] = NextUVMap,
@@ -181,6 +187,7 @@ public sealed class ModelerWorkspace : DockPanel
             ["Symmetry"] = () => SetSymmetry(D().Symmetry switch { null => Axis.X, Axis.X => Axis.Y, Axis.Y => Axis.Z, _ => null }),
             ["Show Map"] = ToggleShowMap,
             ["Keep Ruler"] = KeepRuler,
+            ["Photo Match"] = () => { var w = new PhotoMatchWindow(s); if (Owner != null) w.Show(Owner); else w.Show(); },
             ["Clear Rulers"] = () => { D().Dimensions.Clear(); D().Notify(); Session.SetStatus("Rulers cleared."); },
             ["Next Point Map"] = NextPointMap,
             ["Symmetry X"] = () => SetSymmetry(Axis.X),
@@ -630,7 +637,7 @@ public sealed class ModelerWorkspace : DockPanel
                 Group("_Edit", Item("_Undo", "Undo"), Item("_Redo", "Redo"), "-", Item("Cu_t", "Cut"), Item("_Copy", "Copy"), Item("_Paste", "Paste"), "-",
                     Item("Select _All", "Select All"), Item("_Deselect", "Deselect"), Item("_Invert", "Invert Selection"), Item("Select C_onnected", "Select Connected"),
                     Item("Select _Loop", "Select Loop"), Item("Select Ri_ng", "Select Ring"), Item("_Grow", "Grow Selection"), Item("S_hrink", "Shrink Selection"), "-", Item("Surfaces…", "Surface Editor"), Item("Pr_eferences…", "Preferences")),
-                Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), Item("Mesh _Info", "Mesh Info"), Item("_Backdrop…", "Backdrop"), "-",
+                Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), Item("Mesh _Info", "Mesh Info"), Item("_History", "History"), Item("_Backdrop…", "Backdrop"), "-",
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
                     Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",
                     Item("Show Weight/Colour Ma_p", "Show Map"), Item("Next Weight/Colour Map", "Next Point Map"), "-",

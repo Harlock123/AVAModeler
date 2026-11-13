@@ -262,25 +262,45 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "undo", Destructive = true)]
-    [Description("Undoes the last change (an agent's or, in the live app, the person's), as Ctrl+Z does. Returns what was undone.")]
-    public Task<string> Undo(CancellationToken cancel) =>
+    [Description("Undoes the last change (an agent's or, in the live app, the person's), as Ctrl+Z does, or several (steps; get_history lists them). Returns what was undone.")]
+    public Task<string> Undo(CancellationToken cancel = default,
+        [Description("How many steps to go back (default 1).")] int steps = 1) =>
         Do("undid", c =>
         {
-            string? label = c.Document.Undo.UndoLabel;
-            bool done = c.Undo();
+            if (steps < 1 || steps > 100) throw new ArgumentException("steps must be from 1 to 100.");
+            var labels = new List<string>();
+            for (int i = 0; i < steps; i++)
+            {
+                string? label = c.Document.Undo.UndoLabel;
+                if (!c.Undo()) break;
+                labels.Add(label ?? "");
+            }
             var result = Census.Document(c.Document, brief: true);
-            result["undone"] = done ? label : null;
-            if (!done) result["note"] = "There was nothing to undo.";
+            result["undone"] = labels.Count == 0 ? null : labels.Count == 1 ? labels[0] : new JsonArray([.. labels.Select(l => (JsonNode)l)]);
+            if (labels.Count == 0) result["note"] = "There was nothing to undo.";
+            else if (labels.Count < steps) result["note"] = $"Only {labels.Count} steps could be undone.";
             return result;
         }, cancel);
 
+    [McpServerTool(Name = "get_history", ReadOnly = true, Idempotent = true)]
+    [Description("The object's undo history: the steps that can be undone (newest first) and redone (next first), by name, as the History panel shows them. undo and redo with steps go back or forward through them.")]
+    public Task<string> GetHistory(CancellationToken cancel = default) =>
+        Do("read the history", c => new JsonObject
+        {
+            ["undo"] = new JsonArray([.. c.Document.Undo.UndoLabels.Reverse().Select(l => (JsonNode)l)]),
+            ["redo"] = new JsonArray([.. c.Document.Undo.RedoLabels.Select(l => (JsonNode)l)]),
+        }, cancel);
+
     [McpServerTool(Name = "redo", Destructive = true)]
-    [Description("Redoes the last change undone. Returns what was redone.")]
-    public Task<string> Redo(CancellationToken cancel) =>
+    [Description("Redoes the last change undone, or several (steps). Returns what was redone.")]
+    public Task<string> Redo(CancellationToken cancel = default,
+        [Description("How many steps to go forward (default 1).")] int steps = 1) =>
         Do("redid", c =>
         {
+            if (steps < 1 || steps > 100) throw new ArgumentException("steps must be from 1 to 100.");
             string? label = c.Document.Undo.RedoLabel;
             bool done = c.Redo();
+            for (int i = 1; done && i < steps && c.Redo(); i++) label = c.Document.Undo.UndoLabel;
             var result = Census.Document(c.Document, brief: true);
             result["redone"] = done ? label : null;
             if (!done) result["note"] = "There was nothing to redo.";

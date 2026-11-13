@@ -67,6 +67,24 @@ public sealed class Surface
 /// <summary>A layer's part in the work: off, in the foreground (being edited), or in the background (shown dimmed, the operand for booleans).</summary>
 public enum LayerState { Off, Foreground, Background }
 
+/// <summary>A mark on a photo: a point of the model (by layer and index) and where it shows (pixels from the top left).</summary>
+public sealed record PhotoMarkAt(int Layer, int Point, Vec2 Pixel);
+
+/// <summary>
+/// A photo matched to the model: its picture and size, the marks, and the camera solved from them (its 3 × 4
+/// projection, world to pixels, row by row, and how far the marks miss in pixels), or none yet.
+/// </summary>
+public sealed class PhotoSetup
+{
+    public string Image = "";
+    public int Width, Height;
+    public List<PhotoMarkAt> Marks = [];
+    public double[]? Projection;
+    public double Error;
+
+    public PhotoSetup Clone() => new() { Image = Image, Width = Width, Height = Height, Marks = [.. Marks], Projection = (double[]?)Projection?.Clone(), Error = Error };
+}
+
 /// <summary>A ruler between two places, as Measure draws it.</summary>
 public sealed record Dimension(Vec3 A, Vec3 B)
 {
@@ -82,7 +100,10 @@ public sealed class Layer
     /// <summary>The layer's pivot (LWO2 files keep one).</summary>
     public Vec3 Pivot;
 
-    public Layer Clone() => new() { Name = Name, Mesh = Mesh.Clone(), State = State, Pivot = Pivot };
+    /// <summary>Linked copies of another layer's mesh shown in this one (see <see cref="LayerInstances"/>), or null.</summary>
+    public LayerInstances? Instances;
+
+    public Layer Clone() => new() { Name = Name, Mesh = Mesh.Clone(), State = State, Pivot = Pivot, Instances = Instances?.Clone() };
 }
 
 /// <summary>What clicks select, and what tools act on.</summary>
@@ -290,6 +311,10 @@ public sealed class UndoStack
     public string? UndoLabel => _undo.Count > 0 ? _undo[^1].Label : null;
     public string? RedoLabel => _redo.Count > 0 ? _redo[^1].Label : null;
     public int Count => _undo.Count;
+    /// <summary>The steps that can be undone, oldest first (the last is the one Undo takes back).</summary>
+    public IReadOnlyList<string> UndoLabels => [.. _undo.Select(s => s.Label)];
+    /// <summary>The steps that can be redone, the next first.</summary>
+    public IReadOnlyList<string> RedoLabels => [.. Enumerable.Reverse(_redo).Select(s => s.Label)];
 
     internal static Snapshot Take(Document doc, string label, IEnumerable<int> layers) => new()
     {
@@ -388,6 +413,8 @@ public sealed class Document
     public List<Dimension> Dimensions = [];
     /// <summary>The ruler the Measure tool is drawing now, or null.</summary>
     public Dimension? Measuring;
+    /// <summary>Photos matched to the model (Photo Match), by name. View state: not kept in the object file.</summary>
+    public Dictionary<string, PhotoSetup> Photos = [];
     /// <summary>
     /// The reference images behind the flat views (see <see cref="Backdrop"/>). A display setting, not part of the
     /// object: it isn't saved in the object file or undone, and changing it doesn't mark the object modified.
@@ -510,7 +537,7 @@ public sealed class Document
     /// </summary>
     public Document Copy()
     {
-        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, CurrentWeightMap = CurrentWeightMap, CurrentColorMap = CurrentColorMap, ShownPointMap = ShownPointMap, Dimensions = [.. Dimensions], Measuring = Measuring, Symmetry = Symmetry, Selection = Selection.Clone(), Backdrops = Backdrops };
+        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, CurrentWeightMap = CurrentWeightMap, CurrentColorMap = CurrentColorMap, ShownPointMap = ShownPointMap, Dimensions = [.. Dimensions], Photos = Photos.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()), Measuring = Measuring, Symmetry = Symmetry, Selection = Selection.Clone(), Backdrops = Backdrops };
         d.Layers = Layers.Select(l => l.Clone()).ToList();
         d.Surfaces = Surfaces.Select(s => s.Clone()).ToList();
         return d;
@@ -522,6 +549,18 @@ public sealed class Document
         var before = Snapshot(label, layers?.ToList());
         change();
         Commit(before);
+    }
+
+    /// <summary>
+    /// Goes back (negative) or forward (positive) some steps in the history, as many Undos or Redos; returns how many
+    /// it went. The History panel's click and agents' undo and redo with steps use it.
+    /// </summary>
+    public int Step(int steps)
+    {
+        int done = 0;
+        for (; done < Math.Abs(steps); done++)
+            if (!(steps < 0 ? UndoLast() : RedoLast())) break;
+        return done;
     }
 
     public bool UndoLast()

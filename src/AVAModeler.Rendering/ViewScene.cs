@@ -123,8 +123,12 @@ public sealed partial class ViewScene
         for (int i = 0; i < document.Layers.Count; i++)
         {
             var layer = document.Layers[i];
-            if (layer.State == LayerState.Off || layer.Mesh.IsEmpty) continue;
+            if (layer.State == LayerState.Off) continue;
             bool fg = layer.State == LayerState.Foreground;
+            // Instances are drawn as the layer is, but can't be picked or edited: they follow their source.
+            if (Instancing.Valid(document, i) && Instancing.Copies(document, i) is { IsEmpty: false } copies)
+                scene.Layers.Add(new ViewLayer { Mesh = copies, Background = !fg });
+            if (layer.Mesh.IsEmpty) continue;
             scene.Layers.Add(new ViewLayer
             {
                 Mesh = layer.Mesh,

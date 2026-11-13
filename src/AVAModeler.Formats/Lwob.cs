@@ -46,6 +46,8 @@ public static class Lwob
 
     /// <summary>The SURF sub-chunk AVA keeps a surface's node graph in.</summary>
     public const string NodesId = "AVND";
+    /// <summary>A layer's instances: the source layer, how many, and each placement's top three rows.</summary>
+    public const string InstancesId = "AVIN";
     /// <summary>A surface's vertex colour map, as LWO2's VCOL sub-chunk: intensity, envelope, map type and name.</summary>
     public const string VertexColorId = "VCOL";
 
@@ -134,6 +136,18 @@ public static class Lwob
                     int n = uvChunks.GetValueOrDefault((id, layer));
                     uvChunks[(id, layer)] = n + 1;
                     Note(id, layer, n);
+                    break;
+                case InstancesId:
+                    // AVA's own: the layer's linked copies of another layer (LightWave skips the chunk).
+                    int source = body.U2(), places = body.U2();
+                    var list = new List<Mat4>();
+                    for (int k = 0; k < places; k++)
+                    {
+                        var v = new double[12];
+                        for (int e = 0; e < 12; e++) v[e] = body.F4();
+                        list.Add(Mat4.FromRows(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], 0, 0, 0, 1));
+                    }
+                    doc.Layers[layer].Instances = new LayerInstances { Source = source, Places = list };
                     break;
                 case "SURF":
                     var surf = body.Named("SURF");
@@ -357,9 +371,9 @@ public static class Lwob
     public static byte[] Write(Document doc)
     {
         foreach (var l in doc.Layers) CheckPolygons(doc, l.Mesh);
-        var used = Enumerable.Range(0, doc.Layers.Count).Where(i => !doc.Layers[i].Mesh.IsEmpty).ToList();
+        var used = Enumerable.Range(0, doc.Layers.Count).Where(i => !doc.Layers[i].Mesh.IsEmpty || doc.Layers[i].Instances is { Places.Count: > 0 }).ToList();
         var info = InfoOf(doc);
-        bool replay = info != null && Fits(doc, info, used);
+        bool replay = info != null && !Instancing.Any(doc) && Fits(doc, info, used);
         string type = replay ? info!.FormType : used.Count > 1 ? "LWLO" : "LWOB";
         var w = new IffWriter();
         w.Chunk("FORM", () =>
@@ -412,6 +426,7 @@ public static class Lwob
                 WritePolygons(w, mesh);
                 VertexMaps.WriteVmaps(w, mesh);
                 VertexMaps.WriteVmads(w, mesh);
+                WriteInstances(w, doc.Layers[used.DefaultIfEmpty(0).First()]);
             }
             else
                 for (int i = 0; i < used.Count; i++)
@@ -423,6 +438,7 @@ public static class Lwob
                     WritePolygons(w, mesh);
                     VertexMaps.WriteVmaps(w, mesh);
                     VertexMaps.WriteVmads(w, mesh);
+                    WriteInstances(w, doc.Layers[used[i]]);
                 }
             foreach (var s in doc.Surfaces) WriteSurface(w, s);
             if (info != null) foreach (var c in info.Unknown) w.Chunk(c);
@@ -452,6 +468,19 @@ public static class Lwob
             if (p.Surface < 0 || p.Surface >= doc.Surfaces.Count || p.Surface >= short.MaxValue)
                 throw new InvalidOperationException($"A polygon uses surface {p.Surface}, which isn't in the surface list.");
         }
+    }
+
+    private static void WriteInstances(IffWriter w, Layer layer)
+    {
+        if (layer.Instances is not { Places.Count: > 0 } inst) return;
+        w.Chunk(InstancesId, () =>
+        {
+            w.U2((ushort)inst.Source);
+            w.U2((ushort)Math.Min(inst.Places.Count, ushort.MaxValue));
+            foreach (var m in inst.Places.Take(ushort.MaxValue))
+                for (int r = 0; r < 3; r++)
+                    for (int c = 0; c < 4; c++) w.F4((float)m[r, c]);
+        });
     }
 
     private static void WriteLayer(IffWriter w, Document doc, int layer, LwoInfo? info) => w.Chunk("LAYR", () =>

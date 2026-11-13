@@ -217,6 +217,15 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     picks the normal and occlusion layers sharing TEXCOORD_0. glTF skins become skelegons and weight maps
     (`Gltf.AddSkelegons`, run after every node's world is known, also into the morph layers so they keep the point
     count) and morph targets layers.
+  - Workflow: `UndoStack.UndoLabels`/`RedoLabels` and `Document.Step` (the History panel, `HistoryPanel.cs`, and
+    `undo`/`redo` with `steps`, `get_history`). Instances: `Layer.Instances` (`LayerInstances`, in `Layer.Clone` so undo
+    keeps them) and `Core/Instancing.cs` (`Valid`, `Copies` cached per document and source version, `WithInstances`,
+    `Frozen`). Whatever reads meshes for output goes through them: `ViewScene.FromDocument` draws the copies,
+    `ObjectItem`'s base mesh has them, `ObjectFiles.Write` freezes for every format but LWOB (`AVIN`, written only on
+    the fresh path, so a document with instances never replays its file's layout), and `Placement.Place` freezes. The
+    tools are `InstanceTool` and `FreezeInstancesTool` (ProcessTools.cs). Photo match: `Geometry/PhotoMatch.cs`
+    (`Solve` by normalised DLT, `FromProjection`, `Triangulate`, `Jacobi` for the eigenvectors), `Document.Photos`
+    (`PhotoSetup`, view state), `PhotoMatchWindow.cs`, and `match_photo` and `point_from_photos` (`Mcp/PhotoTools.cs`).
   - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).

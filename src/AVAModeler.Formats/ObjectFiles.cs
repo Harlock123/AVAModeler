@@ -137,6 +137,8 @@ public static class ObjectFiles
 
     private static void Write(Document doc, string path, SaveOptions options)
     {
+        // Only LightWave files keep instances as instances; every other format gets them as real geometry.
+        if (Path.GetExtension(path).ToLowerInvariant() is not (".lwo" or ".lw")) doc = Instancing.Frozen(doc);
         switch (Path.GetExtension(path).ToLowerInvariant())
         {
             case ".lwo" or ".lw":

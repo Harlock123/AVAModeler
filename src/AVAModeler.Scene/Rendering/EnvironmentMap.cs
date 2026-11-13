@@ -348,7 +348,7 @@ public sealed class EnvironmentMap
             if (d.Y < 0)
             {
                 // The ground: lit by the sky (and the sun, when it's up), darker further down.
-                double lit = 0.12 + 0.45 * Math.Max(0, up) * day;
+                double lit = 0.2 + 0.6 * Math.Max(0, up) * day;
                 var ground = new Vec3(0.42, 0.38, 0.33) * lit + horizon * 0.15;
                 return Vec3.Lerp(Vec3.Lerp(horizon, ground, 0.5), ground, Smooth(0, -0.25, d.Y));
             }

@@ -27,7 +27,7 @@ public static class SceneDrawing
             // Each object has its own surfaces: renumber into one list for the view.
             int offset = surfaces.Count;
             surfaces.AddRange(o.Surfaces);
-            var mesh = new Mesh { Points = world.Points, UVMaps = world.UVMaps };
+            var mesh = new Mesh { Points = world.Points, UVMaps = world.UVMaps, PointMaps = world.PointMaps };
             foreach (var p in world.Polygons) mesh.Polygons.Add(new Polygon(p.Points, p.Surface + offset) { CornerUVs = p.CornerUVs });
             mesh.Touch();
             // Textures are laid on in the object's own coordinates, so they move with it.

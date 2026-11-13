@@ -276,7 +276,7 @@ internal static class MeshCleanup
     {
         var small = source.Polygons.Where(p => p.Count < 3).Select(p => p.Clone()).ToList();
         if (small.Count == 0) return;
-        var only = new Mesh { Points = [.. source.Points], Polygons = small, UVMaps = source.UVMaps.Select(m => m.Clone()).ToList() };
+        var only = new Mesh { Points = [.. source.Points], Polygons = small, UVMaps = source.UVMaps.Select(m => m.Clone()).ToList(), PointMaps = source.PointMaps.Select(m => m.Clone()).ToList() };
         only.RemoveUnusedPoints();
         target.Append(only);
     }

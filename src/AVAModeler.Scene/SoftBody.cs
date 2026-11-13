@@ -116,7 +116,7 @@ public static class SoftBodies
             if (state.Last is { } last && last.Frame == frame) return last.Mesh;
             var (x, _) = Run(scene, o, s, state, frame);
             var toLocal = o.WorldMatrix(frame).Inverted();
-            var mesh = new Mesh { Points = [.. x.Select(toLocal.TransformPoint)], Polygons = deformed.Polygons, UVMaps = deformed.UVMaps };
+            var mesh = new Mesh { Points = [.. x.Select(toLocal.TransformPoint)], Polygons = deformed.Polygons, UVMaps = deformed.UVMaps, PointMaps = deformed.PointMaps };
             mesh.Touch();
             state.Last = (frame, mesh);
             return mesh;

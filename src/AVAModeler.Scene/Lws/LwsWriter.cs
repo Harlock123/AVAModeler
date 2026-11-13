@@ -224,6 +224,11 @@ public static class LwsWriter
             L($"BoneRestLength {N(b.RestLength)}");
             L($"BoneStrength {N(b.Strength)}");
             L($"BoneActive {(b.Active ? 1 : 0)}");
+            if (b.WeightMap != null)
+            {
+                L($"BoneWeightMapName {b.WeightMap}");
+                L($"BoneWeightMapOnly {(b.WeightMapOnly ? 1 : 0)}");
+            }
             Motion("BoneMotion", b);
             if (b.Parent is Bone parent) L($"ParentItem {Id(parent)}");
             if (b.IKGoal is { } goal && (goal is not Bone || goal.Scene == scene))

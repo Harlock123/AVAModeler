@@ -409,6 +409,32 @@ public sealed class Commands(Document document, ToolRegistry? registry = null)
         Run("Make UVs", new Dictionary<string, object?> { ["MapName"] = map, ["Projection"] = projection, ["Axis"] = axis });
 
     /// <summary>Chooses the UV map to work on (the UV view shows it); not an undoable edit.</summary>
+    /// <summary>
+    /// Gives points of the current layer a weight in a weight map (made if new), one undo step; a weight of 0 takes a
+    /// point out of the map. Makes it the current weight map and shows it.
+    /// </summary>
+    public void SetWeights(string map, IReadOnlyList<int> points, IReadOnlyList<double> weights)
+    {
+        if (string.IsNullOrWhiteSpace(map)) throw new ArgumentException("A weight map needs a name.");
+        if (weights.Count != 1 && weights.Count != points.Count) throw new ArgumentException($"Give one weight for all the points or one per point ({points.Count}), not {weights.Count}.");
+        var mesh = Document.Current.Mesh;
+        foreach (int p in points) if (p < 0 || p >= mesh.Points.Count) throw new ArgumentException($"There's no point {p}: the current layer's points are numbered 0 to {mesh.Points.Count - 1}.");
+        foreach (double w in weights) if (!(w >= 0 && w <= 1)) throw new ArgumentException($"Weights go from 0 to 1, not {w}.");
+        var existing = mesh.PointMaps.Find(m => m.Name == map.Trim());
+        if (existing is { Kind: not PointMapKind.Weight }) throw new ArgumentException($"\"{map}\" is a colour map, not a weight map.");
+        Document.Edit($"Set Weights in {map}", () =>
+        {
+            var m = mesh.AddPointMap(map.Trim(), PointMapKind.Weight);
+            for (int i = 0; i < points.Count; i++) m.SetWeight(points[i], weights.Count == 1 ? weights[0] : weights[i]);
+            mesh.Touch();
+        }, [Document.CurrentLayer]);
+        Document.CurrentWeightMap = map.Trim();
+        Document.ShownPointMap = map.Trim();
+    }
+
+    /// <summary>A point's weight in a current-layer weight map (0 where it has none).</summary>
+    public double Weight(string map, int point) => Document.Current.Mesh.FindPointMap(map, PointMapKind.Weight)?.Weight(point) ?? 0;
+
     /// <summary>Turns modeling with symmetry on across an axis, or off (null). A view setting, not an undo step.</summary>
     public void SetSymmetry(Axis? axis)
     {

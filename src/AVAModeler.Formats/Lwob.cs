@@ -418,7 +418,7 @@ public static class Lwob
             && doc.Surfaces.Select(s => s.Name).SequenceEqual(info.SurfaceNames)
             && info.Layout.All(e => e.Layer < doc.Layers.Count)
             && used.All(i => (doc.Layers[i].Mesh.Points.Count == 0 || Has("PNTS", i)) && (doc.Layers[i].Mesh.Polygons.Count == 0 || Has("POLS", i))
-                && (doc.Layers[i].Mesh.UVMaps.Count == 0 || Has("POLS", i) || Has("VMAP", i) || Has("VMAD", i)))
+                && (doc.Layers[i].Mesh.UVMaps.Count + doc.Layers[i].Mesh.PointMaps.Count == 0 || Has("POLS", i) || Has("VMAP", i) || Has("VMAD", i)))
             && (doc.Layers.All(l => l.Mesh.Polygons.Count == 0) || Has("SRFS", -1));
     }
 

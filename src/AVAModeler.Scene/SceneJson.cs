@@ -163,6 +163,8 @@ public static class SceneJson
                     d.RestLength = b.RestLength;
                     d.Strength = b.Strength;
                     d.Active = b.Active;
+                    d.WeightMap = b.WeightMap;
+                    if (b.WeightMap != null && !b.WeightMapOnly) d.WeightMapOnly = false;
                     if (b.IKGoal != null && items.IndexOf(b.IKGoal) is var gi and >= 0)
                     {
                         d.IkGoal = gi;
@@ -437,6 +439,8 @@ public static class SceneJson
         RestLength = d.RestLength ?? 1,
         Strength = d.Strength ?? 1,
         Active = d.Active ?? true,
+        WeightMap = d.WeightMap,
+        WeightMapOnly = d.WeightMapOnly ?? true,
         FullTimeIK = d.FullTimeIk ?? true,
         IKAnchor = d.IkAnchor ?? false,
         IKLocked = d.IkLocked ?? IKChannels.None,
@@ -635,12 +639,14 @@ public static class SceneJson
         public double[] Points { get; set; } = [];
         public List<PolygonDto> Polygons { get; set; } = [];
         public List<UVMapDto>? UVMaps { get; set; }
+        public List<PointMapDto>? PointMaps { get; set; }
 
         public static MeshDto Of(Mesh m) => new()
         {
             Points = m.Points.SelectMany(p => new[] { p.X, p.Y, p.Z }).ToArray(),
             Polygons = m.Polygons.Select(PolygonDto.Of).ToList(),
             UVMaps = m.UVMaps.Count == 0 ? null : m.UVMaps.Select(u => new UVMapDto { Name = u.Name, Points = Flat(u.Points) }).ToList(),
+            PointMaps = m.PointMaps.Count == 0 ? null : m.PointMaps.Select(PointMapDto.Of).ToList(),
         };
 
         public Mesh ToMesh()
@@ -654,9 +660,34 @@ public static class SceneJson
                 foreach (var (i, uv) in Unflat(u.Points))
                     if (i >= 0 && i < m.Points.Count) map.Points[i] = uv;
             }
+            foreach (var pm in PointMaps ?? [])
+            {
+                if (m.PointMaps.Any(x => x.Name == pm.Name)) continue;
+                var map = m.AddPointMap(pm.Name, pm.Kind);
+                int dim = map.Dimension, stride = dim + 1;
+                for (int i = 0; i + stride - 1 < pm.Values.Length; i += stride)
+                {
+                    int point = (int)pm.Values[i];
+                    if (point >= 0 && point < m.Points.Count) map.Values[point] = [.. pm.Values.Skip(i + 1).Take(dim).Select(v => (float)v)];
+                }
+            }
             m.Touch();
             return m;
         }
+    }
+
+    /// <summary>A weight or colour map: its kind and its points as a flat index, value(s) list.</summary>
+    private sealed class PointMapDto
+    {
+        public string Name { get; set; } = "";
+        public PointMapKind Kind { get; set; }
+        public double[] Values { get; set; } = [];
+
+        public static PointMapDto Of(PointMap m) => new()
+        {
+            Name = m.Name, Kind = m.Kind,
+            Values = m.Values.OrderBy(kv => kv.Key).SelectMany(kv => new[] { (double)kv.Key }.Concat(kv.Value.Take(m.Dimension).Select(v => (double)v))).ToArray(),
+        };
     }
 
     /// <summary>A UV map: its points as a flat index, u, v list.</summary>
@@ -953,6 +984,8 @@ public static class SceneJson
         public double? RestLength { get; set; }
         public double? Strength { get; set; }
         public bool? Active { get; set; }
+        public string? WeightMap { get; set; }
+        public bool? WeightMapOnly { get; set; }
         public int? IkGoal { get; set; }
         public LightLinkMode? LightLink { get; set; }
         public int[]? LightObjects { get; set; }

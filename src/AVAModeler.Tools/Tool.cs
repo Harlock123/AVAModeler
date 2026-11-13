@@ -144,6 +144,10 @@ public sealed class DragInfo
     public bool Constrain;
     /// <summary>The first drag of a new click (a tool like Points adds something on each one).</summary>
     public bool First;
+    /// <summary>The ray from the eye through the mouse, where the view gives one (brushes find the surface with it).</summary>
+    public Ray? Ray;
+    /// <summary>The pen's pressure, 0 to 1 (1 for a mouse).</summary>
+    public double Pressure = 1;
     public Vec3 Delta => Current - Start;
     /// <summary>The axis the view looks down (X, Y or Z), for tools that work about the view's own axis.</summary>
     public Axis ViewAxis => Math.Abs(Forward.X) > 0.5 ? Axis.X : Math.Abs(Forward.Y) > 0.5 ? Axis.Y : Axis.Z;

@@ -125,6 +125,12 @@ internal static class Census
         result["uv_maps"] = new JsonArray(doc.UVMapNames().Select(n => (JsonNode)n).ToArray());
         result["current_uv_map"] = doc.ActiveUVMap;
         result["symmetry"] = doc.Symmetry?.ToString().ToLowerInvariant() ?? "off";
+        var pointMaps = doc.Layers.SelectMany(l => l.Mesh.PointMaps).GroupBy(m => m.Name).Select(g => g.First()).ToList();
+        if (pointMaps.Count > 0)
+        {
+            result["weight_maps"] = new JsonArray([.. pointMaps.Where(m => m.Kind == PointMapKind.Weight).Select(m => (JsonNode)m.Name)]);
+            result["color_maps"] = new JsonArray([.. pointMaps.Where(m => m.IsColor).Select(m => (JsonNode)m.Name)]);
+        }
         result["selection"] = Selection(doc);
         result["undo"] = UndoState(doc);
         if (!doc.Backdrops.IsEmpty) result["backdrops"] = Backdrops(doc);

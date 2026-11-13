@@ -107,3 +107,73 @@ public sealed partial class Mesh
             m.Values = m.Values.Where(kv => kv.Key >= 0 && kv.Key < map.Length && map[kv.Key] >= 0).ToDictionary(kv => map[kv.Key], kv => kv.Value);
     }
 }
+
+/// <summary>Names of point maps that come in left and right pairs ("Left Arm" and "Right Arm", "Arm.L" and "Arm.R").</summary>
+public static class MapNames
+{
+    private static readonly (string A, string B)[] Swaps =
+    [
+        ("Left", "Right"), ("left", "right"), ("LEFT", "RIGHT"),
+        ("L_", "R_"), ("_L", "_R"), (".L", ".R"), ("l_", "r_"), ("_l", "_r"), (".l", ".r"),
+    ];
+
+    /// <summary>The name with left and right swapped, or null when it says neither.</summary>
+    public static string? Opposite(string name)
+    {
+        foreach (var (a, b) in Swaps)
+        {
+            if (a.EndsWith('_') ? name.StartsWith(a, StringComparison.Ordinal) : a.StartsWith('_') || a.StartsWith('.') ? name.EndsWith(a, StringComparison.Ordinal) : name.Contains(a, StringComparison.Ordinal))
+                return Replace(name, a, b);
+            if (b.EndsWith('_') ? name.StartsWith(b, StringComparison.Ordinal) : b.StartsWith('_') || b.StartsWith('.') ? name.EndsWith(b, StringComparison.Ordinal) : name.Contains(b, StringComparison.Ordinal))
+                return Replace(name, b, a);
+        }
+        return null;
+    }
+
+    private static string Replace(string name, string from, string to)
+    {
+        if (from.EndsWith('_')) return to + name[from.Length..];
+        if (from.StartsWith('_') || from.StartsWith('.')) return name[..^from.Length] + to;
+        return name.Replace(from, to, StringComparison.Ordinal);
+    }
+}
+
+/// <summary>
+/// Skelegons: 2-point polygons on a surface whose name starts with "Skelegon", each the rest place of a bone, from its
+/// first point (the base) to its second (the tip). Layout's bones and the Modeler's weight maps name them alike.
+/// </summary>
+public static class SkelegonNames
+{
+    public const string SurfacePrefix = "Skelegon";
+
+    /// <summary>A mesh's skelegons in polygon order: where each runs, its surface and the bone name it gives.</summary>
+    public static List<(Vec3 Start, Vec3 End, string Surface, string Name)> Of(Mesh mesh, IReadOnlyList<Surface> surfaces, string prefix = SurfacePrefix)
+    {
+        var list = new List<(Vec3, Vec3, string, string)>();
+        var used = new HashSet<string>();
+        foreach (var p in mesh.Polygons)
+        {
+            if (p.Count != 2 || p.Surface < 0 || p.Surface >= surfaces.Count) continue;
+            string surface = surfaces[p.Surface].Name;
+            if (!surface.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            string name = Unique(BoneName(surface, prefix, list.Count), used);
+            list.Add((mesh.Points[p.Points[0]], mesh.Points[p.Points[1]], surface, name));
+        }
+        return list;
+    }
+
+    /// <summary>A skelegon's bone name: the rest of its surface's name ("Skelegon_Arm" gives "Arm"), or "Bone n".</summary>
+    public static string BoneName(string surface, string prefix, int index)
+    {
+        string rest = surface.Length > prefix.Length ? surface[prefix.Length..].Trim(' ', '_', '-', '.', ':') : "";
+        return rest.Length > 0 ? rest : $"Bone {index + 1}";
+    }
+
+    /// <summary>The name, or with " (2)", " (3)"… added until it's not among the used; then it is.</summary>
+    public static string Unique(string name, HashSet<string> used)
+    {
+        string n = name;
+        for (int i = 2; !used.Add(n); i++) n = $"{name} ({i})";
+        return n;
+    }
+}

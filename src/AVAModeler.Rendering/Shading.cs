@@ -16,7 +16,7 @@ public static class Shading
     /// A face's colour (0..1 per channel): its surface's colour, diffuse and luminosity, a specular highlight
     /// by glossiness, a blue tint when seen from behind (unless double-sided), and yellow when selected.
     /// </summary>
-    public static Vec3 FaceColor(Vec3 normal, Vec3 at, Surface? surface, ViewCamera cam, Vec3 light, bool backfaceTint, bool selected, Vec3? smoothNormal = null)
+    public static Vec3 FaceColor(Vec3 normal, Vec3 at, Surface? surface, ViewCamera cam, Vec3 light, bool backfaceTint, bool selected, Vec3? smoothNormal = null, Vec3? baseColor = null)
     {
         var toEye = cam.IsPerspective ? (cam.Eye - at).Normalized() : -cam.Basis().Forward;
         // Which way the face looks decides the tint; a smoothed normal (when given) does the lighting.
@@ -25,7 +25,7 @@ public static class Shading
         var n = facingAway ? -lit : lit;
         double k = 0.22 + 0.78 * (surface?.Diffuse ?? 1) * Math.Max(0, Vec3.Dot(n, light));
         double spec = (surface?.Specular ?? 0) * Math.Pow(Math.Max(0, Vec3.Dot((light + toEye).Normalized(), n)), Math.Max(4, surface?.Glossiness ?? 64));
-        var col = (surface?.Color.ToVec() ?? new Vec3(0.78, 0.78, 0.78)) * Math.Min(1, k + (surface?.Luminosity ?? 0)) + Vec3.One * spec;
+        var col = (baseColor ?? surface?.Color.ToVec() ?? new Vec3(0.78, 0.78, 0.78)) * Math.Min(1, k + (surface?.Luminosity ?? 0)) + Vec3.One * spec;
         if (facingAway && !(surface?.DoubleSided ?? false) && backfaceTint) col = Vec3.Lerp(col, new Vec3(0.42, 0.47, 0.72), 0.65);
         if (selected) col = Vec3.Lerp(col, new Vec3(1, 0.89, 0.29), 0.55);
         return new Vec3(Math.Clamp(col.X, 0, 1), Math.Clamp(col.Y, 0, 1), Math.Clamp(col.Z, 0, 1));

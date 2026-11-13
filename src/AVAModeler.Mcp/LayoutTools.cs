@@ -314,7 +314,7 @@ public sealed partial class ModelerTools
     // ───────────────────────────── arranging items ─────────────────────────────
 
     [McpServerTool(Name = "set_item", Destructive = true)]
-    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position), visibility and locked (a lock against the mouse in the app's views: it isn't picked or dragged there; numbers and agents still change it). A light's type (distant, point, spot or area), colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none), shadows, area_size (area, metres), radius (point and spot, metres: soft shadows) and shadow_samples. A camera's zoom or fov (vertical, degrees), width and height (pixels), make_current, depth of field (depth_of_field on/off, focal_distance in metres along its view or focus_on an item to put it in focus, and f_stop as LightWave's lens: the focal length is zoom × 7.5 mm and the opening that over the f-stop, so 4 is barely any blur at scene scale and 0.1 to 0.5 a strong, miniature-like one; or aperture, the opening's radius in metres, instead of f_stop; dof_samples rays a pixel) and motion blur (motion_blur on/off, shutter as a fraction of a frame centred on it, 0.5 by default; blur_samples rays a pixel). Depth of field and motion blur raise the rays a pixel to their samples. An object's cast_shadows and receive_shadows. A bone's rest pose (rest_position, rest_rotation, rest_length: where it binds to the object; changing it leaves the bone's pose, its channels, where it was, so the object bends by the difference, unless reset_pose is true), rest_at_frame (Layout's Rest Here: makes its pose at that frame its rest pose), reset_pose (puts its channels back at its rest pose, unanimated), strength and active. Intensity and zoom set the value throughout; when they're animated, use set_key.")]
+    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position), visibility and locked (a lock against the mouse in the app's views: it isn't picked or dragged there; numbers and agents still change it). A light's type (distant, point, spot or area), colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none), shadows, area_size (area, metres), radius (point and spot, metres: soft shadows) and shadow_samples. A camera's zoom or fov (vertical, degrees), width and height (pixels), make_current, depth of field (depth_of_field on/off, focal_distance in metres along its view or focus_on an item to put it in focus, and f_stop as LightWave's lens: the focal length is zoom × 7.5 mm and the opening that over the f-stop, so 4 is barely any blur at scene scale and 0.1 to 0.5 a strong, miniature-like one; or aperture, the opening's radius in metres, instead of f_stop; dof_samples rays a pixel) and motion blur (motion_blur on/off, shutter as a fraction of a frame centred on it, 0.5 by default; blur_samples rays a pixel). Depth of field and motion blur raise the rays a pixel to their samples. An object's cast_shadows and receive_shadows. A bone's rest pose (rest_position, rest_rotation, rest_length: where it binds to the object; changing it leaves the bone's pose, its channels, where it was, so the object bends by the difference, unless reset_pose is true), rest_at_frame (Layout's Rest Here: makes its pose at that frame its rest pose), reset_pose (puts its channels back at its rest pose, unanimated), strength, active, and the weight_map it follows (weight_map_only). Intensity and zoom set the value throughout; when they're animated, use set_key.")]
     public Task<string> SetItem(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("A new name.")] string? name = null,
@@ -355,6 +355,8 @@ public sealed partial class ModelerTools
         [Description("Bone: put its channels (position, rotation, scale) back at its rest pose, unanimated (after rest_position, rest_rotation and rest_at_frame).")] bool? reset_pose = null,
         [Description("Bone: how strongly it pulls.")] double? strength = null,
         [Description("Bone: whether it deforms the object.")] bool? active = null,
+        [Description("Bone: the object's weight map it follows (\"\" for none): a point moves with it by its weight there, 0 where it isn't in the map. Make weight maps in the Modeler with auto_weights or set_weights.")] string? weight_map = null,
+        [Description("Bone with a weight_map: weigh points by the map alone (true, the default) or by the map times the distance falloff (false).")] bool? weight_map_only = null,
         [Description("Light: light linking: all (the default: every object), only (just light_objects) or except (every object but light_objects). Shadows, flares and beams are as without it.")] string? light_link = null,
         [Description("Light: the objects light_link names, by name.")] string[]? light_objects = null,
         CancellationToken cancel = default) =>
@@ -386,7 +388,7 @@ public sealed partial class ModelerTools
                 linked.LinkedObjects = mode == LightLinkMode.All ? [] : objects;
                 s.Notify();
             }
-            Only<Bone>(rest_length, "rest_length"); Only<Bone>(strength, "strength"); Only<Bone>(active, "active");
+            Only<Bone>(rest_length, "rest_length"); Only<Bone>(strength, "strength"); Only<Bone>(active, "active"); Only<Bone>(weight_map, "weight_map"); Only<Bone>(weight_map_only, "weight_map_only");
             Only<Bone>(rest_position, "rest_position"); Only<Bone>(rest_rotation, "rest_rotation"); Only<Bone>(rest_at_frame, "rest_at_frame"); Only<Bone>(reset_pose, "reset_pose");
 
             // Names are looked up before the item is renamed.
@@ -459,6 +461,8 @@ public sealed partial class ModelerTools
                         bone.Strength = st;
                     }
                     if (active is { } ac) bone.Active = ac;
+                    if (weight_map != null) bone.WeightMap = weight_map.Trim() is { Length: > 0 } wm ? wm : null;
+                    if (weight_map_only is { } wmo) bone.WeightMapOnly = wmo;
                     if (reset_pose == true) bone.ResetPose();
                     break;
             }

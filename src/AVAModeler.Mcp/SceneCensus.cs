@@ -350,6 +350,12 @@ internal static partial class SceneCensus
                 o["rest_length"] = Round(bone.RestLength);
                 o["strength"] = Round(bone.Strength);
                 o["active"] = bone.Active;
+                if (bone.WeightMap != null)
+                {
+                    o["weight_map"] = bone.WeightMap;
+                    o["weight_map_only"] = bone.WeightMapOnly;
+                    if (bone.Owner.BaseMesh().FindPointMap(bone.WeightMap, PointMapKind.Weight) == null) o["weight_map_missing"] = true;
+                }
                 if (IK(bone, sf) is { } ik) o["ik"] = ik;
                 break;
         }

@@ -26,7 +26,8 @@ this engine as a submodule, so every change is additive: existing files, tools a
 
 ## Milestone B: weight maps and bones
 
-**Status:** not started.
+**Status:** done. `Core/PointMaps.cs`, `Geometry/WeightMaps.cs` and `Brushes.cs`, `Tools/MapTools.cs` (the Maps tab),
+`Bone.WeightMap`, `ViewLayer.PointColors`; agents' `set_weights`, `get_weights`, `auto_weights`. Show Map is Alt+W.
 
 1. **Point maps.** Weight maps (LWO2 VMAP `WGHT`, one value a point) and colour maps (`RGB `/`RGBA`) live on the mesh
    as `PointMap`s. Like UV maps, they follow the edits that renumber points (removing, merging, appending, copying).

@@ -374,6 +374,7 @@ public sealed partial class Scene
                 c = new Bone(b.Name, map.TryGetValue(b.Owner, out var owner) ? (ObjectItem)owner : b.Owner)
                 {
                     RestPosition = b.RestPosition, RestRotation = b.RestRotation, RestLength = b.RestLength, Strength = b.Strength, Active = b.Active,
+                    WeightMap = b.WeightMap, WeightMapOnly = b.WeightMapOnly,
                     FullTimeIK = b.FullTimeIK, IKAnchor = b.IKAnchor, IKLocked = b.IKLocked, IKLimits = b.IKLimits,
                 };
                 break;
@@ -472,7 +473,7 @@ public sealed partial class Scene
     {
         IReadOnlyList<SoftParticle> soft = [];
         int viewOnly = -1;
-        var mesh = new Mesh { Points = [.. deformed.Points], Polygons = [.. deformed.Polygons], UVMaps = deformed.UVMaps };
+        var mesh = new Mesh { Points = [.. deformed.Points], Polygons = [.. deformed.Polygons], UVMaps = deformed.UVMaps, PointMaps = deformed.PointMaps };
         var surfaces = new List<Surface>(o.Surfaces.Count > 0 ? o.Surfaces : [new Surface("Default")]);
         var toLocal = world.Inverted();
         if (o.Hair is { } hair)
@@ -585,5 +586,5 @@ public sealed class ObjectFrame(ObjectItem item, Mat4 world, Mesh mesh, IReadOnl
     public int ViewOnlySurface { get; init; } = -1;
 
     /// <summary>The deformed mesh placed in the world (made on first use).</summary>
-    public Mesh WorldMesh => _worldMesh ??= new Mesh { Points = Mesh.Points.Select(World.TransformPoint).ToList(), Polygons = Mesh.Polygons, UVMaps = Mesh.UVMaps };
+    public Mesh WorldMesh => _worldMesh ??= new Mesh { Points = Mesh.Points.Select(World.TransformPoint).ToList(), Polygons = Mesh.Polygons, UVMaps = Mesh.UVMaps, PointMaps = Mesh.PointMaps };
 }

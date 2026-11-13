@@ -45,6 +45,16 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     `Press`, `Move` and `Release` are the mouse, for tests; `PreviewBall` shades a ball with it without the ray
     tracer); agents use `set_surface_nodes` (`NodeTools.cs`, `NodeGraphJson` both ways). A new node kind needs its
     entry in `SurfaceNodes.All`, its case in `NodeProgram.Run`, and its name in `set_surface_nodes`'s description.
+  - `PointMaps.cs` is `PointMap` (weight or RGB/RGBA colour values by point, `Mesh.PointMaps`), carried like UV maps
+    by `Clone`, `TakeFrom`, `Append`, `RemovePoints` (so merging too), `CopyPointUVs`, `InheritUVs` (a copied point
+    takes its original's) and `AddPointBetween` (blended); a scene's `new Mesh { … }` copies pass `PointMaps` along with
+    `UVMaps`, so add both when you add another. `MapNames.Opposite` swaps Left/Right, `.L`/`.R` and the like;
+    `SkelegonNames` names skelegons as Layout's bones (`Skelegons.CreateBones` gives each bone the weight map of its
+    name). `Document.CurrentWeightMap`, `CurrentColorMap` and `ShownPointMap` (which `ViewScene.FromDocument` turns
+    into `ViewLayer.PointColors`, drawn through `Shading.FaceColor`'s `baseColor` by both renderers) are view state,
+    not undo steps. LWOB and LWO2 keep them as VMAPs of type WGHT, `RGB ` and RGBA (`VertexMaps`); .avascene meshes as
+    `PointMapDto`. Bones: `Bone.WeightMap` and `WeightMapOnly`, used by `BoneDeformer.Weight` (a bone without a map, or
+    whose map is missing, weighs by distance exactly as before).
   - `Texture.cs` is `TextureLayer` (an image map, or a procedural: `Procedural` names the kind, `Parameters` holds
     TFP0 to TFP3 and TIP0, with `TextureColor`, `Value` and `Falloff`) and the projections' maths. `Procedurals.cs`
     is LightWave 5's procedural textures: the catalog (`Procedurals.All`, each kind's settings with their LWOB slot,
@@ -174,6 +184,12 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - `LuaSandbox.cs`: the macro sandbox for any Lua (`Create`, `Run` with a caller's globals, print sink and time
     limit; `ToArgs`, `List`, `Indices`, `Numbers`, `Strings`). `Macros.Run` is built on it; another app's Lua
     (AVALightWave's scene macros) goes through it, never a bare MoonSharp `Script`.
+  - `MapTools.cs`: `BrushTool` (the brushes' base: a stroke of dabs where `DragInfo.Ray` meets the foreground's
+    original surface, `Brushes.Space`d a quarter radius apart, replayed from the originals on every update, mirrored
+    with symmetry; one dab at Center from a script, `SetStroke` for agents' strokes) and the Maps tab's weight tools,
+    on `Geometry/WeightMaps.cs` (`Dab`, `Smooth`, `Normalize`, `Mirror`, `FromSkelegons`, `HeatColor`) and
+    `Geometry/Brushes.cs` (`BrushFalloff`, `Under`, `Space`, `Raycast` with a cached BVH per mesh). Agents:
+    `set_weights`, `get_weights`, `auto_weights` (`Mcp/MapTools.cs`); macros `setweight` and `getweight`.
   - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).

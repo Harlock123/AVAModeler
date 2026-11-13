@@ -137,6 +137,7 @@ public sealed class SoftwareRenderer : IRenderer
         for (int i = 0; i < normals.Length; i++) normals[i] = mesh.Normal(i);
         var corners = Shading.CornerNormals(mesh, scene.Surfaces);
         var textured = new Dictionary<int, TexturedSurface?>();
+        var tint = layer.Subdivided == null && layer.PointColors is { } pc && pc.Length == mesh.Points.Count ? pc : null;
         Span<TexturedCorner> tc = stackalloc TexturedCorner[3];
         foreach (var t in tris)
         {
@@ -145,6 +146,13 @@ public sealed class SoftwareRenderer : IRenderer
             var poly = mesh.Polygons[t.Polygon];
             var surface = Shading.SurfaceOf(scene, poly);
             bool sel = selected != null && selected.Contains(t.Polygon);
+            if (tint != null)
+            {
+                Vec3 Tinted(int point) => Shading.FaceColor(normals[t.Polygon], mesh.Points[point], surface, _cam, light, scene.BackfaceTint, sel,
+                    surface is { Smoothing: true } ? Shading.Corner(corners, mesh, t.Polygon, point) : null, tint[point]);
+                FillTriangle(a, b, c, Tinted(t.A), Tinted(t.B), Tinted(t.C));
+                continue;
+            }
             if (scene.ShowTextures && surface != null)
             {
                 if (!textured.TryGetValue(poly.Surface, out var ts)) textured[poly.Surface] = ts = Texturing.Prepare(surface, layer.ImageBase ?? scene.ImageBase);

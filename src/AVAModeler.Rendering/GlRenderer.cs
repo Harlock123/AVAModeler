@@ -546,13 +546,14 @@ public sealed unsafe class GlRenderer : IRenderer
         var corners = Shading.CornerNormals(mesh, scene.Surfaces);
         var prepared = new Dictionary<int, (TexturedSurface Surface, List<float> Vertices)?>();
         Span<TexturedCorner> tc = stackalloc TexturedCorner[3];
+        var tint = layer.Subdivided == null && layer.PointColors is { } pc && pc.Length == mesh.Points.Count ? pc : null;
         foreach (var t in Tessellation.Of(mesh))
         {
             var poly = mesh.Polygons[t.Polygon];
             var n = mesh.Normal(poly);
             var surface = Shading.SurfaceOf(scene, poly);
             bool sel = selected != null && selected.Contains(t.Polygon);
-            if (scene.ShowTextures && surface != null)
+            if (scene.ShowTextures && surface != null && tint == null)
             {
                 if (!prepared.TryGetValue(poly.Surface, out var batch))
                 {
@@ -574,7 +575,7 @@ public sealed unsafe class GlRenderer : IRenderer
             foreach (int i in new[] { t.A, t.B, t.C })
             {
                 var smooth = surface is { Smoothing: true } ? Shading.Corner(corners, mesh, t.Polygon, i) : (Vec3?)null;
-                var col = Shading.FaceColor(n, mesh.Points[i], surface, cam, light, scene.BackfaceTint, sel, smooth);
+                var col = Shading.FaceColor(n, mesh.Points[i], surface, cam, light, scene.BackfaceTint, sel, smooth, tint?[i]);
                 var p = mesh.Points[i];
                 var nn = smooth ?? n;
                 v.Add((float)p.X); v.Add((float)p.Y); v.Add((float)p.Z);

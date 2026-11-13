@@ -122,6 +122,20 @@ public sealed class ItemPropertiesPanel : StackPanel
                 var active = new CheckBox { Content = "Active", IsChecked = bone.Active, Foreground = Look.Text };
                 active.IsCheckedChanged += (_, _) => Change("Bone Active", () => { bone.Active = active.IsChecked == true; Session.Scene.Notify(); });
                 Children.Add(active);
+                var weightMaps = new List<string> { "(distance)" };
+                weightMaps.AddRange(bone.Owner.BaseMesh().PointMaps.Where(m => m.Kind == PointMapKind.Weight).Select(m => m.Name));
+                if (bone.WeightMap != null && !weightMaps.Contains(bone.WeightMap)) weightMaps.Add(bone.WeightMap);
+                var weightMap = new ComboBox { Name = "BoneWeightMap", ItemsSource = weightMaps, SelectedItem = bone.WeightMap ?? "(distance)", FontSize = 11, HorizontalAlignment = HorizontalAlignment.Stretch };
+                weightMap.SelectionChanged += (_, _) =>
+                {
+                    string? chosen = weightMap.SelectedItem as string is "(distance)" or null ? null : (string)weightMap.SelectedItem;
+                    if (chosen != bone.WeightMap) Change("Bone Weight Map", () => { bone.WeightMap = chosen; Session.Scene.Notify(); });
+                };
+                Children.Add(new TextBlock { Text = "Weight map", Foreground = Look.Text, FontSize = 11 });
+                Children.Add(weightMap);
+                var mapOnly = new CheckBox { Content = "Weight map only", IsChecked = bone.WeightMapOnly, Foreground = Look.Text, IsEnabled = bone.WeightMap != null };
+                mapOnly.IsCheckedChanged += (_, _) => Change("Weight Map Only", () => { bone.WeightMapOnly = mapOnly.IsChecked == true; Session.Scene.Notify(); });
+                Children.Add(mapOnly);
                 Children.Add(Look.MakeButton("Rest here", () => Change("Rest Here", () => { bone.RestFromPose(Session.Frame); Session.Scene.Notify(); }), "Make the current pose the rest pose"));
                 IKSettings(bone);
                 break;

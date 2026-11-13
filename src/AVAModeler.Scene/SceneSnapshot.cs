@@ -196,10 +196,12 @@ public sealed class SceneSnapshot
         {
             var (position, rotation, length, strength, active) = (b.RestPosition, b.RestRotation, b.RestLength, b.Strength, b.Active);
             var (goal, fullTime, anchor, locked, limits) = (b.IKGoal, b.FullTimeIK, b.IKAnchor, b.IKLocked, b.IKLimits);
+            var (weightMap, mapOnly) = (b.WeightMap, b.WeightMapOnly);
             return () =>
             {
                 (b.RestPosition, b.RestRotation, b.RestLength, b.Strength, b.Active) = (position, rotation, length, strength, active);
                 (b.IKGoal, b.FullTimeIK, b.IKAnchor, b.IKLocked, b.IKLimits) = (goal, fullTime, anchor, locked, limits);
+                (b.WeightMap, b.WeightMapOnly) = (weightMap, mapOnly);
             };
         }
 

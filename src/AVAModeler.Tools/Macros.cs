@@ -34,6 +34,7 @@ public static class Macros
         ("selloop() / selring()", "adds the edge loop or edge ring through each selected edge (or the edge between two selected points), in Edges mode; returns how many edges are selected"),
         ("selbox(x0, y0, z0, x1, y1, z1)", "selects (in the current mode) the points inside a box, or the polygons wholly inside it"),
         ("selectall() / deselect() / invert()", "selection"),
+        ("setweight(map, {points...}, w) / getweight(map, point)", "gives the current layer's points a weight (0 to 1) in a weight map, made if new (one undo step), or reads one"),
         ("symmetry(\"x\" | \"y\" | \"z\" | \"off\")", "models with symmetry across the plane through the origin square to that axis: tools act on each selected point's mirror partner too and keep the sides matched; returns the setting"),
         ("setlayers({fg...}, {bg...})", "which layers are foreground and background"),
         ("undo() / redo()", "the history"),
@@ -87,6 +88,8 @@ public static class Macros
         g["selbox"] = (Action<double, double, double, double, double, double>)((x0, y0, z0, x1, y1, z1) =>
             commands.SelectInside(Box3.FromCorners(new Vec3(x0, y0, z0), new Vec3(x1, y1, z1))));
         g["symmetry"] = (Func<string?, string>)(a => { if (a != null) commands.SetSymmetry(Symmetry.Parse(a)); return commands.SymmetryName; });
+        g["setweight"] = (Action<string, Table, double>)((map, pts, w) => commands.SetWeights(map, [.. Indices(pts)], [w]));
+        g["getweight"] = (Func<string, int, double>)((map, p) => commands.Weight(map, p - 1));
         g["selectall"] = (Action)commands.SelectAll;
         g["deselect"] = (Action)commands.SelectNone;
         g["invert"] = (Action)commands.Invert;

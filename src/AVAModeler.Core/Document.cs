@@ -364,6 +364,13 @@ public sealed class Document
     public Mesh? Clipboard;
     /// <summary>The UV map being worked on (shown in the UV view, and made by Make UVs unless told otherwise); null for none chosen.</summary>
     public string? CurrentUVMap;
+    /// <summary>The weight map the weight tools work on by default, and the colour map the colour tools do.</summary>
+    public string? CurrentWeightMap, CurrentColorMap;
+    /// <summary>
+    /// The point map the shaded views colour faces by (weights blue through green to red, colours as they are), or
+    /// null for the surfaces' colours. A view setting, like <see cref="Symmetry"/>.
+    /// </summary>
+    public string? ShownPointMap;
     /// <summary>
     /// The reference images behind the flat views (see <see cref="Backdrop"/>). A display setting, not part of the
     /// object: it isn't saved in the object file or undone, and changing it doesn't mark the object modified.
@@ -486,7 +493,7 @@ public sealed class Document
     /// </summary>
     public Document Copy()
     {
-        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, Symmetry = Symmetry, Selection = Selection.Clone(), Backdrops = Backdrops };
+        var d = new Document { FilePath = FilePath, Modified = Modified, CurrentUVMap = CurrentUVMap, CurrentWeightMap = CurrentWeightMap, CurrentColorMap = CurrentColorMap, ShownPointMap = ShownPointMap, Symmetry = Symmetry, Selection = Selection.Clone(), Backdrops = Backdrops };
         d.Layers = Layers.Select(l => l.Clone()).ToList();
         d.Surfaces = Surfaces.Select(s => s.Clone()).ToList();
         return d;

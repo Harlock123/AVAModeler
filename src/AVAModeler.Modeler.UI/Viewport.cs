@@ -339,6 +339,7 @@ public sealed class ViewportControl : Panel
         Focus();
         var p = e.GetPosition(this);
         var props = e.GetCurrentPoint(this).Properties;
+        _pressure = PressureOf(e.Pointer.Type, props.Pressure);
         _press = _last = p;
         _moved = false;
         _mods = e.KeyModifiers;
@@ -370,6 +371,7 @@ public sealed class ViewportControl : Panel
         base.OnPointerMoved(e);
         var p = e.GetPosition(this);
         if (_gesture == Gesture.None) return;
+        _pressure = PressureOf(e.Pointer.Type, e.GetCurrentPoint(this).Properties.Pressure);
         double dx = p.X - _last.X, dy = p.Y - _last.Y;
         if (Math.Abs(p.X - _press.X) + Math.Abs(p.Y - _press.Y) > 3) _moved = true;
         switch (_gesture)
@@ -468,6 +470,11 @@ public sealed class ViewportControl : Panel
 
     private Vec3 _toolStart;
     private bool _alternate;
+    private double _pressure = 1;
+
+    /// <summary>A pen's pressure (0 to 1); a mouse, or a pen that reports none, presses fully.</summary>
+    private static double PressureOf(PointerType type, float pressure) =>
+        type == PointerType.Pen && pressure > 0 && float.IsFinite(pressure) ? Math.Clamp(pressure, 0, 1) : 1;
 
     private void BeginToolDrag(Point p, bool alternate)
     {
@@ -512,6 +519,7 @@ public sealed class ViewportControl : Panel
             Start = _toolStart, Current = current, DxPixels = p.X - _press.X, DyPixels = p.Y - _press.Y,
             Right = r, Up = u, Forward = f, First = first, Alternate = _alternate, Constrain = _mods.HasFlag(KeyModifiers.Shift),
             UnitsPerPixel = Camera.DragDelta(1, 0, _toolStart).Length,
+            Ray = _uv ? null : Camera.RayAt(p.X, p.Y), Pressure = _pressure,
         };
         try
         {

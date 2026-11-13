@@ -144,7 +144,7 @@ public sealed class Keymap
         // Commands.
         ["Undo"] = "Ctrl+Z", ["Redo"] = "Ctrl+Shift+Z", ["Cut"] = "X", ["Copy"] = "C", ["Paste"] = "Ctrl+V",
         ["Cycle Selection Mode"] = "Space", ["Commit"] = "Enter", ["Cancel"] = "Escape", ["Deselect"] = "OemQuestion",
-        ["Invert Selection"] = "OemQuotes", ["Select Connected"] = "OemCloseBrackets", ["Select Loop"] = "Alt+L", ["Select Ring"] = "Alt+R", ["Fit All"] = "A", ["Fit Selected"] = "Shift+A", ["Symmetry"] = "Alt+Y",
+        ["Invert Selection"] = "OemQuotes", ["Select Connected"] = "OemCloseBrackets", ["Select Loop"] = "Alt+L", ["Select Ring"] = "Alt+R", ["Fit All"] = "A", ["Fit Selected"] = "Shift+A", ["Symmetry"] = "Alt+Y", ["Show Map"] = "Alt+W",
         ["Maximize View"] = "D0", ["Backdrop"] = "D", ["Numeric Panel"] = "N", ["Mesh Info"] = "W", ["UV View"] = "U", ["MetaNURBS"] = "Tab", ["Swap Layers"] = "OemPipe", ["Zoom In"] = "OemPeriod", ["Zoom Out"] = "OemComma",
         ["New"] = "Ctrl+N", ["Open"] = "Ctrl+O", ["Save"] = "Ctrl+S", ["Quit"] = "Ctrl+Q",
     };

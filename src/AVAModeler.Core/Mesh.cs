@@ -86,7 +86,7 @@ public sealed partial class Mesh
 
     public void Touch() => Version++;
 
-    public Mesh Clone() => new() { Points = [.. Points], Polygons = Polygons.Select(p => p.Clone()).ToList(), UVMaps = UVMaps.Select(m => m.Clone()).ToList() };
+    public Mesh Clone() => new() { Points = [.. Points], Polygons = Polygons.Select(p => p.Clone()).ToList(), UVMaps = UVMaps.Select(m => m.Clone()).ToList(), PointMaps = PointMaps.Select(m => m.Clone()).ToList() };
 
     /// <summary>Takes another mesh's points, polygons and UV maps as its own (the other mesh shouldn't be used after).</summary>
     public void TakeFrom(Mesh other)
@@ -94,6 +94,7 @@ public sealed partial class Mesh
         Points = other.Points;
         Polygons = other.Polygons;
         UVMaps = other.UVMaps;
+        PointMaps = other.PointMaps;
         Touch();
     }
 
@@ -126,6 +127,7 @@ public sealed partial class Mesh
         Points.Clear();
         Polygons.Clear();
         foreach (var m in UVMaps) m.Points.Clear();
+        foreach (var m in PointMaps) m.Values.Clear();
         Touch();
     }
 
@@ -150,6 +152,13 @@ public sealed partial class Mesh
         {
             var mine = AddUVMap(map.Name);
             foreach (var (i, uv) in map.Points) mine.Points[i + offset] = uv;
+        }
+        foreach (var map in other.PointMaps)
+        {
+            var mine = PointMaps.Find(m => m.Name == map.Name);
+            if (mine == null) PointMaps.Add(mine = new PointMap(map.Name, map.Kind));
+            else if (mine.IsColor != map.IsColor) continue;
+            foreach (var (i, v) in map.Values) mine.Values[i + offset] = (float[])v.Clone();
         }
         Touch();
         return offset;

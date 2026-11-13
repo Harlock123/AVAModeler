@@ -28,6 +28,11 @@ public sealed class ViewLayer
     /// dither (<see cref="Dither"/>), so the depth buffer stays as it is and nothing needs sorting.
     /// </summary>
     public double Dissolve;
+    /// <summary>
+    /// Colours by point that shaded faces take in place of their surfaces' (a weight map's heat colours, a colour
+    /// map), blended across each face; textures aren't drawn. Null for the surfaces' own.
+    /// </summary>
+    public Vec3[]? PointColors;
 }
 
 /// <summary>
@@ -75,7 +80,7 @@ public readonly record struct OverlayLine(Vec3 A, Vec3 B, uint Color)
 }
 
 /// <summary>Everything a view draws: the layers, the surfaces they use, and how.</summary>
-public sealed class ViewScene
+public sealed partial class ViewScene
 {
     public List<ViewLayer> Layers = [];
     public IReadOnlyList<Surface> Surfaces = [];
@@ -128,9 +133,27 @@ public sealed class ViewScene
                 SelectedPolygons = fg && sel.Mode == SelectionMode.Polygons && sel.Polygons.TryGetValue(i, out var q) ? q : null,
                 SelectedEdges = fg && sel.Mode == SelectionMode.Edges && sel.Edges.TryGetValue(i, out var e) ? e : null,
                 Subdivided = fg ? smoothed?.Invoke(i) : null,
+                PointColors = document.ShownPointMap is { } shown ? PointColorsOf(layer.Mesh, shown) : null,
             });
         }
         return scene;
+    }
+}
+
+public sealed partial class ViewScene
+{
+    /// <summary>
+    /// A mesh's point map as colours by point: a weight map in heat colours (blue 0, green 0.5, red 1), a colour map
+    /// as its colours (white where a point has none). Null when the mesh has no map of that name.
+    /// </summary>
+    public static Vec3[]? PointColorsOf(Mesh mesh, string name)
+    {
+        var map = mesh.FindPointMap(name);
+        if (map == null) return null;
+        var colors = new Vec3[mesh.Points.Count];
+        for (int i = 0; i < colors.Length; i++)
+            colors[i] = map.IsColor ? map.Color(i) ?? Vec3.One : Geometry.WeightMaps.HeatColor(map.Weight(i));
+        return colors;
     }
 }
 

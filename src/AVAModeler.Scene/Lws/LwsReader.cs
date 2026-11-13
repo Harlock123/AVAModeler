@@ -349,6 +349,8 @@ public static class LwsReader
                 case "BoneRestLength" when _current is Bone b: b.RestLength = Number(rest, key); break;
                 case "BoneStrength" when _current is Bone b: b.Strength = First(ValueOrEnvelope(rest, key)); break;
                 case "BoneActive" when _current is Bone b: b.Active = Int(rest, key) != 0; break;
+                case "BoneWeightMapName" when _current is Bone b: b.WeightMap = rest.Trim().Trim('"') is { Length: > 0 } wm ? wm : null; break;
+                case "BoneWeightMapOnly" when _current is Bone b: b.WeightMapOnly = Int(rest, key) != 0; break;
                 case "BoneFalloffType" when _lastObject != null:
                     _lastObject.BoneFalloffExponent = Math.Pow(2, Int(rest, key));
                     break;

@@ -179,6 +179,8 @@ public sealed class ModelerWorkspace : DockPanel
             ["Backface Tint"] = () => { s.Preferences.BackfaceTint = !s.Preferences.BackfaceTint; D().Notify(); },
             ["Snap"] = ToggleSnap,
             ["Symmetry"] = () => SetSymmetry(D().Symmetry switch { null => Axis.X, Axis.X => Axis.Y, Axis.Y => Axis.Z, _ => null }),
+            ["Show Map"] = ToggleShowMap,
+            ["Next Point Map"] = NextPointMap,
             ["Symmetry X"] = () => SetSymmetry(Axis.X),
             ["Symmetry Y"] = () => SetSymmetry(Axis.Y),
             ["Symmetry Z"] = () => SetSymmetry(Axis.Z),
@@ -250,6 +252,39 @@ public sealed class ModelerWorkspace : DockPanel
         Session.Preferences.PerspectiveStyle = style;
         Session.Document.Notify();
     }
+
+    /// <summary>View › Show Map: the shaded views colour faces by the current weight (or colour) map, or not.</summary>
+    public void ToggleShowMap()
+    {
+        var d = Session.Document;
+        if (d.ShownPointMap != null) d.ShownPointMap = null;
+        else
+        {
+            var names = PointMapNames(d);
+            d.ShownPointMap = d.CurrentWeightMap is { } w && names.Contains(w) ? w : d.CurrentColorMap is { } c && names.Contains(c) ? c : names.FirstOrDefault();
+            if (d.ShownPointMap == null) { Session.SetStatus("There are no weight or colour maps yet: paint one with Paint Weights or Paint Colors (Maps tab)."); return; }
+        }
+        d.Notify();
+        Session.SetStatus(d.ShownPointMap is { } m ? $"Showing the {m} map (weights: blue 0, green ½, red 1)." : "Showing the surfaces.");
+    }
+
+    /// <summary>Shows the next weight or colour map (and makes it the one the map tools paint).</summary>
+    public void NextPointMap()
+    {
+        var d = Session.Document;
+        var names = PointMapNames(d);
+        if (names.Count == 0) { Session.SetStatus("There are no weight or colour maps yet."); return; }
+        int i = d.ShownPointMap is { } m ? names.IndexOf(m) : -1;
+        string next = names[(i + 1) % names.Count];
+        d.ShownPointMap = next;
+        bool weight = d.ForegroundLayers.Any(l => d.Layers[l].Mesh.FindPointMap(next, PointMapKind.Weight) != null);
+        if (weight) d.CurrentWeightMap = next; else d.CurrentColorMap = next;
+        d.Notify();
+        Session.SetStatus($"Showing the {next} map.");
+    }
+
+    private static List<string> PointMapNames(Document d) =>
+        [.. d.ForegroundLayers.SelectMany(l => d.Layers[l].Mesh.PointMaps.Select(m => m.Name)).Distinct()];
 
     /// <summary>Models with symmetry across an axis, or not (null); says so in the status bar.</summary>
     public void SetSymmetry(Axis? axis)
@@ -586,6 +621,7 @@ public sealed class ModelerWorkspace : DockPanel
                 Group("_View", Item("Fit _All", "Fit All"), Item("Fit _Selected", "Fit Selected"), Item("_Maximize", "Maximize View"), Item("_Numeric Panel", "Numeric Panel"), Item("Mesh _Info", "Mesh Info"), Item("_Backdrop…", "Backdrop"), "-",
                     Item("_Wireframe", "Style Wireframe"), Item("S_haded", "Style Shaded"), Item("Shaded + Wire", "Style ShadedWireframe"), "-",
                     Item("_UV View", "UV View"), Item("Next UV _Map", "Next UV Map"), "-",
+                    Item("Show Weight/Colour Ma_p", "Show Map"), Item("Next Weight/Colour Map", "Next Point Map"), "-",
                     Item("Meta_NURBS", "MetaNURBS"), Item("Backface _Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-",
                     Group("S_ymmetry", Item("_Next (Off, X, Y, Z)", "Symmetry"), Item("_X", "Symmetry X"), Item("_Y", "Symmetry Y"), Item("_Z", "Symmetry Z"), Item("_Off", "Symmetry Off")), "-", Item("_Layout", "Show Layout")),
                 Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin"), "-", ChatItem(), _agents),

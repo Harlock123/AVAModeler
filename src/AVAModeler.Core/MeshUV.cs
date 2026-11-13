@@ -134,6 +134,7 @@ public sealed partial class Mesh
     {
         foreach (var m in UVMaps)
             if (m.Points.TryGetValue(from, out var uv)) m.Points[to] = uv;
+        CopyPointMaps(from, to);
     }
 
     /// <summary>
@@ -143,6 +144,15 @@ public sealed partial class Mesh
     /// </summary>
     public void InheritUVs(Polygon target, Polygon source, Func<int, int> origin)
     {
+        // Weights and colours are the points' own: a copied point takes its original's where it has none yet.
+        if (PointMaps.Count > 0)
+            foreach (int q in target.Points.Distinct())
+            {
+                int s = origin(q);
+                if (s < 0 || s == q || s >= Points.Count) continue;
+                foreach (var m in PointMaps)
+                    if (!m.Values.ContainsKey(q) && m.Values.TryGetValue(s, out var v)) m.Values[q] = (float[])v.Clone();
+            }
         foreach (var m in UVMaps.ToList())
             foreach (int q in target.Points.Distinct().ToList())
             {
@@ -190,6 +200,7 @@ public sealed partial class Mesh
                 if (i >= 0 && i < map.Length && map[i] >= 0) moved[map[i]] = uv;
             m.Points = moved;
         }
+        RemapPointMaps(map);
     }
 
     /// <summary>Renumbers a polygon's corner UVs (old point index → new, -1 for gone).</summary>

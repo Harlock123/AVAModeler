@@ -18,6 +18,13 @@ public sealed class Bone : SceneItem
     public double RestLength = 1;
     public double Strength = 1;
     public bool Active = true;
+    /// <summary>
+    /// The object's weight map this bone follows (LightWave 6's Bone Weight Map), or null: a point moves with it by
+    /// its weight there (0 where it isn't in the map), times the distance falloff unless <see cref="WeightMapOnly"/>.
+    /// </summary>
+    public string? WeightMap;
+    /// <summary>With a <see cref="WeightMap"/>, weigh points by the map alone (the default), not the map times the falloff.</summary>
+    public bool WeightMapOnly = true;
 
     /// <summary>
     /// The item this bone's tip reaches for by inverse kinematics (LightWave's Goal Object): a null, usually. The chain
@@ -104,9 +111,10 @@ public sealed class Bone : SceneItem
 /// <summary>Moves an object's points by its bones.</summary>
 internal static class BoneDeformer
 {
-    public static void Apply(ObjectItem obj, Vec3[] points, double frame)
+    public static void Apply(ObjectItem obj, Vec3[] points, double frame, Mesh? source = null)
     {
         var bones = obj.Bones.Where(b => b.Active && b.Strength != 0).ToList();
+        var maps = MapsOf(bones, source ?? obj.BaseMesh());
         if (bones.Count == 0) return;
         var starts = new Vec3[bones.Count];
         var ends = new Vec3[bones.Count];
@@ -125,13 +133,33 @@ internal static class BoneDeformer
             double total = 0;
             for (int i = 0; i < bones.Count; i++)
             {
-                double d = Math.Max(DistanceToSegment(points[p], starts[i], ends[i]), 1e-6);
-                double w = bones[i].Strength / Math.Pow(d, n);
+                double w = Weight(bones[i], maps[i], p, points[p], starts[i], ends[i], n);
+                if (w == 0) continue;
                 sum += moves[i].TransformPoint(points[p]) * w;
                 total += w;
             }
             if (total != 0) points[p] = sum / total;
         }
+    }
+
+    /// <summary>Each bone's weight map in the mesh (null where it has none, or the mesh hasn't that map).</summary>
+    private static PointMap?[] MapsOf(List<Bone> bones, Mesh mesh) =>
+        [.. bones.Select(b => b.WeightMap is { } name ? mesh.FindPointMap(name, PointMapKind.Weight) : null)];
+
+    /// <summary>
+    /// How much a bone pulls a point: strength / distance^n, or with a weight map the point's weight there (alone, or
+    /// times that falloff). <paramref name="index"/> is the point's in the mesh (-1: not known, so the map isn't used).
+    /// </summary>
+    private static double Weight(Bone bone, PointMap? map, int index, Vec3 p, Vec3 start, Vec3 end, double n)
+    {
+        if (map != null && index >= 0)
+        {
+            double mw = map.Weight(index);
+            if (mw == 0) return 0;
+            if (bone.WeightMapOnly) return bone.Strength * mw;
+            return bone.Strength * mw / Math.Pow(Math.Max(DistanceToSegment(p, start, end), 1e-6), n);
+        }
+        return bone.Strength / Math.Pow(Math.Max(DistanceToSegment(p, start, end), 1e-6), n);
     }
 
     /// <summary>The bones that move an object's points (active, with strength), in the order <see cref="Weights"/> and <see cref="Moves"/> use.</summary>
@@ -153,14 +181,19 @@ internal static class BoneDeformer
             ends[i] = rest.TransformPoint(new Vec3(0, 0, bones[i].RestLength));
         }
         double n = obj.BoneFalloffExponent;
+        var mesh = obj.BaseMesh();
+        var maps = MapsOf(bones, mesh);
+        // A place that is one of the mesh's points (a hair's root) takes that point's weights.
+        Dictionary<Vec3, int>? at = maps.Any(m => m != null) ? [] : null;
+        if (at != null) for (int i = 0; i < mesh.Points.Count; i++) at.TryAdd(mesh.Points[i], i);
         return p =>
         {
             var w = new double[bones.Count];
             double total = 0;
+            int index = at != null && at.TryGetValue(p, out int k) ? k : -1;
             for (int i = 0; i < bones.Count; i++)
             {
-                double d = Math.Max(DistanceToSegment(p, starts[i], ends[i]), 1e-6);
-                w[i] = bones[i].Strength / Math.Pow(d, n);
+                w[i] = Weight(bones[i], maps[i], index, p, starts[i], ends[i], n);
                 total += w[i];
             }
             if (total != 0) for (int i = 0; i < w.Length; i++) w[i] /= total;
@@ -227,6 +260,8 @@ public static class Skelegons
                 RestRotation = Rotations.FromMatrix(local),
                 RestLength = (end - start).Length,
             };
+            // A weight map of the bone's name (as Weights from Skelegons makes) is the one it follows.
+            bone.WeightMap = mesh.FindPointMap(bone.Name, PointMapKind.Weight)?.Name;
             restInObject[i] = objectRest;
             scene.Add(bone);
             if (parentBone != null) bone.Parent = parentBone;

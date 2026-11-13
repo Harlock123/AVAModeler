@@ -3,7 +3,7 @@ using AVAModeler.Core;
 namespace AVAModeler.Formats;
 
 /// <summary>
-/// LWO2's vertex map chunks for UVs: VMAP (type TXUV) gives points their coordinates in a named map, and VMAD gives
+/// LWO2's vertex map chunks for UVs (and weight and colour maps, as VMAPs of type WGHT, RGB and RGBA): VMAP (type TXUV) gives points their coordinates in a named map, and VMAD gives
 /// polygon corners coordinates of their own (along a seam). LWOB files written here carry the same chunks, after
 /// each layer's polygons, so UV maps survive in the classic format too (LightWave 5 skips chunks it doesn't know).
 /// Point and polygon numbers count from the layer's first.
@@ -18,7 +18,13 @@ internal static class VertexMaps
     /// </summary>
     public static void ReadVmap(IffReader body, Mesh mesh, int pointBase)
     {
-        if (body.Id4() != "TXUV") return;
+        string type = body.Id4();
+        if (type is "WGHT" or "RGB " or "RGBA")
+        {
+            ReadPointMap(body, mesh, pointBase, type);
+            return;
+        }
+        if (type != "TXUV") return;
         int dim = body.U2();
         string name = body.S0();
         if (dim < 2) return;
@@ -66,6 +72,36 @@ internal static class VertexMaps
         }
     }
 
+    /// <summary>
+    /// Reads a weight (WGHT) or colour (RGB, RGBA) VMAP into a point map. As with UVs, nothing changes unless the whole
+    /// chunk fits the mesh.
+    /// </summary>
+    private static void ReadPointMap(IffReader body, Mesh mesh, int pointBase, string type)
+    {
+        var kind = type switch { "WGHT" => PointMapKind.Weight, "RGB " => PointMapKind.Rgb, _ => PointMapKind.Rgba };
+        int dim = body.U2();
+        string name = body.S0();
+        int want = PointMap.DimensionOf(kind);
+        if (dim < want) return;
+        var read = new List<(int, float[])>();
+        while (!body.AtEnd)
+        {
+            int p = pointBase + body.VX();
+            var v = new float[want];
+            for (int i = 0; i < dim; i++)
+            {
+                float f = body.F4();
+                if (i < want) v[i] = f;
+            }
+            if (p >= mesh.Points.Count) throw body.Error($"maps point {p - pointBase} but the layer has only {mesh.Points.Count - pointBase}");
+            read.Add((p, v));
+        }
+        var existing = mesh.PointMaps.Find(m => m.Name == name);
+        if (existing != null && existing.IsColor != (kind != PointMapKind.Weight)) return;
+        var map = existing ?? mesh.AddPointMap(name, kind);
+        foreach (var (p, v) in read) map.Values[p] = v;
+    }
+
     /// <summary>Writes a VMAP for each of a mesh's UV maps (in the order its points were given UVs).</summary>
     public static void WriteVmaps(IffWriter w, Mesh mesh)
     {
@@ -81,6 +117,19 @@ internal static class VertexMaps
                     w.VX(p);
                     w.F4((float)uv.X);
                     w.F4((float)uv.Y);
+                }
+            });
+        foreach (var map in mesh.PointMaps)
+            w.Chunk("VMAP", () =>
+            {
+                w.Id4(map.Lwo2Type);
+                w.U2((ushort)map.Dimension);
+                w.S0(map.Name);
+                foreach (var (p, v) in map.Values.OrderBy(kv => kv.Key))
+                {
+                    if (p < 0 || p >= mesh.Points.Count) continue;
+                    w.VX(p);
+                    for (int i = 0; i < map.Dimension; i++) w.F4(i < v.Length ? v[i] : 1);
                 }
             });
     }

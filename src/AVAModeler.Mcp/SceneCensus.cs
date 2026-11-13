@@ -327,6 +327,7 @@ internal static partial class SceneCensus
                 if (obj.Particles is { } particles) o["particles"] = Particles(particles);
                 if (obj.Hair is { } hair) o["hair"] = Hair(hair);
                 if (obj.SoftBody is { } soft) o["soft_body"] = SoftBody(soft);
+                if (obj.RigidBody is { } rigid) o["rigid_body"] = RigidBody(rigid);
                 if (!obj.CastShadows) o["cast_shadows"] = false;
                 if (!obj.ReceiveShadows) o["receive_shadows"] = false;
                 break;
@@ -532,4 +533,21 @@ internal static partial class SceneCensus
     public static string Describe(SceneItem item) => $"{item.Kind.ToLowerInvariant()} \"{item.Name}\"";
 
     public static string Frames(double frame) => $"frame {F(frame)}";
+
+    /// <summary>A rigid body's settings as agents see them (snake_case, spin in degrees a second).</summary>
+    public static JsonObject RigidBody(RigidBodySettings r)
+    {
+        var o = new JsonObject
+        {
+            ["kind"] = r.Kind.ToString().ToLowerInvariant(), ["shape"] = r.Shape.ToString().ToLowerInvariant(), ["mass"] = r.Mass,
+            ["bounce"] = r.Bounce, ["friction"] = r.Friction, ["damping"] = r.Damping, ["gravity"] = r.Gravity,
+        };
+        if (r.Velocity != Vec3.Zero) o["velocity"] = new JsonArray(r.Velocity.X, r.Velocity.Y, r.Velocity.Z);
+        if (r.Spin != Vec3.Zero) o["spin"] = new JsonArray(r.Spin.X, r.Spin.Y, r.Spin.Z);
+        if (!r.InheritMotion) o["inherit_motion"] = false;
+        if (r.Floor is { } f) o["floor"] = f;
+        if (r.StartFrame is { } s) o["start_frame"] = s;
+        if (r.Substeps != 10) o["substeps"] = r.Substeps;
+        return o;
+    }
 }

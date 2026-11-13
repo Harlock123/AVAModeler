@@ -244,8 +244,18 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     `ObjectItem.SoftCache` keyed by the settings, the scene's version and the mesh, so any edit starts it again; with
     `SelfCollide` its points keep `SelfDistance` apart (`Grid.Pairs` finds the pairs), but for those that started that
     close. Agents' `set_particles`, `set_hair`, `comb_hair` and `set_soft_body` are in `ParticleTools.cs`. In .lws they
-    are plugin sections (`LwsEffects`: `AVA_Particles`, `AVA_Hair`, `AVA_SoftBody`), one line of SceneJson's JSON each
+    are plugin sections (`LwsEffects`: `AVA_Particles`, `AVA_Hair`, `AVA_SoftBody`, `AVA_RigidBody`), one line of SceneJson's JSON each
     (`SceneJson.OneLineOf`, `FromOneLine`).
+  - `RigidBodies.cs`: `ObjectItem.RigidBody` (`RigidBodySettings`: dynamic or static, box, sphere or a 26-sided hull
+    fit to its points, mass, bounce, friction, damping, gravity, start velocity and spin, a floor, the start frame) and
+    `RigidBodyWorld` (`Scene.RigidBodies`): every rigid body simulated together from the earliest start, a frame's
+    poses kept until the scene's version changes; impulses with friction and bounce at contact points (each body's
+    samples against the other's distance function, ties between faces broken toward the other body, so equal boxes
+    stack), overlap corrected once a touching pair, and sleeping (a sleeper holds like a static body until something
+    moving touches it or nothing holds it up). `MotionSolver.BasePosition`/`BaseRotation` ask it for a dynamic body
+    past its start, so `LocalMatrix` and everything after see the simulation; static bodies move by their keys and push.
+    While it runs (`RigidBodyWorld.Simulating`) the scene's reads place dynamic bodies by their keys. Its keys are never
+    changed: baking is the host's (AVALightWave's `bake_simulation`).
   - `Lws/LwText.cs` is the line and envelope parser `LwsReader` and `Lws/MotionFile.cs` (.mot read, write and apply)
     share.
   - `Rendering/EnvironmentMap.cs`: an environment picture by direction (lat-long, turned by its heading), its 64 × 32

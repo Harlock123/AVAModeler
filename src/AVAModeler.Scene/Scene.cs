@@ -103,6 +103,10 @@ public sealed partial class Scene
     public IEnumerable<Bone> Bones => _items.OfType<Bone>();
 
     private MotionSolver? _motion;
+    private RigidBodyWorld? _rigid;
+
+    /// <summary>The scene's rigid bodies, simulated when asked and remembered until the scene changes.</summary>
+    public RigidBodyWorld RigidBodies => _rigid ??= new RigidBodyWorld(this);
 
     /// <summary>What moves items beyond their keys (path following, full-time IK), worked out on demand and remembered until the scene changes.</summary>
     public MotionSolver Motion => _motion ??= new MotionSolver(this);
@@ -328,7 +332,7 @@ public sealed partial class Scene
                     SourcePath = o.SourcePath, CastShadows = o.CastShadows, ReceiveShadows = o.ReceiveShadows, BoneFalloffExponent = o.BoneFalloffExponent,
                 };
                 obj.Dissolve.CopyFrom(o.Dissolve);
-                (obj.Particles, obj.Hair, obj.SoftBody) = (o.Particles, o.Hair, o.SoftBody);
+                (obj.Particles, obj.Hair, obj.SoftBody, obj.RigidBody) = (o.Particles, o.Hair, o.SoftBody, o.RigidBody);
                 foreach (var m in o.Morphs) obj.AddMorph(new MorphTarget(m.Name, m.Target, m.Weight.Clone()));
                 foreach (var x in o.Displacements)
                 {

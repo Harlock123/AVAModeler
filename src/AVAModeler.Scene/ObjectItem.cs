@@ -60,6 +60,9 @@ public sealed class ObjectItem : SceneItem
     /// <summary>Cloth or a soft body on the object, or null for none (set a new record to change it).</summary>
     public SoftBodySettings? SoftBody { get; set; }
 
+    /// <summary>A rigid body on the object, or null for none (set a new record to change it): see <see cref="RigidBodyWorld"/>.</summary>
+    public RigidBodySettings? RigidBody { get; set; }
+
     internal readonly object GrownLock = new();
     /// <summary>The last frame's mesh with its hair and particles, by what it was grown from.</summary>
     internal (object Key, Scene.GrownFrame Frame)? GrownCache;

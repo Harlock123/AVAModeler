@@ -152,6 +152,7 @@ public static class LwsWriter
             if (o.Particles is { } p) Section(LwsEffects.Particles, SceneJson.OneLineOf(p));
             if (o.Hair is { } h) Section(LwsEffects.Hair, SceneJson.OneLineOf(h));
             if (o.SoftBody is { } b) Section(LwsEffects.SoftBody, SceneJson.OneLineOf(b));
+            if (o.RigidBody is { } r) Section(LwsEffects.RigidBody, SceneJson.OneLineOf(r));
         }
 
         /// <summary>
@@ -306,5 +307,5 @@ public static class LwsWriter
 /// <summary>The names of the plugin sections a .lws keeps an object's particles, hair and soft body in.</summary>
 internal static class LwsEffects
 {
-    public const string Particles = "AVA_Particles", Hair = "AVA_Hair", SoftBody = "AVA_SoftBody";
+    public const string Particles = "AVA_Particles", Hair = "AVA_Hair", SoftBody = "AVA_SoftBody", RigidBody = "AVA_RigidBody";
 }

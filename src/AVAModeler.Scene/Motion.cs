@@ -118,7 +118,9 @@ public sealed class MotionSolver
         return pose;
     }
 
-    private Vec3 BasePosition(SceneItem item, double frame) => item.Path is { } path && Follow(item, path, frame) is { } f ? f.Position : item.PositionAt(frame);
+    private Vec3 BasePosition(SceneItem item, double frame) =>
+        item is ObjectItem { RigidBody.Kind: RigidBodyKind.Dynamic } o && _scene.RigidBodies.Pose(o, frame) is { } rb ? rb.Position
+        : item.Path is { } path && Follow(item, path, frame) is { } f ? f.Position : item.PositionAt(frame);
 
     /// <summary>
     /// Where a path puts an item at a frame, in its parent's space, and how it turns it (keyed, or aligned along the path
@@ -174,6 +176,7 @@ public sealed class MotionSolver
 
     private Vec3 BaseRotation(SceneItem item, double frame)
     {
+        if (item is ObjectItem { RigidBody.Kind: RigidBodyKind.Dynamic } o && _scene.RigidBodies.Pose(o, frame) is { } rb) return rb.Rotation;
         if (item.Path is { } path) return Follow(item, path, frame) is { } f ? f.Rotation : item.RotationAt(frame);
         if (item is not Bone bone) return item.RotationAt(frame);
         Bone? end;

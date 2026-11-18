@@ -1015,12 +1015,14 @@ public sealed partial class ModelerTools(IModelerHost host)
     {
         try
         {
-            return await Confirming(() => host.RunSceneAsync(action, (c, l) =>
+            // Modeling calls need no scene, so they run through RunAsync: a host may have none (AVALightWave's
+            // build steps run on one with only the object).
+            return await Confirming(() => host.RunAsync(action, c =>
             {
                 _depth++;
                 try
                 {
-                    if (Server != null) Hook(c, l);
+                    if (Server != null) Hook(c, null);
                     // What changed since the last call (the person's edits, in the live app) isn't this call's doing.
                     _ids.Sync(c.Document);
                     T result;

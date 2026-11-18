@@ -427,7 +427,7 @@ public sealed partial class ModelerTools
     /// so subscribers hear when the person, or another session, changes them. A change this session makes itself isn't
     /// announced to it.
     /// </summary>
-    private void Hook(Commands c, LayoutSession l)
+    private void Hook(Commands c, LayoutSession? l)
     {
         if (!ReferenceEquals(_watchedCommands, c))
         {
@@ -441,7 +441,7 @@ public sealed partial class ModelerTools
             _watchedDocument = c.Document;
             _watchedDocument.Changed += OnObjectChanged;
         }
-        if (!ReferenceEquals(_watchedLayout, l))
+        if (l != null && !ReferenceEquals(_watchedLayout, l))
         {
             if (_watchedLayout != null) { _watchedLayout.Changed -= OnSceneChanged; _watchedLayout.SceneReplaced -= OnSceneChanged; }
             _watchedLayout = l;

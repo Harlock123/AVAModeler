@@ -100,6 +100,28 @@ public sealed class SessionToolTests : IAsyncDisposable
         Assert.Empty(first.Intersect(second));
     }
 
+    /// <summary>A host with only the object (as AVALightWave's build steps have): modeling calls never ask it for a scene.</summary>
+    private sealed class ObjectOnlyHost(string root) : IModelerHost
+    {
+        public AVAModeler.Tools.Commands Commands { get; } = new(new Document());
+        public string Root { get; } = root;
+        public Task<T> RunAsync<T>(string action, Func<AVAModeler.Tools.Commands, T> work, CancellationToken cancel = default) => Task.FromResult(work(Commands));
+        public Task<T> RunSceneAsync<T>(string action, Func<AVAModeler.Tools.Commands, AVAModeler.Layout.LayoutSession, T> work, CancellationToken cancel = default) =>
+            throw new InvalidOperationException("There's no scene here.");
+    }
+
+    [Fact]
+    public async Task Modeling_calls_work_on_a_host_with_no_scene()
+    {
+        var host = new ObjectOnlyHost(_folder.Path);
+        var tools = new ModelerTools(host);
+        var box = await Calls.Parse(tools.RunTool("Box", cancel: Calls.Cancel));
+        Assert.Equal(6, host.Commands.Document.Current.Mesh.Polygons.Count);
+        Assert.NotNull(box["ids"]);
+        await Calls.Parse(tools.SelectWhere(normal: [0, 1, 0], cancel: Calls.Cancel));
+        Assert.Single(host.Commands.Document.Selection.PolygonsIn(0));
+    }
+
     // ───────────────────────────── batch ─────────────────────────────
 
     [Fact]

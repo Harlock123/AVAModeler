@@ -832,7 +832,7 @@ and it works offline.
   on Linux and macOS), sent only in the Authorization header to that server, and only ever shown masked. A server on
   `localhost` needs no key.
 - **Core tools only** (on unless you untick it): small models choose much better among fewer tools, so the chat
-  offers them 23 of the 108 instead of all of them: `run_tool` (any Modeler tool by name, with `list_tools` and
+  offers them 23 of the 125 instead of all of them: `run_tool` (any Modeler tool by name, with `list_tools` and
   `describe_tool`), `add_points` and `add_polygons`, a few selection commands, layers, undo, new and save, surfaces,
   `get_document`, `check_mesh`, `render_view`, and the main scene tools (`get_scene`, `add_object`, `add_light`,
   `set_transform`, `look_at`, `set_key`, `render_scene`). Untick it for a large model on a gateway.

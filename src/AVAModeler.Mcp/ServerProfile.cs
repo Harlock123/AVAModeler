@@ -87,7 +87,9 @@ public static class ToolGroups
         "add_motion_modifier", "set_motion_modifier", "remove_motion_modifier",
         "load_image", "remove_image", "set_compositing", "set_dissolve", "set_particles", "set_hair", "set_soft_body", "comb_hair",
         "set_lens_flare", "set_volumetric_light", "set_shadow_map",
-        "batch", "checkpoint", "list_checkpoints", "restore_checkpoint", "diff",
+        "batch", "checkpoint", "list_checkpoints", "restore_checkpoint", "diff", "render_checkpoint",
+        "get_recording", "save_steps", "run_steps", "lock", "unlock", "list_locks", "list_agents",
+        "start_job", "job_status", "job_result", "cancel_job",
     };
 
     /// <summary>The modeling tools: every other one of <see cref="ModelerTools"/>'.</summary>
@@ -98,6 +100,6 @@ public static class ToolGroups
         "set_layers", "undo", "redo", "get_history", "new", "open", "save", "set_surface", "set_surface_nodes", "set_texture", "set_backdrop", "set_procedural",
         "remove_textures", "make_uvs", "set_uv_map", "run_lua", "get_document", "get_points", "get_polygons", "check_mesh",
         "render_view", "render", "set_weights", "get_weights", "auto_weights", "sculpt", "measure", "bake_maps", "match_photo", "point_from_photos", "compare_to_reference", "copy_layer", "add_morph", "slice_to_gcode",
-        "resolve_ids",
+        "resolve_ids", "select_where", "save_selection", "select_saved", "list_selections", "expect",
     };
 }

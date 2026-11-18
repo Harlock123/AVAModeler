@@ -32,7 +32,17 @@ public static class ModelerServer
 
         Working in steps you can trust:
         - batch runs several tool calls as one step, all or nothing: if one fails, the others are taken back and nothing is left half done; undo takes the whole batch back. Use it for a sequence that only makes sense complete (select, then extrude, then set the surface).
-        - checkpoint remembers the object and the scene by name before risky work; restore_checkpoint puts them back exactly (one undo step), and diff says what changed since, by id: what was added, removed or moved, and what changed in the scene. Prefer them to undo with many steps, especially in the live app, where the person's own edits share the history and counting steps back can take those away too.
+        - checkpoint remembers the object and the scene by name before risky work; restore_checkpoint puts them back exactly (one undo step), and diff says what changed since, by id: what was added, removed or moved, and what changed in the scene (picture true draws it in colour; until compares two checkpoints; render_checkpoint shows one). Prefer them to undo with many steps, especially in the live app, where the person's own edits share the history and counting steps back can take those away too. checkpoint with persist keeps it on disk for later sessions.
+        - batch with dry_run says what the steps would change, then takes them back: preview a risky sequence first.
+        - select_where selects by what geometry is (surface, side of a plane, facing, area, vertex count, weight, near a place, in a box) instead of paging through get_points; save_selection keeps a selection by name (by id) for select_saved later.
+        - expect checks the result in one call (watertight, printable, counts, bounds and size, symmetric, volume, surfaces used or on given polygons, selection counts). Build, expect, fix, expect again; as a batch's last step with fail true, the batch stands only if its checks pass.
+        - get_recording gives this session's changes as steps; save_steps keeps them as a .avasteps.json file with named parameters ("${height}", "${height * 1.2}"), and run_steps runs one again with other values: a procedural model you can remake.
+        - Long work (render_animation, a big render_scene, bake_maps, slice_to_gcode) can go in the background with start_job; job_status shows its progress, job_result gives its answer, cancel_job stops it. Long calls also send progress notifications when you give a progress token.
+        - Others may be at work too, in the live app: list_agents shows the sessions, lock keeps what you've finished from anyone's changes (the person locks things too), list_locks shows what's locked. A call that would change locked geometry or items fails with nothing changed (error kind locked).
+        - Errors carry a kind in their structured content and _meta: bad_parameter, not_found, busy, locked, expectation_failed, not_allowed, invalid_state, declined, file or internal. Answers that are JSON also come as structured content.
+        - In the live app, a call that would remove most of a layer asks the person first when your client can ask (MCP elicitation; the in-app chat shows the question with buttons): if they say no, nothing changes (error kind declined).
+        - The server's resources (avamodeler://object, scene, history, checkpoints, locks, agents) can be read and subscribed to: you're told when the person or another agent changes the object or the scene, not when you do.
+        - save with keep_ids keeps the ids in the .lwo file, so later sessions and AVALightWave number points and polygons the same.
 
         A good way to model: list_tools, then describe_tool for the tools you'll use; build with run_tool (or add_points and add_polygons); check counts with get_document and the shape with render_view (perspective, then top, front and side to check alignment); set_surface for colours; save as .lwo.
 
@@ -75,10 +85,13 @@ public static class ModelerServer
         """;
 
     /// <summary>The MCP tools, bound to a host: every one, or those <paramref name="profile"/> serves (with its own tools after them).</summary>
-    public static IEnumerable<McpServerTool> Tools(IModelerHost host, ServerProfile? profile = null)
+    public static IEnumerable<McpServerTool> Tools(IModelerHost host, ServerProfile? profile = null) =>
+        Tools(new ModelerTools(host) { Profile = profile ?? ServerProfile.Modeler }, host, profile);
+
+    /// <summary>The MCP tools, bound to one session's <see cref="ModelerTools"/>.</summary>
+    private static IEnumerable<McpServerTool> Tools(ModelerTools target, IModelerHost host, ServerProfile? profile)
     {
         profile ??= ServerProfile.Modeler;
-        var target = new ModelerTools(host) { Profile = profile };
         foreach (var method in typeof(ModelerTools).GetMethods(BindingFlags.Public | BindingFlags.Instance))
             if (method.GetCustomAttribute<McpServerToolAttribute>() is { } attribute && profile.IncludeTool(attribute.Name ?? method.Name))
             {
@@ -126,21 +139,70 @@ public static class ModelerServer
     public static McpServerOptions Options(IModelerHost host, ServerProfile profile)
     {
         var options = new McpServerOptions { ServerInfo = InfoFor(profile), ServerInstructions = profile.Instructions, ToolCollection = [] };
+        var target = new ModelerTools(host) { Profile = profile };
+        _sessions.AddOrUpdate(options, target);
         options.Filters.Request.CallToolFilters.Add(next => async (request, cancel) =>
         {
             var tool = request.Params is { } p && options.ToolCollection.TryGetPrimitive(p.Name, out var t) ? t.ProtocolTool : null;
-            if (tool != null && Arguments.Check(tool, request.Params!.Arguments) is { } problem) return Arguments.Error(problem);
-            try
+            // Each call has its own scope: its error's kind, its progress, whether the person said yes.
+            var scope = new CallScope { Server = request.Server, Progress = request.Params?.ProgressToken is { } token ? new TokenProgress(request.Server, token) : null };
+            ModelerTools.Scope.Value = scope;
+            target.Attach(request.Server, request.Params?.Name ?? "");
+            CallToolResult result;
+            if (tool != null && Arguments.Check(tool, request.Params!.Arguments) is { } problem)
             {
-                return await next(request, cancel).ConfigureAwait(false);
+                scope.ErrorKind = ErrorKinds.BadParameter;
+                result = Arguments.Error(problem);
             }
-            catch (Exception e) when (e is not McpException and not OperationCanceledException)
+            else
             {
-                // The SDK couldn't bind the arguments to the handler (a value of the wrong kind): say which, not just that it failed.
-                return Arguments.Error(tool != null ? $"{tool.Name}: {e.Message} Check the arguments against the tool's input schema." : e.Message);
+                try
+                {
+                    result = await next(request, cancel).ConfigureAwait(false);
+                }
+                catch (McpException e) when (e is not McpProtocolException)
+                {
+                    // A handler's failure: its message as the error, with the kind it noted.
+                    result = Arguments.Error(e.Message);
+                }
+                catch (Exception e) when (e is not McpException and not OperationCanceledException)
+                {
+                    // The SDK couldn't bind the arguments to the handler (a value of the wrong kind): say which, not just that it failed.
+                    scope.ErrorKind ??= ErrorKinds.BadParameter;
+                    result = Arguments.Error(tool != null ? $"{tool.Name}: {e.Message} Check the arguments against the tool's input schema." : e.Message);
+                }
             }
+            if (request.Params is { } call) target.Finish(call, tool, result, scope);
+            return result;
         });
-        foreach (var tool in Tools(host, profile)) options.ToolCollection.Add(tool);
+        foreach (var tool in Tools(target, host, profile)) options.ToolCollection.Add(tool);
+
+        // Resources: the object, the scene, the histories, checkpoints, locks and agents, each one a client can
+        // subscribe to (a change made by the person or another session is announced; the subscriber's own isn't).
+        options.Capabilities ??= new ServerCapabilities();
+        options.Capabilities.Resources = new ResourcesCapability { Subscribe = true };
+        options.Handlers.ListResourcesHandler = (request, cancel) => ValueTask.FromResult(new ListResourcesResult
+        {
+            Resources = [.. ModelerTools.ResourceList.Select(r => new Resource { Uri = r.Uri, Name = r.Name, Description = r.Description, MimeType = "application/json" })],
+        });
+        options.Handlers.ReadResourceHandler = async (request, cancel) =>
+        {
+            var uri = request.Params?.Uri ?? throw new McpException("Give the resource's uri.");
+            target.Attach(request.Server, "read " + uri);
+            var text = await target.ReadResourceAsync(uri, cancel).ConfigureAwait(false);
+            return new ReadResourceResult { Contents = [new TextResourceContents { Uri = uri, MimeType = "application/json", Text = text }] };
+        };
+        options.Handlers.SubscribeToResourcesHandler = (request, cancel) =>
+        {
+            target.Attach(request.Server, "subscribed");
+            target.Subscribe(request.Params?.Uri ?? throw new McpException("Give the resource's uri."));
+            return ValueTask.FromResult(new EmptyResult());
+        };
+        options.Handlers.UnsubscribeFromResourcesHandler = (request, cancel) =>
+        {
+            target.Unsubscribe(request.Params?.Uri ?? "");
+            return ValueTask.FromResult(new EmptyResult());
+        };
         options.PromptCollection = [];
         foreach (var prompt in Prompts(profile)) options.PromptCollection.Add(prompt);
         return options;
@@ -153,8 +215,35 @@ public static class ModelerServer
     /// <summary>Serves one MCP session of a profile's server over a transport.</summary>
     public static async Task RunAsync(ITransport transport, IModelerHost host, ServerProfile profile, CancellationToken cancel = default)
     {
-        await using var server = McpServer.Create(transport, Options(host, profile));
-        await server.RunAsync(cancel).ConfigureAwait(false);
+        var options = Options(host, profile);
+        await using var server = McpServer.Create(transport, options);
+        try
+        {
+            await server.RunAsync(cancel).ConfigureAwait(false);
+        }
+        finally
+        {
+            await EndSessionAsync(options).ConfigureAwait(false);
+        }
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<McpServerOptions, ModelerTools> _sessions = new();
+
+    /// <summary>
+    /// A session made with these options is over: its locks go and it leaves the session list. RunAsync does it;
+    /// whoever creates a server from <see cref="Options(IModelerHost, ServerProfile)"/> itself calls it at the end.
+    /// </summary>
+    public static Task EndSessionAsync(McpServerOptions options) =>
+        _sessions.TryGetValue(options, out var target) ? target.EndAsync() : Task.CompletedTask;
+
+    /// <summary>The session's tools for these options (for the in-app chat's settings), or null.</summary>
+    public static ModelerTools? SessionOf(McpServerOptions options) => _sessions.TryGetValue(options, out var t) ? t : null;
+
+    /// <summary>Sends a call's progress to the client, for its progress token.</summary>
+    private sealed class TokenProgress(McpServer server, ProgressToken token) : IProgress<ProgressNotificationValue>
+    {
+        public void Report(ProgressNotificationValue value) =>
+            _ = server.SendNotificationAsync(NotificationMethods.ProgressNotification, new ProgressNotificationParams { ProgressToken = token, Progress = value });
     }
 
     /// <summary>Checks a call's arguments against its tool's input schema before the SDK binds them.</summary>

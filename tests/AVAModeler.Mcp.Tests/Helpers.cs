@@ -52,16 +52,19 @@ internal sealed class InProcess : IAsyncDisposable
 
     public static Task<InProcess> Start(IModelerHost host) => Start(ModelerServer.Options(host));
 
-    public static async Task<InProcess> Start(McpServerOptions options)
+    /// <summary>The server's options (its session's end is <see cref="ModelerServer.EndSessionAsync"/>).</summary>
+    public McpServerOptions Options { get; private set; } = null!;
+
+    public static async Task<InProcess> Start(McpServerOptions options, McpClientOptions? client = null)
     {
-        var s = new InProcess();
+        var s = new InProcess { Options = options };
         var transport = new StreamServerTransport(s._up.Reader, s._down.Writer, "test");
         var server = McpServer.Create(transport, options);
         s._server = Task.Run(async () =>
         {
             await using (server) await server.RunAsync(s._stop.Token);
         });
-        s.Client = await McpClient.CreateAsync(new StreamClientTransport(s._up.Writer, s._down.Reader), null, null, TestContext.Current.CancellationToken);
+        s.Client = await McpClient.CreateAsync(new StreamClientTransport(s._up.Writer, s._down.Reader), client, null, TestContext.Current.CancellationToken);
         return s;
     }
 

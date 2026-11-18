@@ -932,7 +932,8 @@ public sealed partial class ModelerTools
             return (copy, fr, (CameraItem)copy.Items[IndexOf(l.Scene, cm)], pw, ph, l.ImageProblems());
         }, cancel, changes: false).ConfigureAwait(false);
         var clock = Stopwatch.StartNew();
-        var image = await Rendering(t => ScenePictures.Render(copy, f, cam, w, h, samples, shadows, reflections, transparency, t, denoise), RenderTimeLimit,
+        var image = await Rendering(t => ScenePictures.Render(copy, f, cam, w, h, samples, shadows, reflections, transparency, t, denoise,
+            done => Report(done, $"rendering frame {f:0.##}: {done:P0}")), RenderTimeLimit,
             "The render took longer than {0} and was stopped: try a smaller size or fewer samples.", cancel).ConfigureAwait(false);
         int rays = RayTracer.RaysPerPixel(new RenderSettings { SamplesPerPixel = samples }, cam);
         string about = FormattableString.Invariant($"Frame {f:0.###} through {cam.Name}, {w}×{h}, {rays} ray{(rays == 1 ? "" : "s")} a pixel{(rays != samples ? " (raised by depth of field or motion blur)" : "")}, in {clock.Elapsed.TotalSeconds:0.0} s.");
@@ -1025,7 +1026,9 @@ public sealed partial class ModelerTools
             var list = new List<RenderImage>();
             for (int i = 0; i < job.frames.Count; i++)
             {
-                var img = ScenePictures.Render(job.copy, job.frames[i], job.cam, job.pw, job.ph, samples, true, true, true, t, denoise);
+                int index = i;
+                var img = ScenePictures.Render(job.copy, job.frames[i], job.cam, job.pw, job.ph, samples, true, true, true, t, denoise,
+                    done => Report((index + done) / job.frames.Count, $"frame {job.frames[index]:0.##} ({index + 1} of {job.frames.Count})"));
                 File.WriteAllBytes(job.paths[i], img.ToPng(alpha: false));
                 if (wanted != RenderPass.None)
                 {
@@ -1201,25 +1204,36 @@ public sealed partial class ModelerTools
     {
         try
         {
-            return await host.RunSceneAsync(action, (c, l) =>
+            return await Confirming(() => host.RunSceneAsync(action, (c, l) =>
             {
-                _ids.Sync(c.Document);
-                T result;
-                using (Files(c).Confine(c))
+                _depth++;
+                try
                 {
-                    if (!changes) result = work(c, l);
-                    else
+                    if (Server != null) Hook(c, l);
+                    _ids.Sync(c.Document);
+                    T result;
+                    using (Files(c).Confine(c))
                     {
-                        result = l.Edit(AgentStep(action), () => work(c, l), apart: true);
-                        if (result is JsonObject json) json["undo_scene"] = SceneCensus.UndoState(l);
+                        if (!changes) result = Guarded(c, l, action, () => work(c, l));
+                        else
+                        {
+                            // The locks' check is inside the scene's step, so a refused change puts the scene back too.
+                            result = l.Edit(AgentStep(action), () => Guarded(c, l, action, () => work(c, l)), apart: true);
+                            if (result is JsonObject json) json["undo_scene"] = SceneCensus.UndoState(l);
+                        }
                     }
+                    Annotate(result, _ids.Sync(c.Document));
+                    return result;
                 }
-                Annotate(result, _ids.Sync(c.Document));
-                return result;
-            }, cancel).ConfigureAwait(false);
+                finally
+                {
+                    _depth--;
+                }
+            }, cancel), cancel).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not McpException and not OperationCanceledException)
         {
+            NoteError(e);
             throw new McpException(Explain(e), e);
         }
     }

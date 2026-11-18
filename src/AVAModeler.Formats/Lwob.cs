@@ -48,6 +48,9 @@ public static class Lwob
     public const string NodesId = "AVND";
     /// <summary>A layer's instances: the source layer, how many, and each placement's top three rows.</summary>
     public const string InstancesId = "AVIN";
+
+    /// <summary>AVA's own chunk: the layer's points' and polygons' ids for AI agents (see <see cref="Layer.Ids"/>).</summary>
+    public const string IdsId = "AVID";
     /// <summary>A surface's vertex colour map, as LWO2's VCOL sub-chunk: intensity, envelope, map type and name.</summary>
     public const string VertexColorId = "VCOL";
 
@@ -148,6 +151,14 @@ public static class Lwob
                         list.Add(Mat4.FromRows(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], 0, 0, 0, 1));
                     }
                     doc.Layers[layer].Instances = new LayerInstances { Source = source, Places = list };
+                    break;
+                case IdsId:
+                    // AVA's own: agents' ids for the layer's points and polygons (LightWave skips the chunk).
+                    var pointIds = new int[body.U4()];
+                    for (int k = 0; k < pointIds.Length; k++) pointIds[k] = (int)body.U4();
+                    var polygonIds = new int[body.U4()];
+                    for (int k = 0; k < polygonIds.Length; k++) polygonIds[k] = (int)body.U4();
+                    doc.Layers[layer].Ids = new GeometryIdTable(pointIds, polygonIds);
                     break;
                 case "SURF":
                     var surf = body.Named("SURF");
@@ -373,7 +384,7 @@ public static class Lwob
         foreach (var l in doc.Layers) CheckPolygons(doc, l.Mesh);
         var used = Enumerable.Range(0, doc.Layers.Count).Where(i => !doc.Layers[i].Mesh.IsEmpty || doc.Layers[i].Instances is { Places.Count: > 0 }).ToList();
         var info = InfoOf(doc);
-        bool replay = info != null && !Instancing.Any(doc) && Fits(doc, info, used);
+        bool replay = info != null && !Instancing.Any(doc) && !doc.Layers.Any(l => l.Ids?.Fits(l.Mesh) == true) && Fits(doc, info, used);
         string type = replay ? info!.FormType : used.Count > 1 ? "LWLO" : "LWOB";
         var w = new IffWriter();
         w.Chunk("FORM", () =>
@@ -427,6 +438,7 @@ public static class Lwob
                 VertexMaps.WriteVmaps(w, mesh);
                 VertexMaps.WriteVmads(w, mesh);
                 WriteInstances(w, doc.Layers[used.DefaultIfEmpty(0).First()]);
+                WriteIds(w, doc.Layers[used.DefaultIfEmpty(0).First()]);
             }
             else
                 for (int i = 0; i < used.Count; i++)
@@ -439,6 +451,7 @@ public static class Lwob
                     VertexMaps.WriteVmaps(w, mesh);
                     VertexMaps.WriteVmads(w, mesh);
                     WriteInstances(w, doc.Layers[used[i]]);
+                    WriteIds(w, doc.Layers[used[i]]);
                 }
             foreach (var s in doc.Surfaces) WriteSurface(w, s);
             if (info != null) foreach (var c in info.Unknown) w.Chunk(c);
@@ -480,6 +493,19 @@ public static class Lwob
             foreach (var m in inst.Places.Take(ushort.MaxValue))
                 for (int r = 0; r < 3; r++)
                     for (int c = 0; c < 4; c++) w.F4((float)m[r, c]);
+        });
+    }
+
+    /// <summary>The layer's agents' ids, when it has them and they fit its mesh (otherwise nothing: they'd be wrong).</summary>
+    private static void WriteIds(IffWriter w, Layer layer)
+    {
+        if (layer.Ids is not { } ids || !ids.Fits(layer.Mesh)) return;
+        w.Chunk(IdsId, () =>
+        {
+            w.U4((uint)ids.Points.Length);
+            foreach (var id in ids.Points) w.U4((uint)id);
+            w.U4((uint)ids.Polygons.Length);
+            foreach (var id in ids.Polygons) w.U4((uint)id);
         });
     }
 

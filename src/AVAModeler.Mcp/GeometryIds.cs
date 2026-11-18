@@ -106,6 +106,21 @@ internal sealed class GeometryIds
                 l.GonePoints.Clear(); l.GonePolygons.Clear(); l.GonePointOrder.Clear(); l.GonePolygonOrder.Clear();
             }
             _doc = doc;
+            // An object saved with its ids (keep_ids) gives each layer's points and polygons the ids they had.
+            while (_layers.Count < doc.Layers.Count) _layers.Add(new LayerIds());
+            for (int i = 0; i < doc.Layers.Count; i++)
+                if (doc.Layers[i].Ids is { } kept && kept.Fits(doc.Layers[i].Mesh))
+                {
+                    var mesh = doc.Layers[i].Mesh;
+                    var l = _layers[i];
+                    l.Points = [.. mesh.Points];
+                    l.PointIds = [.. kept.Points];
+                    l.Polygons = [.. mesh.Polygons.Select(p => p.Points.ToArray())];
+                    l.Surfaces = [.. mesh.Polygons.Select(p => p.Surface)];
+                    l.PolygonIds = [.. kept.Polygons];
+                    l.NextPoint = Math.Max(l.NextPoint, kept.Points.DefaultIfEmpty(0).Max() + 1);
+                    l.NextPolygon = Math.Max(l.NextPolygon, kept.Polygons.DefaultIfEmpty(0).Max() + 1);
+                }
         }
         _version = doc.Version;
         var changes = new List<LayerChange>();
@@ -114,6 +129,14 @@ internal sealed class GeometryIds
             if (Reconcile(_layers[i], doc.Layers[i].Mesh, i + 1) is { Any: true } change)
                 changes.Add(change);
         return changes;
+    }
+
+    /// <summary>Puts the ids as they stand into the document's layers, to be saved with it (keep_ids).</summary>
+    public void Keep(Document doc)
+    {
+        Sync(doc);
+        for (int i = 0; i < doc.Layers.Count && i < _layers.Count; i++)
+            doc.Layers[i].Ids = doc.Layers[i].Mesh.IsEmpty ? null : new GeometryIdTable([.. _layers[i].PointIds], [.. _layers[i].PolygonIds]);
     }
 
     /// <summary>The layer's ids as they stand (Sync first).</summary>

@@ -103,7 +103,21 @@ public sealed class Layer
     /// <summary>Linked copies of another layer's mesh shown in this one (see <see cref="LayerInstances"/>), or null.</summary>
     public LayerInstances? Instances;
 
-    public Layer Clone() => new() { Name = Name, Mesh = Mesh.Clone(), State = State, Pivot = Pivot, Instances = Instances?.Clone() };
+    /// <summary>
+    /// Agents' ids for the layer's points and polygons, kept in the object file when an agent saves with keep_ids (LWOB's
+    /// AVID chunk), so every session, and AVALightWave, numbers them the same. Null when they aren't kept. Only used
+    /// while it has as many of each as the mesh.
+    /// </summary>
+    public GeometryIdTable? Ids;
+
+    public Layer Clone() => new() { Name = Name, Mesh = Mesh.Clone(), State = State, Pivot = Pivot, Instances = Instances?.Clone(), Ids = Ids };
+}
+
+/// <summary>A layer's points' and polygons' ids, in index order (see <see cref="Layer.Ids"/>). Its arrays aren't changed once made.</summary>
+public sealed record GeometryIdTable(int[] Points, int[] Polygons)
+{
+    /// <summary>Whether it fits a mesh: as many ids as points and as polygons.</summary>
+    public bool Fits(Mesh mesh) => Points.Length == mesh.Points.Count && Polygons.Length == mesh.Polygons.Count;
 }
 
 /// <summary>What clicks select, and what tools act on.</summary>
@@ -413,6 +427,8 @@ public sealed class Document
     public List<Dimension> Dimensions = [];
     /// <summary>The ruler the Measure tool is drawing now, or null.</summary>
     public Dimension? Measuring;
+    /// <summary>Geometry kept from AI agents' changes (see <see cref="AgentLock"/>). View state: not undone, not saved.</summary>
+    public List<AgentLock> AgentLocks = [];
     /// <summary>Photos matched to the model (Photo Match), by name. View state: not kept in the object file.</summary>
     public Dictionary<string, PhotoSetup> Photos = [];
     /// <summary>

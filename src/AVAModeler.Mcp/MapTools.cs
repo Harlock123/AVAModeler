@@ -211,7 +211,9 @@ public sealed partial class ModelerTools
                 ["Distance"] = distance ?? 0, ["UVMap"] = uv_map ?? "", ["File"] = file ?? "",
             };
             BakeMapsTool tool;
+            Report(0, $"baking the {k} map");
             using (Files(c).Confine(c, allowDiscard: true)) tool = (BakeMapsTool)c.Run("Bake Maps", args);
+            Report(1, "baked");
             return new JsonObject
             {
                 ["written"] = tool.Written,

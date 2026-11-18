@@ -73,14 +73,14 @@ public static class ScenePictures
     }
 
     /// <summary>A ray-traced frame of a scene (a copy), through one of its cameras.</summary>
-    public static RenderImage Render(SceneModel scene, double frame, CameraItem camera, int width, int height, int samples, bool shadows, bool reflections, bool transparency, CancellationToken cancel, bool denoise = false)
+    public static RenderImage Render(SceneModel scene, double frame, CameraItem camera, int width, int height, int samples, bool shadows, bool reflections, bool transparency, CancellationToken cancel, bool denoise = false, Action<double>? progress = null)
     {
         var settings = new RenderSettings
         {
             Width = width, Height = height, Camera = camera, SamplesPerPixel = samples,
             Shadows = shadows, Reflections = reflections, Transparency = transparency, Denoise = denoise,
         };
-        return RayTracer.Render(scene, frame, settings, null, cancel);
+        return RayTracer.Render(scene, frame, settings, progress, cancel);
     }
 
     /// <summary>The passes the denoiser is guided by.</summary>

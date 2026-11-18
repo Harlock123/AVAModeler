@@ -37,6 +37,12 @@ public sealed class LayoutSession
     /// <summary>The scene's undo history, shared by Layout's controls and AI agents. A new or loaded scene clears it.</summary>
     public SceneUndo History { get; } = new();
 
+    /// <summary>
+    /// Scene items kept from AI agents' changes, by name: an agent's call that would change, rename or remove one fails
+    /// and changes nothing. The person's (Item › Lock from AI Agents) and agents' own. Not an undo step, not saved.
+    /// </summary>
+    public List<SceneLock> AgentLocks { get; } = [];
+
     public event Action? Changed;
     public event Action? SceneReplaced;
     /// <summary>

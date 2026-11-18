@@ -145,6 +145,17 @@ public sealed class LiveHost(IUiThread ui, ILiveModeler modeler, string root) : 
 
     private async Task<T> Queued<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel)
     {
+        // The call's scope (its error's kind, progress, the person's yes) goes with it to the UI thread, whose
+        // dispatcher needn't carry it.
+        var scope = ModelerTools.Scope.Value;
+        var inner = work;
+        work = (c, l) =>
+        {
+            var outer = ModelerTools.Scope.Value;
+            ModelerTools.Scope.Value = scope;
+            try { return inner(c, l); }
+            finally { ModelerTools.Scope.Value = outer; }
+        };
         await _gate.WaitAsync(cancel).ConfigureAwait(false);
         try
         {

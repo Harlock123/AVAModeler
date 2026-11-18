@@ -287,7 +287,7 @@ public sealed partial class ModelerTools(IModelerHost host)
             if (labels.Count == 0) result["note"] = "There was nothing to undo.";
             else if (labels.Count < steps) result["note"] = $"Only {labels.Count} steps could be undone.";
             return result;
-        }, cancel);
+        }, cancel, guarded: false);
 
     [McpServerTool(Name = "get_history", ReadOnly = true, Idempotent = true)]
     [Description("The object's undo history: the steps that can be undone (newest first) and redone (next first), by name, as the History panel shows them. undo and redo with steps go back or forward through them.")]
@@ -312,7 +312,7 @@ public sealed partial class ModelerTools(IModelerHost host)
             result["redone"] = done ? label : null;
             if (!done) result["note"] = "There was nothing to redo.";
             return result;
-        }, cancel);
+        }, cancel, guarded: false);
 
     [McpServerTool(Name = "new", Destructive = true)]
     [Description("Starts a new, empty object (ten empty layers, layer 1 in the foreground, one surface \"Default\"), clearing the undo history. Refuses if the object has unsaved changes, unless discard_changes is true.")]
@@ -347,9 +347,11 @@ public sealed partial class ModelerTools(IModelerHost host)
         [Description("Replace the file (and the .mtl or .bin beside it) if it already exists.")] bool overwrite = false,
         [Description(".stl only: write ASCII text rather than binary.")] bool ascii = false,
         [Description(".gltf only: write the geometry and images to a .bin of the same name beside it, rather than inside the .gltf.")] bool separate_bin = false,
-        CancellationToken cancel = default) =>
+        CancellationToken cancel = default,
+        [Description(".lwo only: keep the points' and polygons' ids in the file (AVA's own AVID chunk; LightWave skips it), so every session, the in-app chat and AVALightWave number them the same after opening it. Once an object has kept ids, saving it here keeps them up to date.")] bool keep_ids = false) =>
         Do($"saved {Path.GetFileName(path)}", c =>
         {
+            if (keep_ids || c.Document.Layers.Any(l => l.Ids != null)) _ids.Keep(c.Document);
             var options = new SaveOptions { AsciiStl = ascii, SeparateGltfBuffer = separate_bin };
             string full = Files(c).Save(c.Document, path, overwrite, options);
             var result = new JsonObject { ["saved"] = full, ["bytes"] = new FileInfo(full).Length };
@@ -950,7 +952,9 @@ public sealed partial class ModelerTools(IModelerHost host)
         {
             var result = await Task.Run(() =>
             {
+                Report(0.05, "placing and slicing");
                 var job = PrintJob.Run(copy, setup);
+                Report(0.9, "writing the G-code");
                 if (job.Model.Triangles.Count == 0) throw new InvalidOperationException("There's nothing to print: the foreground layers have no faces.");
                 cancel.ThrowIfCancellationRequested();
                 string temp = full + ".tmp";
@@ -1001,28 +1005,49 @@ public sealed partial class ModelerTools(IModelerHost host)
     /// Runs a handler's work on the host, with file access confined to the working folder, and turns any failure into
     /// an MCP tool error with its message (the document is left as it was: the command API undoes a failed step).
     /// </summary>
-    private async Task<T> Do<T>(string action, Func<Commands, T> work, CancellationToken cancel)
+    private Task<T> Do<T>(string action, Func<Commands, T> work, CancellationToken cancel) => Do(action, work, cancel, guarded: true);
+
+    /// <summary>
+    /// <see cref="Do{T}(string, Func{Commands, T}, CancellationToken)"/>, with <paramref name="guarded"/> false for the
+    /// calls that step the history (undo, redo), which can't run as a group and aren't held by locks.
+    /// </summary>
+    private async Task<T> Do<T>(string action, Func<Commands, T> work, CancellationToken cancel, bool guarded)
     {
         try
         {
-            return await host.RunAsync(action, c =>
+            return await Confirming(() => host.RunSceneAsync(action, (c, l) =>
             {
-                // What changed since the last call (the person's edits, in the live app) isn't this call's doing.
-                _ids.Sync(c.Document);
-                T result;
-                using (Files(c).Confine(c)) result = work(c);
-                Annotate(result, _ids.Sync(c.Document));
-                return result;
-            }, cancel).ConfigureAwait(false);
+                _depth++;
+                try
+                {
+                    if (Server != null) Hook(c, l);
+                    // What changed since the last call (the person's edits, in the live app) isn't this call's doing.
+                    _ids.Sync(c.Document);
+                    T result;
+                    using (Files(c).Confine(c)) result = guarded ? Guarded(c, null, action, () => work(c)) : work(c);
+                    Annotate(result, _ids.Sync(c.Document));
+                    return result;
+                }
+                finally
+                {
+                    _depth--;
+                }
+            }, cancel), cancel).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not McpException and not OperationCanceledException)
         {
+            NoteError(e);
             throw new McpException(Explain(e), e);
         }
     }
 
-    private async Task<string> Do(string action, Func<Commands, JsonObject> work, CancellationToken cancel) =>
-        (await Do<JsonObject>(action, work, cancel).ConfigureAwait(false)).ToJsonString();
+    /// <summary>How deep in calls this session is (a batch's step is 2): 0 between calls.</summary>
+    private int _depth;
+
+    private Task<string> Do(string action, Func<Commands, JsonObject> work, CancellationToken cancel) => Do(action, work, cancel, guarded: true);
+
+    private async Task<string> Do(string action, Func<Commands, JsonObject> work, CancellationToken cancel, bool guarded) =>
+        (await Do<JsonObject>(action, work, cancel, guarded).ConfigureAwait(false)).ToJsonString();
 
     /// <summary>Adds the ids of what a call made (and counts of what it removed or moved) to its answer.</summary>
     private static void Annotate<T>(T result, List<GeometryIds.LayerChange> changes)

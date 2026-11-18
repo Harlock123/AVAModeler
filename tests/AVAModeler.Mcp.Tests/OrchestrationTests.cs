@@ -307,9 +307,11 @@ public sealed class OrchestrationTests : IAsyncDisposable
 
         // A call with a progress token hears how it's going.
         var heard = new ConcurrentBag<ProgressNotificationValue>();
-        var args = new Dictionary<string, object?> { ["width"] = 64, ["height"] = 48, ["samples"] = 1 };
+        // Big enough that rows are reported while it renders (a tiny one can finish before any notice goes out, and
+        // the client stops listening once the answer is in).
+        var args = new Dictionary<string, object?> { ["width"] = 480, ["height"] = 360, ["samples"] = 4 };
         await client.CallToolAsync("render_scene", args, new SyncProgress(heard), cancellationToken: Calls.Cancel);
-        for (int i = 0; i < 50 && heard.IsEmpty; i++) await Task.Delay(20, Calls.Cancel);
+        for (int i = 0; i < 150 && heard.IsEmpty; i++) await Task.Delay(20, Calls.Cancel);
         Assert.NotEmpty(heard);
     }
 

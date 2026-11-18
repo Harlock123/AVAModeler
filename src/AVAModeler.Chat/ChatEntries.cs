@@ -149,3 +149,43 @@ public sealed class NoticeEntry(string text, NoticeKind kind, bool canRetry = fa
         Raise();
     }
 }
+
+/// <summary>Where an <see cref="ReplyUndoEntry"/> stands.</summary>
+public enum ReplyUndoState
+{
+    /// <summary>The button can be pressed.</summary>
+    Available,
+    /// <summary>The restore is under way.</summary>
+    Undoing,
+    /// <summary>The reply was undone.</summary>
+    Undone,
+    /// <summary>An earlier reply was undone, which took this one back with it.</summary>
+    Superseded,
+    /// <summary>The restore failed (see <see cref="ReplyUndoEntry.Message"/>); it can be tried again.</summary>
+    Failed,
+}
+
+/// <summary>
+/// After a reply that changed the object or the scene: Undo this reply, which puts both back as they were before it
+/// (the checkpoint the chat took just before the reply's first change).
+/// </summary>
+public sealed class ReplyUndoEntry(string checkpoint) : ChatEntry
+{
+    /// <summary>The checkpoint's name on the MCP server.</summary>
+    public string Checkpoint { get; } = checkpoint;
+
+    public ReplyUndoState State { get; private set; } = ReplyUndoState.Available;
+
+    /// <summary>Why the restore failed, or null.</summary>
+    public string? Message { get; private set; }
+
+    /// <summary>The button can be pressed (it's there, and not under way or done).</summary>
+    public bool CanUndo => State is ReplyUndoState.Available or ReplyUndoState.Failed;
+
+    internal void Set(ReplyUndoState state, string? message = null)
+    {
+        State = state;
+        Message = message;
+        Raise();
+    }
+}

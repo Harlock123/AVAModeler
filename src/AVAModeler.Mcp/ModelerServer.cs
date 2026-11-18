@@ -28,6 +28,11 @@ public static class ModelerServer
         - Tools act on the selection in the foreground layers. With nothing selected they act on everything there, as classic Modeler did, so set or clear the selection before each step. Several tools clear the selection when they finish.
         - Rotations are in degrees and right-handed about their axis: a positive angle about Y turns +Z toward +X.
         - Every change to the object is one undo step (undo takes it back, and in the live app Ctrl+Z does too). A call that fails changes nothing.
+        - Indices shift when a tool deletes, merges or rebuilds geometry. Each point and polygon also has an id that stays with it: get_points and get_polygons with with_ids give them, a call that makes geometry lists the new ones (its ids: new_point_ids, new_polygon_ids), select_points and select_polygons take ids instead of indices, and resolve_ids finds where they are now. A point keeps its id while it stays where it was (or the polygons keep their points), a polygon while it joins the same points.
+
+        Working in steps you can trust:
+        - batch runs several tool calls as one step, all or nothing: if one fails, the others are taken back and nothing is left half done; undo takes the whole batch back. Use it for a sequence that only makes sense complete (select, then extrude, then set the surface).
+        - checkpoint remembers the object and the scene by name before risky work; restore_checkpoint puts them back exactly (one undo step), and diff says what changed since, by id: what was added, removed or moved, and what changed in the scene. Prefer them to undo with many steps, especially in the live app, where the person's own edits share the history and counting steps back can take those away too.
 
         A good way to model: list_tools, then describe_tool for the tools you'll use; build with run_tool (or add_points and add_polygons); check counts with get_document and the shape with render_view (perspective, then top, front and side to check alignment); set_surface for colours; save as .lwo.
 

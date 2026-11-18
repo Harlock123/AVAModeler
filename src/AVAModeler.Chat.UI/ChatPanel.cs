@@ -803,6 +803,7 @@ public sealed class ChatPanel : DockPanel
         ToolEntry t => ToolView(t),
         NoticeEntry n => NoticeView(n),
         UsageEntry u => UsageView(u),
+        ReplyUndoEntry r => ReplyUndoView(r),
         _ => new TextBlock(),
     };
 
@@ -898,6 +899,42 @@ public sealed class ChatPanel : DockPanel
             n.Changed += () => retry.IsVisible = n.CanRetry;
         }
         return panel;
+    }
+
+    /// <summary>Undo this reply, under a reply that changed the object or the scene, and what became of it.</summary>
+    private Control ReplyUndoView(ReplyUndoEntry r)
+    {
+        var button = Look.MakeButton("Undo this reply", () => UndoReply(r),
+            $"Put the object and the scene back as they were before this reply. Later replies' changes and your own edits since then go too; Ctrl+Z (and Ctrl+Z in Layout) brings them back.", 130);
+        button.HorizontalAlignment = HorizontalAlignment.Left;
+        var note = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 11, FontStyle = FontStyle.Italic, Foreground = Look.Text, VerticalAlignment = VerticalAlignment.Center };
+        void Show()
+        {
+            button.IsVisible = r.CanUndo;
+            button.IsEnabled = !Session.Working;
+            note.Text = r.State switch
+            {
+                ReplyUndoState.Undoing => "Undoing…",
+                ReplyUndoState.Undone => "Reply undone: the object and the scene are as they were before it. Ctrl+Z brings it back.",
+                ReplyUndoState.Superseded => "Undone with an earlier reply.",
+                ReplyUndoState.Failed => $"Couldn't undo it: {r.Message}",
+                _ => "",
+            };
+            note.IsVisible = note.Text.Length > 0;
+        }
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { button, note } };
+        r.Changed += Show;
+        // Disabled while a request runs; the row listens only while it's on screen.
+        row.AttachedToVisualTree += (_, _) => { Session.WorkingChanged += Show; Show(); };
+        row.DetachedFromVisualTree += (_, _) => Session.WorkingChanged -= Show;
+        Show();
+        return row;
+    }
+
+    private void UndoReply(ReplyUndoEntry r)
+    {
+        if (Session.Working) return;
+        Running = Guarded(Session.UndoReplyAsync(r));
     }
 
     // ───────────────────────────── the key ─────────────────────────────

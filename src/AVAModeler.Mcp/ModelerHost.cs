@@ -27,7 +27,36 @@ public interface IModelerHost
     /// Runs <paramref name="work"/> as <see cref="RunAsync{T}"/> does, with Layout's session (its scene, frame and
     /// auto-key) beside the command API.
     /// </summary>
+    /// <remarks>
+    /// A call made from inside another's work (a batch running its steps) runs at once, on the same thread, and its
+    /// task is already complete when it returns: it's part of the call under way, not a new one waiting its turn.
+    /// </remarks>
     Task<T> RunSceneAsync<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel = default);
+}
+
+/// <summary>Runs a call made from inside another call's work at once (see <see cref="IModelerHost.RunSceneAsync{T}"/>).</summary>
+internal sealed class Reentry
+{
+    private int _thread = -1;
+
+    /// <summary>Whether the current thread is in the middle of a call's work.</summary>
+    public bool Inside => Volatile.Read(ref _thread) == Environment.CurrentManagedThreadId;
+
+    /// <summary>Runs a call's work, noting that this thread is inside it (a nested call then runs inline).</summary>
+    public T Run<T>(Func<T> work)
+    {
+        int outer = _thread;
+        _thread = Environment.CurrentManagedThreadId;
+        try { return work(); }
+        finally { _thread = outer; }
+    }
+
+    /// <summary>A nested call's work, run now, as a finished task.</summary>
+    public static Task<T> Inline<T>(Func<T> work)
+    {
+        try { return Task.FromResult(work()); }
+        catch (Exception e) { return Task.FromException<T>(e); }
+    }
 }
 
 /// <summary>
@@ -37,6 +66,7 @@ public interface IModelerHost
 public sealed class HeadlessHost(string root, ToolRegistry? registry = null) : IModelerHost
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Reentry _reentry = new();
 
     public string Root { get; } = Path.GetFullPath(root);
     public Commands Commands { get; } = new(new Document(), registry);
@@ -47,12 +77,15 @@ public sealed class HeadlessHost(string root, ToolRegistry? registry = null) : I
     public Task<T> RunAsync<T>(string action, Func<Commands, T> work, CancellationToken cancel = default) =>
         RunSceneAsync(action, (c, _) => work(c), cancel);
 
-    public async Task<T> RunSceneAsync<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel = default)
+    public Task<T> RunSceneAsync<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel = default) =>
+        _reentry.Inside ? Reentry.Inline(() => work(Commands, Layout)) : Queued(work, cancel);
+
+    private async Task<T> Queued<T>(Func<Commands, LayoutSession, T> work, CancellationToken cancel)
     {
         await _gate.WaitAsync(cancel).ConfigureAwait(false);
         try
         {
-            return work(Commands, Layout);
+            return _reentry.Run(() => work(Commands, Layout));
         }
         finally
         {
@@ -94,6 +127,7 @@ public interface ILiveModeler
 public sealed class LiveHost(IUiThread ui, ILiveModeler modeler, string root) : IModelerHost
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Reentry _reentry = new();
 
     public string Root { get; } = Path.GetFullPath(root);
 
@@ -106,7 +140,10 @@ public sealed class LiveHost(IUiThread ui, ILiveModeler modeler, string root) : 
     public Task<T> RunAsync<T>(string action, Func<Commands, T> work, CancellationToken cancel = default) =>
         RunSceneAsync(action, (c, _) => work(c), cancel);
 
-    public async Task<T> RunSceneAsync<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel = default)
+    public Task<T> RunSceneAsync<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel = default) =>
+        _reentry.Inside ? Reentry.Inline(() => work(modeler.Commands, modeler.Layout)) : Queued(action, work, cancel);
+
+    private async Task<T> Queued<T>(string action, Func<Commands, LayoutSession, T> work, CancellationToken cancel)
     {
         await _gate.WaitAsync(cancel).ConfigureAwait(false);
         try
@@ -120,7 +157,7 @@ public sealed class LiveHost(IUiThread ui, ILiveModeler modeler, string root) : 
                     if (modeler.Busy is { } why) return (false, default(T), why);
                     try
                     {
-                        var r = work(modeler.Commands, modeler.Layout);
+                        var r = _reentry.Run(() => work(modeler.Commands, modeler.Layout));
                         modeler.Report($"AI agent: {action}.");
                         return (true, r, (string?)null);
                     }

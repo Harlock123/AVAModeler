@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Anthropic;
 using Anthropic.Models.Messages;
@@ -21,6 +22,20 @@ public sealed class ChatSession(IToolBridge tools)
     private readonly List<ChatEntry> _entries = [];
     /// <summary>The conversation in neither provider's shape, as it was sent and answered: what a saved chat keeps.</summary>
     private readonly List<LogTurn> _log = [];
+
+    /// <summary>
+    /// The checkpoint taken before the reply under way first changed something ("" when it couldn't be taken), or null
+    /// before its first change.
+    /// </summary>
+    private string? _replyCheckpoint;
+    private int _replies;
+
+    /// <summary>A line for the model with the person's next message, saying a reply was undone.</summary>
+    private string? _undoNote;
+
+    /// <summary>What the model is told, with the person's next message, after Undo this reply.</summary>
+    public const string UndoNote =
+        "[From the app, not typed by the person: the person pressed Undo this reply, so the object and the scene are back as they were before one of your earlier replies began. Whatever that reply, and any after it, changed is gone; look again (get_document, get_scene) before relying on it.]";
     private (string Model, string? Server) _opened = ("", null);
     private readonly AnthropicBackend _anthropic = new();
     private readonly OpenAICompatibleBackend _server = new();
@@ -239,8 +254,11 @@ public sealed class ChatSession(IToolBridge tools)
             Add(new NoticeEntry(NotReadyText, NoticeKind.Info));
             return;
         }
-        Backend.AddUserText(text);
-        _log.Add(new LogTurn("user", text, [], []));
+        // After Undo this reply the model is told, so it doesn't build on what's gone.
+        var sent = _undoNote != null ? _undoNote + "\n\n" + text : text;
+        _undoNote = null;
+        Backend.AddUserText(sent);
+        _log.Add(new LogTurn("user", sent, [], []));
         // Stopped by the budget: the person's carrying on allows as much again.
         if (_budget is { } b && ChatCost is { } spent && spent >= _allowance) _allowance = spent + b;
         await RunAsync(cancel);
@@ -271,6 +289,7 @@ public sealed class ChatSession(IToolBridge tools)
         _generation++;
         _entries.Clear();
         _log.Clear();
+        _undoNote = null;
         _anthropic.Clear();
         _server.Clear();
         ChatId = "";
@@ -301,6 +320,7 @@ public sealed class ChatSession(IToolBridge tools)
         using var running = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         _running = running;
         _turnRequests.Clear();
+        _replyCheckpoint = null;
         int generation = _generation;
         WorkingChanged?.Invoke();
         try
@@ -312,6 +332,8 @@ public sealed class ChatSession(IToolBridge tools)
             // What the turn used, after it (a request cut short counts what was reported of it).
             if (generation == _generation)
             {
+                if (_replyCheckpoint is { Length: > 0 } checkpoint && await ChangedSinceAsync(checkpoint) && generation == _generation)
+                    Add(new ReplyUndoEntry(checkpoint));
                 if (!_live.IsEmpty) Commit(_live with { Requests = 1 });
                 // Shown only when the API reported tokens (some OpenAI-compatible servers don't).
                 if (_turnRequests.Any(r => !r.Tokens.IsEmpty)) Add(new UsageEntry([.. _turnRequests], Price?.Model));
@@ -429,6 +451,7 @@ public sealed class ChatSession(IToolBridge tools)
                 {
                     try
                     {
+                        if (_replyCheckpoint == null && Changes(use.Name)) await TakeReplyCheckpointAsync(cancel);
                         outcome = await tools.CallAsync(use.Name, use.Input, cancel);
                     }
                     catch (OperationCanceledException) when (cancel.IsCancellationRequested)
@@ -468,6 +491,80 @@ public sealed class ChatSession(IToolBridge tools)
                 return;
             }
         }
+    }
+
+    // ───────────────────────────── undo this reply ─────────────────────────────
+
+    /// <summary>Whether a tool may change the object or the scene (it isn't marked read-only).</summary>
+    private bool Changes(string tool) =>
+        _toolDefinitions?.FirstOrDefault(t => t.Name == tool) is { } definition && definition.Annotations?.ReadOnlyHint != true;
+
+    /// <summary>
+    /// Takes the checkpoint Undo this reply goes back to, just before the reply's first change. A server without
+    /// checkpoints (or a failure) just means the reply has no undo button.
+    /// </summary>
+    private async Task TakeReplyCheckpointAsync(CancellationToken cancel)
+    {
+        string name = $"reply {++_replies}";
+        var input = new Dictionary<string, JsonElement>
+        {
+            ["name"] = JsonSerializer.SerializeToElement(name),
+            ["note"] = JsonSerializer.SerializeToElement("Taken by the chat before this reply's first change, for its Undo this reply button."),
+        };
+        try
+        {
+            var outcome = await tools.CallAsync("checkpoint", input, cancel);
+            _replyCheckpoint = outcome.IsError ? "" : name;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            _replyCheckpoint = "";
+        }
+    }
+
+    /// <summary>Whether the object or the scene changed since the checkpoint (true if it can't tell).</summary>
+    private async Task<bool> ChangedSinceAsync(string checkpoint)
+    {
+        try
+        {
+            var outcome = await tools.CallAsync("diff", new Dictionary<string, JsonElement> { ["since"] = JsonSerializer.SerializeToElement(checkpoint) });
+            if (outcome.IsError) return true;
+            return JsonNode.Parse(outcome.Text)?["changed"] is not JsonValue changed || !changed.TryGetValue(out bool value) || value;
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or IOException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Undo this reply: puts the object and the scene back as they were before the reply (one undo step on each, so the
+    /// person's Ctrl+Z brings it back). Later replies' buttons go, since they're undone too, and the model is told with
+    /// the next message. Returns whether it was undone; a failure is shown on the entry, which can be tried again.
+    /// </summary>
+    public async Task<bool> UndoReplyAsync(ReplyUndoEntry entry, CancellationToken cancel = default)
+    {
+        if (Working || !entry.CanUndo || !_entries.Contains(entry)) return false;
+        entry.Set(ReplyUndoState.Undoing);
+        ToolOutcome outcome;
+        try
+        {
+            outcome = await tools.CallAsync("restore_checkpoint", new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement(entry.Checkpoint) }, cancel);
+        }
+        catch (Exception e)
+        {
+            outcome = ToolOutcome.Error(e.Message);
+        }
+        if (outcome.IsError)
+        {
+            entry.Set(ReplyUndoState.Failed, outcome.Text);
+            return false;
+        }
+        entry.Set(ReplyUndoState.Undone);
+        foreach (var later in _entries.Skip(_entries.IndexOf(entry) + 1).OfType<ReplyUndoEntry>())
+            if (later.CanUndo) later.Set(ReplyUndoState.Superseded);
+        if (HasConversation) _undoNote = UndoNote;
+        return true;
     }
 
     // ───────────────────────────── saving and opening chats ─────────────────────────────

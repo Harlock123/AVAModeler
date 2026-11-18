@@ -1203,13 +1203,19 @@ public sealed partial class ModelerTools
         {
             return await host.RunSceneAsync(action, (c, l) =>
             {
+                _ids.Sync(c.Document);
+                T result;
                 using (Files(c).Confine(c))
                 {
-                    if (!changes) return work(c, l);
-                    var result = l.Edit(AgentStep(action), () => work(c, l), apart: true);
-                    if (result is JsonObject json) json["undo_scene"] = SceneCensus.UndoState(l);
-                    return result;
+                    if (!changes) result = work(c, l);
+                    else
+                    {
+                        result = l.Edit(AgentStep(action), () => work(c, l), apart: true);
+                        if (result is JsonObject json) json["undo_scene"] = SceneCensus.UndoState(l);
+                    }
                 }
+                Annotate(result, _ids.Sync(c.Document));
+                return result;
             }, cancel).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not McpException and not OperationCanceledException)

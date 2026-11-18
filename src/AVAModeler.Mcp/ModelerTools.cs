@@ -24,6 +24,9 @@ public sealed partial class ModelerTools(IModelerHost host)
 {
     private Workspace? _workspace;
 
+    /// <summary>The points' and polygons' ids for this session (see <see cref="GeometryIds"/>).</summary>
+    private readonly GeometryIds _ids = new();
+
     /// <summary>The server these tools are served in (it decides, for one, whether there's a Modeler's object to stage).</summary>
     public ServerProfile Profile { get; init; } = ServerProfile.Modeler;
 
@@ -115,13 +118,15 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "select_points", Idempotent = true)]
-    [Description("Selects points of the current layer by index and switches to Points mode. Replaces the point selection unless add is true. The order they're given is the order Make Polygon joins them in. Not an undo step.")]
+    [Description("Selects points of the current layer by index, or by id (ids stay with points while other tools renumber them: see get_points with_ids), and switches to Points mode. Give indices or ids. Replaces the point selection unless add is true. The order they're given is the order Make Polygon joins them in. Not an undo step.")]
     public Task<string> SelectPoints(
-        [Description("Point indices in the current layer, from 0.")] int[] indices,
+        [Description("Point indices in the current layer, from 0.")] int[]? indices = null,
         [Description("Add to the points already selected rather than replacing them.")] bool add = false,
-        CancellationToken cancel = default) =>
+        CancellationToken cancel = default,
+        [Description("Point ids in the current layer instead of indices (from get_points with_ids, or a tool's new_point_ids).")] int[]? ids = null) =>
         Do("selected points", c =>
         {
+            indices = Pick(c.Document, indices, ids, points: true);
             Census.CheckIndices(indices, c.Document.Current.Mesh.Points.Count, "point");
             c.SelectMode(SelectionMode.Points);
             if (!add) c.SelectNone();
@@ -130,13 +135,15 @@ public sealed partial class ModelerTools(IModelerHost host)
         }, cancel);
 
     [McpServerTool(Name = "select_polygons", Idempotent = true)]
-    [Description("Selects polygons of the current layer by index and switches to Polygons mode. Replaces the polygon selection unless add is true. Not an undo step.")]
+    [Description("Selects polygons of the current layer by index, or by id (ids stay with polygons while other tools renumber them: see get_polygons with_ids), and switches to Polygons mode. Give indices or ids. Replaces the polygon selection unless add is true. Not an undo step.")]
     public Task<string> SelectPolygons(
-        [Description("Polygon indices in the current layer, from 0.")] int[] indices,
+        [Description("Polygon indices in the current layer, from 0.")] int[]? indices = null,
         [Description("Add to the polygons already selected rather than replacing them.")] bool add = false,
-        CancellationToken cancel = default) =>
+        CancellationToken cancel = default,
+        [Description("Polygon ids in the current layer instead of indices (from get_polygons with_ids, or a tool's new_polygon_ids).")] int[]? ids = null) =>
         Do("selected polygons", c =>
         {
+            indices = Pick(c.Document, indices, ids, points: false);
             Census.CheckIndices(indices, c.Document.Current.Mesh.Polygons.Count, "polygon");
             c.SelectMode(SelectionMode.Polygons);
             if (!add) c.SelectNone();
@@ -729,13 +736,14 @@ public sealed partial class ModelerTools(IModelerHost host)
         Do("read the object", c => Census.Document(c.Document, brief: false), cancel);
 
     [McpServerTool(Name = "get_points", ReadOnly = true, Idempotent = true)]
-    [Description("Lists a layer's points as rows [index, x, y, z] (metres), a page at a time. With selected_only, only the points the selection makes active (selected points, or the points of selected polygons, edges or volume).")]
+    [Description("Lists a layer's points as rows [index, x, y, z] (metres), a page at a time. With selected_only, only the points the selection makes active (selected points, or the points of selected polygons, edges or volume). With with_ids, each row ends with the point's id: [index, x, y, z, id].")]
     public Task<string> GetPoints(
         [Description("The layer, from 1. Default: the current layer.")] int? layer = null,
         [Description("The first index to list (default 0).")] int offset = 0,
         [Description("How many to list, 1 to 5000 (default 500).")] int limit = 500,
         [Description("Only the selected ones.")] bool selected_only = false,
-        CancellationToken cancel = default) =>
+        CancellationToken cancel = default,
+        [Description("Add each point's id (a number that stays with the point while tools renumber the mesh) to its row.")] bool with_ids = false) =>
         Do("read points", c =>
         {
             var (l, mesh) = Census.Layer(c.Document, layer);
@@ -746,19 +754,22 @@ public sealed partial class ModelerTools(IModelerHost host)
             foreach (int i in all.Skip(offset).Take(limit))
             {
                 var p = mesh.Points[i];
-                rows.Add(new JsonArray(i, Census.Round(p.X), Census.Round(p.Y), Census.Round(p.Z)));
+                var row = new JsonArray(i, Census.Round(p.X), Census.Round(p.Y), Census.Round(p.Z));
+                if (with_ids) row.Add(_ids.Of(l).PointIds[i]);
+                rows.Add(row);
             }
             return new JsonObject { ["layer"] = l + 1, ["total"] = all.Count, ["offset"] = offset, ["count"] = rows.Count, ["points"] = rows, ["more"] = offset + rows.Count < all.Count };
         }, cancel);
 
     [McpServerTool(Name = "get_polygons", ReadOnly = true, Idempotent = true)]
-    [Description("Lists a layer's polygons, a page at a time: each with its index, its point indices (in winding order: clockwise seen from the side it faces), its surface and its normal (unit vector out of its visible side; [0, 0, 0] for dots and lines). With selected_only, only the polygons the selection makes active.")]
+    [Description("Lists a layer's polygons, a page at a time: each with its index, its point indices (in winding order: clockwise seen from the side it faces), its surface and its normal (unit vector out of its visible side; [0, 0, 0] for dots and lines). With selected_only, only the polygons the selection makes active. With with_ids, each also has its id and its points' ids (point_ids).")]
     public Task<string> GetPolygons(
         [Description("The layer, from 1. Default: the current layer.")] int? layer = null,
         [Description("The first index to list (default 0).")] int offset = 0,
         [Description("How many to list, 1 to 5000 (default 500).")] int limit = 500,
         [Description("Only the selected ones.")] bool selected_only = false,
-        CancellationToken cancel = default) =>
+        CancellationToken cancel = default,
+        [Description("Add each polygon's id and its points' ids (numbers that stay with them while tools renumber the mesh).")] bool with_ids = false) =>
         Do("read polygons", c =>
         {
             var doc = c.Document;
@@ -778,6 +789,12 @@ public sealed partial class ModelerTools(IModelerHost host)
                     ["surface"] = poly.Surface < doc.Surfaces.Count ? doc.Surfaces[poly.Surface].Name : $"#{poly.Surface}",
                     ["normal"] = new JsonArray(Census.Round(n.X, 4), Census.Round(n.Y, 4), Census.Round(n.Z, 4)),
                 });
+                if (with_ids)
+                {
+                    var known = _ids.Of(l);
+                    ((JsonObject)rows[^1]!)["id"] = known.PolygonIds[i];
+                    ((JsonObject)rows[^1]!)["point_ids"] = new JsonArray(poly.Points.Select(p => (JsonNode)known.PointIds[p]).ToArray());
+                }
             }
             return new JsonObject { ["layer"] = l + 1, ["total"] = all.Count, ["offset"] = offset, ["count"] = rows.Count, ["polygons"] = rows, ["more"] = offset + rows.Count < all.Count };
         }, cancel);
@@ -990,7 +1007,12 @@ public sealed partial class ModelerTools(IModelerHost host)
         {
             return await host.RunAsync(action, c =>
             {
-                using (Files(c).Confine(c)) return work(c);
+                // What changed since the last call (the person's edits, in the live app) isn't this call's doing.
+                _ids.Sync(c.Document);
+                T result;
+                using (Files(c).Confine(c)) result = work(c);
+                Annotate(result, _ids.Sync(c.Document));
+                return result;
             }, cancel).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not McpException and not OperationCanceledException)
@@ -999,8 +1021,14 @@ public sealed partial class ModelerTools(IModelerHost host)
         }
     }
 
-    private Task<string> Do(string action, Func<Commands, JsonObject> work, CancellationToken cancel) =>
-        Do<string>(action, c => work(c).ToJsonString(), cancel);
+    private async Task<string> Do(string action, Func<Commands, JsonObject> work, CancellationToken cancel) =>
+        (await Do<JsonObject>(action, work, cancel).ConfigureAwait(false)).ToJsonString();
+
+    /// <summary>Adds the ids of what a call made (and counts of what it removed or moved) to its answer.</summary>
+    private static void Annotate<T>(T result, List<GeometryIds.LayerChange> changes)
+    {
+        if (result is JsonObject json && !json.ContainsKey("ids") && GeometryIds.Describe(changes) is { } ids) json["ids"] = ids;
+    }
 
     /// <summary>A failure's message for the agent: the message alone for the expected kinds, else with its type.</summary>
     internal static string Explain(Exception e) => e switch

@@ -419,6 +419,22 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
     proxy to that pipe), `McpCommandLine.cs` (`--mcp`), `Workspace.cs` (the working folder's file rules),
     `Pictures.cs` (render_view and render), `CheckReport.cs` (check_mesh's JSON, with `how_to_fix`), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
+- `src/AVAModeler.Mcp/SessionTools.cs`: `batch`, `checkpoint`, `list_checkpoints`, `restore_checkpoint`, `diff` and
+  `resolve_ids`, and `Pick` (select_points and select_polygons by `ids`).
+  - `batch` gets the SDK's `McpServer` injected and runs each step through `ServerOptions.ToolCollection`'s
+    `McpServerTool.InvokeAsync`, inside `DoScene` (one Layout step) and `Document.Group` (one object step). It works
+    because a host runs a call made from inside another call's work at once, on the same thread (`Reentry` in
+    `ModelerHost.cs`), so a step's task is complete when it returns; a step whose task isn't is refused, and the batch
+    rolls back. `ModelerTools.NotInBatch` lists the tools a batch refuses (replace, write or render, step the
+    history, or are about the session): add a new tool there if it does any of those.
+  - Checkpoints are the session's (`ModelerTools._checkpoints`, the newest `MaxCheckpoints`): a whole-document
+    `Document.Snapshot`, the ids' `GeometryIds.State`, the scene's `SceneSnapshot` (restored only into the same
+    `Scene` object) and its `SceneJson.Write` text, which `diff` compares item by item and setting by setting.
+- `src/AVAModeler.Mcp/GeometryIds.cs`: points' and polygons' ids for a session. `Do` and `DoScene` call `Sync`
+  before a call's work (taking in the person's edits) and after it, and add the call's new ids to its JSON answer
+  (`ids`). It matches by index when the polygons keep their points, else points by place (to 1 µm) and polygons by
+  the point ids they join (either way round), and gives removed ones' ids back when the same geometry returns (undo,
+  restore). Ids never go into files or the `Document`.
 - `src/AVAModeler.Mcp/`'s newer tool files: `MotionModifierTools.cs` (add, set and remove_motion_modifier),
   `LightEffectsTools.cs` (set_lens_flare, set_volumetric_light, set_shadow_map, and `LightEffectsCensus`) and
   `CompositingTools.cs` (load_image, remove_image, set_compositing, set_dissolve), all in `ToolGroups.Scene`.
@@ -465,6 +481,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     neutral log as it talks (`ToStored`, `Open`): opening a chat with the provider in use gives its backend the turns
     again (`IChatBackend.AddAssistant` puts back a reply in that API's shape); with the other provider it's
     `ReadOnly` until that provider is chosen again. Calls left without results are answered "not run" on opening.
+  - Undo this reply: before a reply's first call to a tool not marked read-only, `ChatSession` calls `checkpoint`
+    ("reply N") through the bridge; when the reply ends it asks `diff` and, if anything changed, adds a
+    `ReplyUndoEntry` (in `ChatEntries.cs`), which the panel shows as a button. `UndoReplyAsync` calls
+    `restore_checkpoint`, marks later entries superseded and puts `ChatSession.UndoNote` before the person's next
+    message to the model. A server without checkpoints just means no button. The entries aren't saved with a chat.
   - `ToolBridge.cs`: `McpToolBridge` is an in-process MCP client talking to `ModelerServer` over in-memory pipes, built
     over the app's `LiveHost`, so the chat and outside agents share one code path. `ChatModels.cs` has the model ids
     and `ChatPrompt` (the server's instructions plus a few in-app lines, and notes for the core tool set and for a model
@@ -603,6 +624,10 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   them); pictures are drawn from a
   `Document.Copy` (or, for the scene, a `Scene.Copy` with copied documents) off that thread. Scene calls don't switch
   the window to Layout; `LiveAgents.Report` tells Layout to show its item list afresh (`ChangedElsewhere`).
+- **Batches, checkpoints and ids are the session's.** Nothing of them goes into the object, a scene file or the
+  undo history beyond the steps they make (a batch is one step; a restore is one step on the object and one on the
+  scene). A call made from inside another (`Reentry`) skips the gate and the busy wait: only a batch's steps should
+  do it.
 - **The live listener is local and per user.** It listens on a named pipe opened with `PipeOptions.CurrentUserOnly`
   (a Unix socket on Linux and macOS), so no token is needed; it is off until the person allows agents. Don't add a
   network listener. Paths agents give stay inside the working folder (`Workspace`), and nothing is deleted.

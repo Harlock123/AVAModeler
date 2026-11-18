@@ -430,11 +430,37 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - Checkpoints are the session's (`ModelerTools._checkpoints`, the newest `MaxCheckpoints`): a whole-document
     `Document.Snapshot`, the ids' `GeometryIds.State`, the scene's `SceneSnapshot` (restored only into the same
     `Scene` object) and its `SceneJson.Write` text, which `diff` compares item by item and setting by setting.
+- The newer session files in `src/AVAModeler.Mcp/`:
+  - `QueryTools.cs`: `select_where`, `save_selection`/`select_saved`/`list_selections` (by id) and `expect`
+    (`ExpectationFailedException` with `fail`).
+  - `RecordingTools.cs`: the recording (`Record`, from `Finish`; a batch's steps one by one; `NotRecorded`),
+    `get_recording`, `save_steps` (`.avasteps.json`, format `avamodeler-steps`) and `run_steps` (`Substitute` and
+    `Evaluate` for `${…}`), which runs through `Batch`.
+  - `LiveTools.cs`: `lock`/`unlock`/`list_locks` (the locks are `Document.AgentLocks`, Core's `AgentLock`, by place,
+    and `LayoutSession.AgentLocks`, Layout's `SceneLock`, by item name), `Guarded` (a call's work as one group,
+    checked against the locks and, in the live app, a big removal, which throws `NeedsConfirmationException`),
+    `Confirming` (asks with elicitation on the call's own server, `CallScope.Server`, and runs the call again),
+    `list_agents`, jobs (`start_job` and the rest, a job's progress through its own `CallScope`), and the resources
+    (`ResourceList`, `ReadResourceAsync`, `Hook` on `Commands.DocumentReplaced`, `Document.Changed` and
+    `LayoutSession.Changed`/`SceneReplaced`, and `Announce`, which skips changes made inside this session's own calls,
+    `_depth`, and raises `ChangedElsewhere` for the in-app chat).
+  - `SessionPlumbing.cs`: `ErrorKinds` (`Of(Exception)`), `CallScope` (an `AsyncLocal` the call filter sets: the error's
+    kind, the progress sink, the person's yes, the call's server; `LiveHost` carries it to the UI thread),
+    `ModelerTools.Attach`/`Finish`/`EndAsync`, and `AgentSessions` (the sessions on a host).
+  - `CheckpointFiles.cs`: checkpoints on disk (`Persist`, `LoadKept`, `KeptOnDisk`): `.avacheckpoints` in the working
+    folder for agents, never pruned; `CheckpointFolder` (set by the in-app chat to its saved chat's folder) pruned to
+    the newest `MaxCheckpoints`.
+  - `ModelerServer.Options` makes one `ModelerTools` per session (`SessionOf`, `EndSessionAsync`), whose call filter
+    sets the scope, attaches the session, checks arguments and turns the answer into structured content (or an error
+    with its kind); it also serves the resources. `LiveBridge` forwards resources, subscriptions, progress and
+    elicitation, and names its client after the agent's.
 - `src/AVAModeler.Mcp/GeometryIds.cs`: points' and polygons' ids for a session. `Do` and `DoScene` call `Sync`
   before a call's work (taking in the person's edits) and after it, and add the call's new ids to its JSON answer
   (`ids`). It matches by index when the polygons keep their points, else points by place (to 1 µm) and polygons by
   the point ids they join (either way round), and gives removed ones' ids back when the same geometry returns (undo,
-  restore). Ids never go into files or the `Document`.
+  restore). Ids go into a file only through `save` with `keep_ids` (`GeometryIds.Keep` fills `Layer.Ids`, a
+  `GeometryIdTable`; LWOB writes it as the `AVID` chunk on the fresh path, so a document with ids never replays its
+  file's layout), and a document opened with them seeds the session's ids.
 - `src/AVAModeler.Mcp/`'s newer tool files: `MotionModifierTools.cs` (add, set and remove_motion_modifier),
   `LightEffectsTools.cs` (set_lens_flare, set_volumetric_light, set_shadow_map, and `LightEffectsCensus`) and
   `CompositingTools.cs` (load_image, remove_image, set_compositing, set_dissolve), all in `ToolGroups.Scene`.
@@ -481,6 +507,14 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     neutral log as it talks (`ToStored`, `Open`): opening a chat with the provider in use gives its backend the turns
     again (`IChatBackend.AddAssistant` puts back a reply in that API's shape); with the other provider it's
     `ReadOnly` until that provider is chosen again. Calls left without results are answered "not run" on opening.
+  - The chat's bridge (`IToolBridge`) also carries the server's questions (`Ask`, answered by a `ConfirmEntry` with
+    buttons), a call's progress (`ToolEntry.Progress`), `ChangedElsewhere` (the session's notice that the person or
+    another agent changed things, which `ChatSession` puts before the next message as `ChangedElsewhereNote`) and
+    `CheckpointFolder`. `McpToolBridge` ends its session on dispose.
+  - The timeline: `ChatSession.Timeline` (the `ReplyUndoEntry`s, each with its `Summary` from `diff` and a `Before`
+    picture from `render_checkpoint`) and `ChatPanel.ShowTimeline`. With history kept (`ChatSession.CheckpointsFolder`,
+    the chats folder), reply checkpoints persist under `<chat id>/checkpoints/` and the entries are saved (`"undo"`), so
+    the buttons work after reopening.
   - Undo this reply: before a reply's first call to a tool not marked read-only, `ChatSession` calls `checkpoint`
     ("reply N") through the bridge; when the reply ends it asks `diff` and, if anything changed, adds a
     `ReplyUndoEntry` (in `ChatEntries.cs`), which the panel shows as a button. `UndoReplyAsync` calls
@@ -624,6 +658,13 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   them); pictures are drawn from a
   `Document.Copy` (or, for the scene, a `Scene.Copy` with copied documents) off that thread. Scene calls don't switch
   the window to Layout; `LiveAgents.Report` tells Layout to show its item list afresh (`ChangedElsewhere`).
+- **A call's work goes through `Do` or `DoScene`**, and through nothing else: they sync the ids, hook the resources,
+  run `Guarded` (locks, confirmation) and note the error's kind. A handler that reaches the host another way escapes
+  the locks. `undo` and `redo` pass `guarded: false` (a group can't step the history).
+- **Asking the person uses the call's own server** (`CallScope.Server`): on a 2026-07-28 session (multi-round-trip
+  requests) the SDK only delivers an elicitation made on it. New tools that ask go through `Confirming`.
+- **Locks are checked inside the step**, so a refused change leaves nothing: `Guarded` runs inside `DoScene`'s
+  `LayoutSession.Edit`. A new kind of agent change to the scene is covered as long as it's in `DoScene`.
 - **Batches, checkpoints and ids are the session's.** Nothing of them goes into the object, a scene file or the
   undo history beyond the steps they make (a batch is one step; a restore is one step on the object and one on the
   scene). A call made from inside another (`Reentry`) skips the gate and the busy wait: only a batch's steps should

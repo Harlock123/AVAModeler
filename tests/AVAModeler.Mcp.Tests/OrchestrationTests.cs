@@ -159,6 +159,33 @@ public sealed class OrchestrationTests : IAsyncDisposable
         Assert.Equal((96, 72), (pw, ph));
     }
 
+    /// <summary>The README's picture of a diff: set AVAMODELER_SHOTS to save it.</summary>
+    [Fact]
+    public async Task Screenshot_a_diff_picture()
+    {
+        var client = await Client();
+        await client.Json("run_tool", new { name = "Box", @params = new Dictionary<string, object> { ["Size"] = new[] { 1.2, 0.5, 0.8 }, ["Center"] = new[] { 0, 0.25, 0 }, ["Segments X"] = 3, ["Segments Z"] = 2 } });
+        await client.Json("run_tool", new { name = "Box", @params = new { Size = new[] { 0.3, 0.3, 0.3 }, Center = new[] { -0.9, 0.15, 0 } } });
+        await client.Json("checkpoint", new { name = "before" });
+        // Added: a ball on top; moved: the small box; changed: two faces get another surface; removed: a face.
+        await client.Json("run_tool", new { name = "Ball", @params = new { Center = new[] { 0.2, 0.75, 0 }, Radius = new[] { 0.25, 0.25, 0.25 } } });
+        await client.Json("select_where", new { box_min = new[] { -1.1, -0.1, -0.2 }, box_max = new[] { -0.7, 0.4, 0.2 }, what = "points" });
+        await client.Json("run_tool", new { name = "Move", @params = new { Offset = new[] { 0, 0, 0.6 } } });
+        await client.Json("select_where", new { normal = new[] { 1, 0, 0 }, within_degrees = 5, axis = "x", above = 0.5 });
+        await client.Json("set_surface", new { name = "Painted", color = new[] { 40, 90, 200 } });
+        await client.Json("select_where", new { normal = new[] { 0, 0, -1 }, within_degrees = 5, axis = "x", below = -0.2, above = -0.65 });
+        await client.Json("run_tool", new { name = "Remove" });
+        var drawn = await client.Call("diff", new { since = "before", picture = true, width = 640, height = 400 });
+        Assert.NotEqual(true, drawn.IsError);
+        var png = Pngs.Of(drawn);
+        Assert.True(Pngs.Inspect(png).Colours > 20);
+        if (Environment.GetEnvironmentVariable("AVAMODELER_SHOTS") is { Length: > 0 } dir)
+        {
+            Directory.CreateDirectory(dir);
+            await File.WriteAllBytesAsync(Path.Combine(dir, "AVAModeler-diff.png"), png, Calls.Cancel);
+        }
+    }
+
     // ───────────────────────────── recording, steps files ─────────────────────────────
 
     [Fact]

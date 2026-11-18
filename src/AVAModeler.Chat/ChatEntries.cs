@@ -106,6 +106,20 @@ public sealed class ToolEntry : ChatEntry
         }
     }
 
+    /// <summary>How far a long call has got (0 to 1), or null while it hasn't said.</summary>
+    public double? Progress { get; private set; }
+
+    /// <summary>The call's last progress line ("frame 12 of 30"), or null.</summary>
+    public string? ProgressText { get; private set; }
+
+    internal void Report(double done, string? text)
+    {
+        if (!Running) return;
+        Progress = Math.Clamp(done, 0, 1);
+        if (text != null) ProgressText = text;
+        Raise();
+    }
+
     internal void Finish(ToolOutcome outcome)
     {
         Running = false;
@@ -179,6 +193,15 @@ public sealed class ReplyUndoEntry(string checkpoint) : ChatEntry
     /// <summary>Why the restore failed, or null.</summary>
     public string? Message { get; private set; }
 
+    /// <summary>What the reply changed, in a line ("+6 polygons, 8 points moved; scene: Key added"), for the timeline.</summary>
+    public string Summary { get; internal set; } = "";
+
+    /// <summary>The reply's number in the chat (1 for the first that changed something).</summary>
+    public int Number { get; internal set; }
+
+    /// <summary>A small picture of the object as it was before the reply, once the timeline has asked for it.</summary>
+    public ToolImage? Before { get; internal set; }
+
     /// <summary>The button can be pressed (it's there, and not under way or done).</summary>
     public bool CanUndo => State is ReplyUndoState.Available or ReplyUndoState.Failed;
 
@@ -186,6 +209,31 @@ public sealed class ReplyUndoEntry(string checkpoint) : ChatEntry
     {
         State = state;
         Message = message;
+        Raise();
+    }
+}
+
+/// <summary>
+/// A question the app asks the person for an agent (MCP elicitation): an agent's call would remove most of a layer.
+/// The panel shows it with Go Ahead and Don't; the call waits for the answer.
+/// </summary>
+public sealed class ConfirmEntry(string question) : ChatEntry
+{
+    private readonly TaskCompletionSource<bool> _answer = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public string Question { get; } = question;
+
+    /// <summary>Null until answered: true to go ahead.</summary>
+    public bool? Answer { get; private set; }
+
+    internal Task<bool> Answered => _answer.Task;
+
+    /// <summary>The person's answer (the panel's buttons call it); a second answer is ignored.</summary>
+    public void Choose(bool goAhead)
+    {
+        if (Answer != null) return;
+        Answer = goAhead;
+        _answer.TrySetResult(goAhead);
         Raise();
     }
 }

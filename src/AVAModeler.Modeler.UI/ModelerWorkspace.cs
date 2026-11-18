@@ -200,6 +200,8 @@ public sealed class ModelerWorkspace : DockPanel
             ["Surface Editor"] = () => { var w = new SurfaceEditor(s); if (Owner != null) w.Show(Owner); else w.Show(); },
             ["Preferences"] = () => { var w = new PreferencesWindow(s, ApplyPreferences); if (Owner != null) _ = Dialogs.ShowModal(w, Owner); else w.Show(); },
             ["AI Agents"] = ToggleAgents,
+            ["Lock for Agents"] = LockForAgents,
+            ["Unlock for Agents"] = UnlockForAgents,
             ["AI Chat"] = () => ToggleChat?.Invoke(),
             ["Run Macro"] = () => _ = RunMacro(),
             ["Macro Reference"] = () => _ = Dialogs.Message(Owner, "Macros", MacroReference()),
@@ -643,10 +645,40 @@ public sealed class ModelerWorkspace : DockPanel
                     Item("Show Weight/Colour Ma_p", "Show Map"), Item("Next Weight/Colour Map", "Next Point Map"), "-",
                     Item("Meta_NURBS", "MetaNURBS"), Item("Backface _Tint", "Backface Tint"), Item("S_nap to Grid", "Snap"), "-",
                     Group("S_ymmetry", Item("_Next (Off, X, Y, Z)", "Symmetry"), Item("_X", "Symmetry X"), Item("_Y", "Symmetry Y"), Item("_Z", "Symmetry Z"), Item("_Off", "Symmetry Off")), "-", Item("_Layout", "Show Layout")),
-                Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin"), "-", ChatItem(), _agents),
+                Group("_Macros", Item("_Run Macro…", "Run Macro"), Item("Macro _Reference", "Macro Reference"), Item("Load _Plugin…", "Load Plugin"), "-", ChatItem(), _agents, Item("_Lock Selection from AI Agents", "Lock for Agents"), Item("_Unlock for AI Agents", "Unlock for Agents")),
                 Group("_Help", Item("_Keyboard", "Keyboard"), Item("_About", "About")),
             },
         };
+    }
+
+    /// <summary>
+    /// Macros › Lock Selection from AI Agents: keeps the current layer's selected points and polygons from any agent's
+    /// changes (the chat's and outside agents'); an agent's call that would change them fails and says so. The person's
+    /// own edits aren't stopped. Not an undo step, not saved with the object.
+    /// </summary>
+    public void LockForAgents()
+    {
+        var doc = Session.Commands.Document;
+        int layer = doc.CurrentLayer;
+        var points = doc.Selection.PointsIn(layer).ToList();
+        var polygons = doc.Selection.PolygonsIn(layer).ToList();
+        if (points.Count + polygons.Count == 0)
+        {
+            Session.SetStatus("Select what to keep from AI agents first (points or polygons in the current layer).");
+            return;
+        }
+        string name = $"locked {doc.AgentLocks.Count(l => l.Owner == AgentLock.Person) + 1}";
+        var made = AgentLock.Of(doc, layer, points, polygons, name, AgentLock.Person);
+        doc.AgentLocks.Add(made);
+        Session.SetStatus($"Locked from AI agents: {made.Polygons.Count} polygons and {made.Points.Count} points in layer {layer + 1} (\"{name}\"). Macros › Unlock for AI Agents lets them change it again.");
+    }
+
+    /// <summary>Macros › Unlock for AI Agents: takes off every lock the person made (agents' own locks stay theirs).</summary>
+    public void UnlockForAgents()
+    {
+        var doc = Session.Commands.Document;
+        int n = doc.AgentLocks.RemoveAll(l => l.Owner == AgentLock.Person);
+        Session.SetStatus(n == 0 ? "Nothing of yours is locked from AI agents." : $"Unlocked {n} lock{(n == 1 ? "" : "s")}: AI agents can change it again.");
     }
 
     /// <summary>Macros › AI Chat: the window handles its key (F4) in both workspaces, so it isn't in the key map.</summary>

@@ -64,6 +64,8 @@ public sealed class ChatPanel : DockPanel
     private readonly Button _send;
     private readonly StackPanel _historyList = new() { Spacing = 4, Margin = new Thickness(6) };
     private readonly Border _history;
+    private readonly StackPanel _timelineList = new() { Spacing = 4, Margin = new Thickness(6) };
+    private readonly Border _timeline;
     private readonly Border _readOnlyBar;
     private readonly TextBlock _readOnlyText = new() { TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 12 };
 
@@ -71,7 +73,26 @@ public sealed class ChatPanel : DockPanel
     /// The saved conversations (the app gives it the chats folder in its settings folder; null, as in tests unless they
     /// give one in a temporary folder, saves nothing). Chats are saved only while <see cref="KeepHistory"/> is ticked.
     /// </summary>
-    public ChatHistory? History { get; set; }
+    public ChatHistory? History
+    {
+        get => _store;
+        set
+        {
+            _store = value;
+            KeepCheckpoints();
+        }
+    }
+
+    private ChatHistory? _store;
+
+    /// <summary>
+    /// Reply checkpoints are kept with the chats (so Undo this reply works after a chat is reopened) only while chat
+    /// history is kept: nothing is written to the chats folder otherwise.
+    /// </summary>
+    private void KeepCheckpoints() => Session.CheckpointsFolder = KeepHistory.IsChecked == true ? _store?.Folder : null;
+
+    /// <summary>Whether the timeline (each reply's checkpoint) is showing in place of the conversation.</summary>
+    public bool TimelineOpen => _timeline.IsVisible;
 
     /// <summary>Keep chat history: save each chat after every request and on closing, and reopen the last on start (Preferences.ChatKeepHistory; off by default).</summary>
     public CheckBox KeepHistory { get; } = new() { Content = "Keep chat history on this computer", FontSize = 12, Foreground = Look.Text };
@@ -187,6 +208,7 @@ public sealed class ChatPanel : DockPanel
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         buttons.Children.Add(Look.MakeButton("New Chat", NewChat, "Start a new conversation (a kept one stays in History)"));
         buttons.Children.Add(Look.MakeButton("History", ToggleHistory, "Saved chats: reopen, export as Markdown or delete them, and whether to keep them"));
+        buttons.Children.Add(Look.MakeButton("Timeline", ToggleTimeline, "Each reply that changed the object or the scene: what it changed, how it was before, and going back to before it"));
         buttons.Children.Add(Look.MakeButton("Setup…", () => SetupOpen = !SetupOpen, "Choose the model: Claude, or a local or self-hosted server"));
         buttons.Children.Add(Look.MakeButton("Key…", () => _ = EditKey(), "Your Anthropic API key, or an OpenAI-compatible gateway's"));
         buttons.Children.Add(Look.MakeButton("×", () => CloseRequested?.Invoke(), "Hide the chat (F4)"));
@@ -260,7 +282,12 @@ public sealed class ChatPanel : DockPanel
             Background = Look.PanelDark, IsVisible = false,
             Child = new ScrollViewer { Content = _historyList, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
         };
-        Children.Add(new Border { BorderBrush = Look.PanelDark, BorderThickness = new Thickness(1, 0, 0, 0), Child = new Panel { Children = { _scroll, _history } } });
+        _timeline = new Border
+        {
+            Background = Look.PanelDark, IsVisible = false,
+            Child = new ScrollViewer { Content = _timelineList, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
+        };
+        Children.Add(new Border { BorderBrush = Look.PanelDark, BorderThickness = new Thickness(1, 0, 0, 0), Child = new Panel { Children = { _scroll, _history, _timeline } } });
         _messages.Children.Add(_intro);
         PickExportPath = async name => TopLevel.GetTopLevel(this) is { } top
             ? await Dialogs.Save(top, "Export the chat as Markdown", name, new Avalonia.Platform.Storage.FilePickerFileType("Markdown") { Patterns = ["*.md"] })
@@ -269,6 +296,7 @@ public sealed class ChatPanel : DockPanel
         KeepHistory.IsCheckedChanged += (_, _) =>
         {
             _prefs.ChatKeepHistory = KeepHistory.IsChecked == true;
+            KeepCheckpoints();
             if (_prefs.ChatKeepHistory) SaveHistory();
             ShowHistory();
         };
@@ -721,8 +749,91 @@ public sealed class ChatPanel : DockPanel
     public void ToggleHistory()
     {
         _history.IsVisible = !_history.IsVisible;
+        _timeline.IsVisible = false;
         _scroll.IsVisible = !_history.IsVisible;
         if (_history.IsVisible) ShowHistory();
+    }
+
+    /// <summary>Shows or hides the timeline in place of the conversation.</summary>
+    public void ToggleTimeline()
+    {
+        _timeline.IsVisible = !_timeline.IsVisible;
+        _history.IsVisible = false;
+        _scroll.IsVisible = !_timeline.IsVisible;
+        if (_timeline.IsVisible) ShowTimeline();
+    }
+
+    /// <summary>
+    /// The timeline: each reply that changed the object or the scene, newest first, with what it changed and a picture
+    /// of the object before it; Preview draws that larger, Go Back puts the object and the scene back as they were
+    /// before it (as its Undo this reply does).
+    /// </summary>
+    public void ShowTimeline()
+    {
+        _timelineList.Children.Clear();
+        _timelineList.Children.Add(new TextBlock { Text = "Timeline", FontWeight = FontWeight.Bold, Foreground = Look.Text, FontSize = 13 });
+        _timelineList.Children.Add(new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 11, Opacity = 0.85,
+            Text = "Each reply that changed the object or the scene, newest first, with the object as it was before it. Going back to before a reply takes back that reply and every one after it, and your own edits since; Ctrl+Z (and Ctrl+Z in Layout) brings them back.",
+        });
+        var rows = Session.Timeline.Reverse().ToList();
+        if (rows.Count == 0)
+            _timelineList.Children.Add(new TextBlock { Text = "No reply has changed anything yet.", Foreground = Look.Text, FontSize = 12, FontStyle = FontStyle.Italic, Margin = new Thickness(0, 6) });
+        foreach (var r in rows) _timelineList.Children.Add(TimelineRow(r));
+    }
+
+    private Control TimelineRow(ReplyUndoEntry r)
+    {
+        var picture = new Border { Width = 160, Height = 120, Background = Look.Panel, Child = new TextBlock { Text = "…", Foreground = Look.Text, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        var preview = new StackPanel { IsVisible = false };
+        var title = new TextBlock { Text = $"Before reply {(r.Number > 0 ? r.Number : Session.Timeline.ToList().IndexOf(r) + 1)}", FontWeight = FontWeight.Bold, Foreground = Look.Text, FontSize = 12 };
+        var summary = new TextBlock { Text = r.Summary, TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 11 };
+        var state = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, FontSize = 11, FontStyle = FontStyle.Italic };
+        var look = Look.MakeButton("Preview", () => _ = Preview(r, preview), "Draw the object as it was before this reply, larger");
+        var back = Look.MakeButton("Go Back", () => UndoReply(r), "Put the object and the scene back as they were before this reply (later replies and your edits since go too; Ctrl+Z brings them back)");
+        void Show()
+        {
+            back.IsEnabled = r.CanUndo && !Session.Working;
+            state.Text = r.State switch
+            {
+                ReplyUndoState.Undone => "Gone back to before this reply.",
+                ReplyUndoState.Superseded => "Undone with an earlier reply.",
+                ReplyUndoState.Failed => $"Couldn't go back: {r.Message}",
+                ReplyUndoState.Undoing => "Going back…",
+                _ => "",
+            };
+            state.IsVisible = state.Text.Length > 0;
+        }
+        r.Changed += Show;
+        Show();
+        _ = Thumbnail(r, picture);
+        var text = new StackPanel { Spacing = 2, Margin = new Thickness(6, 0, 0, 0), Children = { title, summary, state, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { look, back } } } };
+        var row = new DockPanel();
+        SetDock(picture, Dock.Left);
+        row.Children.Add(picture);
+        row.Children.Add(text);
+        return new Border
+        {
+            Background = Look.Panel, CornerRadius = new CornerRadius(3), Padding = new Thickness(5, 4), Margin = new Thickness(0, 2),
+            Child = new StackPanel { Spacing = 4, Children = { row, preview } },
+        };
+    }
+
+    private async Task Thumbnail(ReplyUndoEntry r, Border into)
+    {
+        var image = await Session.PictureBeforeAsync(r);
+        into.Child = image != null && Picture(image, 160) is { } p
+            ? p
+            : new TextBlock { Text = "(no picture: its checkpoint is gone)", FontSize = 10, TextWrapping = TextWrapping.Wrap, Foreground = Look.Text, VerticalAlignment = VerticalAlignment.Center };
+    }
+
+    private async Task Preview(ReplyUndoEntry r, StackPanel into)
+    {
+        into.IsVisible = !into.IsVisible;
+        if (!into.IsVisible || into.Children.Count > 0) return;
+        var image = await Session.PictureBeforeAsync(r, 480, 360);
+        if (image != null && Picture(image, 460) is { } p) into.Children.Add(p);
     }
 
     /// <summary>The history list: Keep chat history, Export This Chat and Clear History, then each saved chat with Open, Export and Delete.</summary>
@@ -804,6 +915,7 @@ public sealed class ChatPanel : DockPanel
         NoticeEntry n => NoticeView(n),
         UsageEntry u => UsageView(u),
         ReplyUndoEntry r => ReplyUndoView(r),
+        ConfirmEntry c => ConfirmView(c),
         _ => new TextBlock(),
     };
 
@@ -829,7 +941,8 @@ public sealed class ChatPanel : DockPanel
         var box = new StackPanel { Children = { toggle, thumbs, details } };
         void Refresh()
         {
-            line.Text = (details.IsVisible ? "▾ " : "▸ ") + t.Line;
+            line.Text = (details.IsVisible ? "▾ " : "▸ ") + t.Line
+                + (t.Running && t.Progress is { } done ? $"  {done:P0}{(t.ProgressText != null ? $" · {t.ProgressText}" : "")}" : "");
             line.Foreground = t.IsError ? new SolidColorBrush(Color.FromRgb(255, 150, 140)) : t.Running ? Look.Text : Look.ButtonOn;
             ToolTip.SetTip(toggle, t.Running ? "Running…" : "Show the input and result");
             thumbs.Children.Clear();
@@ -929,6 +1042,25 @@ public sealed class ChatPanel : DockPanel
         row.DetachedFromVisualTree += (_, _) => Session.WorkingChanged -= Show;
         Show();
         return row;
+    }
+
+    /// <summary>A question for the person (an agent would remove most of a layer): Go Ahead or Don't.</summary>
+    private Control ConfirmView(ConfirmEntry c)
+    {
+        var text = new TextBlock { Text = c.Question, TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Look.TextDark };
+        var yes = Look.MakeButton("Go Ahead", () => c.Choose(true), "Let the change be made");
+        var no = Look.MakeButton("Don't", () => c.Choose(false), "Refuse it: nothing changes, and the model is told you said no");
+        var answer = new TextBlock { FontSize = 11, FontStyle = FontStyle.Italic, Foreground = Look.TextDark };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { yes, no } };
+        void Show()
+        {
+            buttons.IsVisible = c.Answer == null;
+            answer.Text = c.Answer switch { true => "You let it go ahead.", false => "You said no: nothing changed.", _ => "" };
+            answer.IsVisible = c.Answer != null;
+        }
+        c.Changed += Show;
+        Show();
+        return Bubble(new StackPanel { Spacing = 4, Children = { text, buttons, answer } }, new SolidColorBrush(Color.FromRgb(240, 200, 120)), new Thickness(0));
     }
 
     private void UndoReply(ReplyUndoEntry r)

@@ -172,6 +172,12 @@ public sealed class LiveHost(IUiThread ui, ILiveModeler modeler, string root) : 
                         modeler.Report($"AI agent: {action}.");
                         return (true, r, (string?)null);
                     }
+                    catch (NeedsConfirmationException)
+                    {
+                        // Nothing was changed: the person is asked (in the agent's client, or the chat) first.
+                        modeler.Report($"AI agent: {action}: asking you first.");
+                        throw;
+                    }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
                         modeler.Report($"AI agent: {action} failed: {e.Message}");

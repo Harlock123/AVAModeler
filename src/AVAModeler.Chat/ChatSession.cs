@@ -33,6 +33,58 @@ public sealed class ChatSession(IToolBridge tools)
     /// <summary>A line for the model with the person's next message, saying a reply was undone.</summary>
     private string? _undoNote;
 
+    /// <summary>The person or another agent changed the object or the scene since the model last looked.</summary>
+    private bool _objectChangedElsewhere, _sceneChangedElsewhere;
+    private bool _wired;
+    private SynchronizationContext? _context;
+    private int _replyNumber;
+    private volatile bool _undoing;
+
+    /// <summary>
+    /// The saved chats' folder (when history is kept): reply checkpoints are kept on disk under the chat's own folder
+    /// there, so Undo this reply still works after the chat is reopened. Null keeps them for this session only.
+    /// </summary>
+    public string? CheckpointsFolder { get; set; }
+
+    private string? ChatCheckpoints => CheckpointsFolder is { } root && ChatId.Length > 0 ? Path.Combine(root, ChatId, "checkpoints") : null;
+
+    /// <summary>What the model is told, with the person's next message, when someone else changed the object or the scene.</summary>
+    public static string ChangedElsewhereNote(bool obj, bool scene) =>
+        $"[From the app, not typed by the person: the person (or another agent) changed the {(obj && scene ? "object and the scene" : obj ? "object" : "scene")} since you last looked. Look again (get_document, get_scene, or diff from a checkpoint) before relying on what you saw.]";
+
+    /// <summary>The bridge's questions and notices come here (once).</summary>
+    private void Wire()
+    {
+        _context ??= SynchronizationContext.Current;
+        if (_wired) return;
+        _wired = true;
+        tools.Ask = AskAsync;
+        tools.ChangedElsewhere += (obj, scene) =>
+        {
+            _objectChangedElsewhere |= obj;
+            _sceneChangedElsewhere |= scene;
+        };
+    }
+
+    /// <summary>Puts a line in the chat on the UI's thread (questions arrive on the MCP client's).</summary>
+    private void AddOnUi(ChatEntry entry)
+    {
+        if (_context == null || SynchronizationContext.Current == _context) Add(entry);
+        else _context.Post(_ => Add(entry), null);
+    }
+
+    /// <summary>A question the server asks the person: shown with buttons; Stop, or the request ending, says no.</summary>
+    private async Task<bool> AskAsync(string question, CancellationToken cancel)
+    {
+        // The person's own Undo this reply (or Go Back) is the go-ahead already.
+        if (_undoing) return true;
+        var entry = new ConfirmEntry(question);
+        AddOnUi(entry);
+        using var stop = cancel.Register(() => entry.Choose(false));
+        using var running = _running?.Token.Register(() => entry.Choose(false));
+        return await entry.Answered.ConfigureAwait(false);
+    }
+
     /// <summary>What the model is told, with the person's next message, after Undo this reply.</summary>
     public const string UndoNote =
         "[From the app, not typed by the person: the person pressed Undo this reply, so the object and the scene are back as they were before one of your earlier replies began. Whatever that reply, and any after it, changed is gone; look again (get_document, get_scene) before relying on it.]";
@@ -246,6 +298,7 @@ public sealed class ChatSession(IToolBridge tools)
     {
         text = text.Trim();
         if (text.Length == 0 || Working || ReadOnly) return;
+        Wire();
         if (ChatId.Length == 0) StartId();
         foreach (var n in _entries.OfType<NoticeEntry>()) n.RetryGone();
         Add(new UserEntry(text));
@@ -254,8 +307,12 @@ public sealed class ChatSession(IToolBridge tools)
             Add(new NoticeEntry(NotReadyText, NoticeKind.Info));
             return;
         }
-        // After Undo this reply the model is told, so it doesn't build on what's gone.
-        var sent = _undoNote != null ? _undoNote + "\n\n" + text : text;
+        // After Undo this reply, or someone else's change, the model is told, so it doesn't build on what's gone.
+        var notes = new List<string>();
+        if (_undoNote != null) notes.Add(_undoNote);
+        else if (HasConversation && (_objectChangedElsewhere || _sceneChangedElsewhere)) notes.Add(ChangedElsewhereNote(_objectChangedElsewhere, _sceneChangedElsewhere));
+        (_objectChangedElsewhere, _sceneChangedElsewhere) = (false, false);
+        var sent = notes.Count > 0 ? string.Join("\n\n", notes) + "\n\n" + text : text;
         _undoNote = null;
         Backend.AddUserText(sent);
         _log.Add(new LogTurn("user", sent, [], []));
@@ -290,6 +347,7 @@ public sealed class ChatSession(IToolBridge tools)
         _entries.Clear();
         _log.Clear();
         _undoNote = null;
+        (_objectChangedElsewhere, _sceneChangedElsewhere) = (false, false);
         _anthropic.Clear();
         _server.Clear();
         ChatId = "";
@@ -332,8 +390,10 @@ public sealed class ChatSession(IToolBridge tools)
             // What the turn used, after it (a request cut short counts what was reported of it).
             if (generation == _generation)
             {
-                if (_replyCheckpoint is { Length: > 0 } checkpoint && await ChangedSinceAsync(checkpoint) && generation == _generation)
-                    Add(new ReplyUndoEntry(checkpoint));
+                if (_replyCheckpoint is { Length: > 0 } checkpoint && await ChangedSinceAsync(checkpoint) is { } summary && generation == _generation)
+                    Add(new ReplyUndoEntry(checkpoint) { Summary = summary, Number = ++_replyNumber });
+                // The chat's own changes this turn aren't someone else's.
+                (_objectChangedElsewhere, _sceneChangedElsewhere) = (false, false);
                 if (!_live.IsEmpty) Commit(_live with { Requests = 1 });
                 // Shown only when the API reported tokens (some OpenAI-compatible servers don't).
                 if (_turnRequests.Any(r => !r.Tokens.IsEmpty)) Add(new UsageEntry([.. _turnRequests], Price?.Model));
@@ -452,7 +512,9 @@ public sealed class ChatSession(IToolBridge tools)
                     try
                     {
                         if (_replyCheckpoint == null && Changes(use.Name)) await TakeReplyCheckpointAsync(cancel);
-                        outcome = await tools.CallAsync(use.Name, use.Input, cancel);
+                        // A long call's progress shows on its line (Progress posts back to this thread).
+                        var progress = new Progress<(double Done, string? Message)>(p => entry.Report(p.Done, p.Message));
+                        outcome = await tools.CallAsync(use.Name, use.Input, progress, cancel);
                     }
                     catch (OperationCanceledException) when (cancel.IsCancellationRequested)
                     {
@@ -511,6 +573,9 @@ public sealed class ChatSession(IToolBridge tools)
             ["name"] = JsonSerializer.SerializeToElement(name),
             ["note"] = JsonSerializer.SerializeToElement("Taken by the chat before this reply's first change, for its Undo this reply button."),
         };
+        // With history kept, it's kept on disk with the chat, so Undo this reply works after the chat is reopened.
+        tools.CheckpointFolder = ChatCheckpoints;
+        if (ChatCheckpoints != null) input["persist"] = JsonSerializer.SerializeToElement(true);
         try
         {
             var outcome = await tools.CallAsync("checkpoint", input, cancel);
@@ -522,20 +587,89 @@ public sealed class ChatSession(IToolBridge tools)
         }
     }
 
-    /// <summary>Whether the object or the scene changed since the checkpoint (true if it can't tell).</summary>
-    private async Task<bool> ChangedSinceAsync(string checkpoint)
+    /// <summary>
+    /// What changed since the checkpoint, in a line for the timeline; null if nothing did ("changes" if it can't tell).
+    /// </summary>
+    private async Task<string?> ChangedSinceAsync(string checkpoint)
     {
         try
         {
             var outcome = await tools.CallAsync("diff", new Dictionary<string, JsonElement> { ["since"] = JsonSerializer.SerializeToElement(checkpoint) });
-            if (outcome.IsError) return true;
-            return JsonNode.Parse(outcome.Text)?["changed"] is not JsonValue changed || !changed.TryGetValue(out bool value) || value;
+            if (outcome.IsError) return "changes";
+            var diff = JsonNode.Parse(outcome.Text) as JsonObject;
+            if (diff?["changed"] is JsonValue changed && changed.TryGetValue(out bool value) && !value) return null;
+            return diff == null ? "changes" : Summarise(diff);
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException or IOException)
         {
-            return true;
+            return "changes";
         }
     }
+
+    /// <summary>A diff in a line: "+6 polygons, −1, 8 points moved; surfaces: Red; scene: Key added".</summary>
+    public static string Summarise(JsonObject diff)
+    {
+        int Count(JsonNode? n) => n?["count"] is JsonValue v && v.TryGetValue(out int c) ? c : 0;
+        int added = 0, removed = 0, changedPolygons = 0, moved = 0, pointsAdded = 0;
+        foreach (var (_, layer) in diff["layers"] as JsonObject ?? [])
+        {
+            added += Count(layer?["polygons"]?["added"]);
+            removed += Count(layer?["polygons"]?["removed"]);
+            changedPolygons += Count(layer?["polygons"]?["changed"]);
+            moved += Count(layer?["points"]?["moved"]);
+            pointsAdded += Count(layer?["points"]?["added"]);
+        }
+        var parts = new List<string>();
+        if (added > 0) parts.Add($"+{added} polygon{(added == 1 ? "" : "s")}");
+        if (removed > 0) parts.Add($"\u2212{removed} polygon{(removed == 1 ? "" : "s")}");
+        if (changedPolygons > 0) parts.Add($"{changedPolygons} changed");
+        if (moved > 0) parts.Add($"{moved} point{(moved == 1 ? "" : "s")} moved");
+        if (added + removed + changedPolygons + moved == 0 && pointsAdded > 0) parts.Add($"+{pointsAdded} point{(pointsAdded == 1 ? "" : "s")}");
+        var line = string.Join(", ", parts);
+        if (diff["surfaces"] is JsonObject surfaces)
+        {
+            var names = surfaces.SelectMany(kv => kv.Value as JsonArray ?? []).Select(n => (string?)n).Distinct().ToList();
+            if (names.Count > 0) line += (line.Length > 0 ? "; " : "") + "surfaces: " + string.Join(", ", names);
+        }
+        if (diff["scene"] is JsonObject scene)
+        {
+            var bits = new List<string>();
+            foreach (var n in scene["items_added"] as JsonArray ?? []) bits.Add($"{n} added");
+            foreach (var n in scene["items_removed"] as JsonArray ?? []) bits.Add($"{n} removed");
+            foreach (var n in scene["items_changed"] as JsonArray ?? []) bits.Add($"{n} changed");
+            if (scene["settings_changed"] is JsonArray { Count: > 0 }) bits.Add("settings changed");
+            if (bits.Count == 0 && scene.Count > 0) bits.Add("changed");
+            if (bits.Count > 0) line += (line.Length > 0 ? "; " : "") + "scene: " + string.Join(", ", bits);
+        }
+        return line.Length > 0 ? line : "changes";
+    }
+
+    /// <summary>
+    /// A small picture of the object before a reply (its checkpoint drawn), for the timeline; kept on the entry. Null
+    /// if it can't be drawn (the checkpoint is gone).
+    /// </summary>
+    public async Task<ToolImage?> PictureBeforeAsync(ReplyUndoEntry entry, int width = 160, int height = 120, CancellationToken cancel = default)
+    {
+        if (entry.Before is { } kept && width <= 160) return kept;
+        tools.CheckpointFolder = ChatCheckpoints;
+        var input = new Dictionary<string, JsonElement>
+        {
+            ["name"] = JsonSerializer.SerializeToElement(entry.Checkpoint),
+            ["width"] = JsonSerializer.SerializeToElement(width),
+            ["height"] = JsonSerializer.SerializeToElement(height),
+        };
+        try
+        {
+            var outcome = await tools.CallAsync("render_checkpoint", input, cancel);
+            if (outcome.IsError || outcome.Images.Count == 0) return null;
+            if (width <= 160) entry.Before = outcome.Images[0];
+            return outcome.Images[0];
+        }
+        catch (Exception e) when (e is InvalidOperationException or IOException) { return null; }
+    }
+
+    /// <summary>The replies that changed something, oldest first: the timeline's rows.</summary>
+    public IReadOnlyList<ReplyUndoEntry> Timeline => [.. _entries.OfType<ReplyUndoEntry>()];
 
     /// <summary>
     /// Undo this reply: puts the object and the scene back as they were before the reply (one undo step on each, so the
@@ -545,15 +679,22 @@ public sealed class ChatSession(IToolBridge tools)
     public async Task<bool> UndoReplyAsync(ReplyUndoEntry entry, CancellationToken cancel = default)
     {
         if (Working || !entry.CanUndo || !_entries.Contains(entry)) return false;
+        Wire();
         entry.Set(ReplyUndoState.Undoing);
+        tools.CheckpointFolder = ChatCheckpoints;
         ToolOutcome outcome;
         try
         {
+            _undoing = true;
             outcome = await tools.CallAsync("restore_checkpoint", new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement(entry.Checkpoint) }, cancel);
         }
         catch (Exception e)
         {
             outcome = ToolOutcome.Error(e.Message);
+        }
+        finally
+        {
+            _undoing = false;
         }
         if (outcome.IsError)
         {
@@ -609,6 +750,9 @@ public sealed class ChatSession(IToolBridge tools)
                 }
                 case NoticeEntry n: chat.Entries.Add(new StoredEntry { Kind = "notice", Text = n.Text, Error = n.Kind == NoticeKind.Error }); break;
                 case UsageEntry u: chat.Entries.Add(new StoredEntry { Kind = "usage", Text = u.Line }); break;
+                case ReplyUndoEntry r:
+                    chat.Entries.Add(new StoredEntry { Kind = "undo", Name = r.Checkpoint, Text = r.Summary, Input = $"{r.State}|{r.Number}" });
+                    break;
             }
         }
         foreach (var t in _log)
@@ -680,6 +824,17 @@ public sealed class ChatSession(IToolBridge tools)
                 }
                 case "notice": Add(new NoticeEntry(e.Text, e.Error ? NoticeKind.Error : NoticeKind.Info)); break;
                 case "usage": Add(new UsageEntry(e.Text)); break;
+                case "undo" when e.Name is { Length: > 0 } checkpoint:
+                {
+                    // Its checkpoint is on disk with the chat (when history was kept), so the button works again.
+                    var parts = (e.Input ?? "").Split('|');
+                    var undo = new ReplyUndoEntry(checkpoint) { Summary = e.Text, Number = parts.Length > 1 && int.TryParse(parts[1], out var n) ? n : 0 };
+                    if (Enum.TryParse<ReplyUndoState>(parts[0], out var state) && state is ReplyUndoState.Undone or ReplyUndoState.Superseded) undo.Set(state);
+                    Add(undo);
+                    _replyNumber = Math.Max(_replyNumber, undo.Number);
+                    if (checkpoint.StartsWith("reply ", StringComparison.Ordinal) && int.TryParse(checkpoint[6..], out var k)) _replies = Math.Max(_replies, k);
+                    break;
+                }
             }
         }
         // Its use so far carries on from where it was (a chat saved before usage was kept starts from nothing).

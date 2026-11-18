@@ -322,7 +322,8 @@ public sealed class LayoutWorkspace : DockPanel
                     Item("_Area Light", () => Session.Add(new LightItem("Area Light", LightType.Area))),
                     Item("_Camera", () => Session.Add(new CameraItem("Camera")))),
                 Group("_Render", Item("_Render Frame", Render), Item("Render _Animation…", () => RenderAnimation())),
-                Group("_AI", Item("_Chat with Claude…  (F4)", () => ToggleChat?.Invoke())),
+                Group("_AI", Item("_Chat with Claude…  (F4)", () => ToggleChat?.Invoke()),
+                    Item("_Lock Item from AI Agents", LockItemForAgents), Item("_Unlock Items for AI Agents", UnlockItemsForAgents)),
                 Group("_Help", Item("_Layout", () => _ = Dialogs.Message(Owner, "Layout", Help))),
             },
         };
@@ -463,5 +464,32 @@ public sealed class LayoutWorkspace : DockPanel
                 dc.FillRectangle(f == session.Frame ? Brushes.White : Brushes.Gold, new Rect(x - 2, 2, 4, Bounds.Height - 4));
             }
         }
+    }
+
+    /// <summary>
+    /// AI › Lock Item from AI Agents: keeps the chosen item from any agent's changes (settings, keys, name, removal); an
+    /// agent's call that would change it fails and says so. The person's own edits aren't stopped. Not an undo step.
+    /// </summary>
+    public void LockItemForAgents()
+    {
+        if (Session.Selected is not { } item)
+        {
+            Session.SetStatus("Choose the item to keep from AI agents first.");
+            return;
+        }
+        if (Session.AgentLocks.Any(l => l.Owner == AVAModeler.Core.AgentLock.Person && l.Items.Contains(item.Name)))
+        {
+            Session.SetStatus($"{item.Name} is already locked from AI agents.");
+            return;
+        }
+        Session.AgentLocks.Add(new AVAModeler.Layout.SceneLock($"locked {item.Name}", AVAModeler.Core.AgentLock.Person, [item.Name]));
+        Session.SetStatus($"Locked {item.Name} from AI agents. AI › Unlock Items for AI Agents lets them change it again.");
+    }
+
+    /// <summary>AI › Unlock Items for AI Agents: takes off every item lock the person made.</summary>
+    public void UnlockItemsForAgents()
+    {
+        int n = Session.AgentLocks.RemoveAll(l => l.Owner == AVAModeler.Core.AgentLock.Person);
+        Session.SetStatus(n == 0 ? "No item of yours is locked from AI agents." : $"Unlocked {n} item lock{(n == 1 ? "" : "s")}.");
     }
 }

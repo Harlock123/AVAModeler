@@ -801,7 +801,7 @@ public sealed partial class ModelerTools
     }
 
     [McpServerTool(Name = "set_scene", Destructive = true)]
-    [Description("Changes the scene's settings, leaving out what you don't give: the frame range (first_frame, last_frame, whole frames; 1 to 60 by default) and frames per second; ambient light (colour 0 to 255, intensity as a fraction, 0.25 by default); the backdrop: a colour, or a gradient from gradient_bottom (straight down) to gradient_top (straight up); fog (linear: none up to fog_min metres from the camera, full at fog_max); the current camera (the one render_scene uses); and the current frame (where Layout's timeline stands, and the default for the other tools). Render effects, all off by default: ambient occlusion (ao: darkens creases, corners and contact areas by dimming the ambient light where nearby surfaces hide it; raise ambient_intensity to see it) and an environment picture round the scene (environment: a lat-long .hdr, .png or .jpg file, or builtin:sky / builtin:studio; it replaces the backdrop and shows in reflections, and with environment_lighting it lights the scene too, with soft shadows). Sample counts are rays a pixel, shared among the pixel's antialiasing rays: more is smoother and slower.")]
+    [Description("Changes the scene's settings, leaving out what you don't give: the frame range (first_frame, last_frame, whole frames; 1 to 60 by default) and frames per second; ambient light (colour 0 to 255, intensity as a fraction, 0.25 by default); the backdrop: a colour, or a gradient from gradient_bottom (straight down) to gradient_top (straight up); fog (linear: none up to fog_min metres from the camera, full at fog_max); the current camera (the one render_scene uses); and the current frame (where Layout's timeline stands, and the default for the other tools). Render effects, all off by default: global illumination (gi: bounced light, path traced), ambient occlusion (ao: darkens creases, corners and contact areas by dimming the ambient light where nearby surfaces hide it; raise ambient_intensity to see it) and an environment picture round the scene (environment: a lat-long .hdr, .png or .jpg file, or builtin:sky / builtin:studio; it replaces the backdrop and shows in reflections, and with environment_lighting it lights the scene too, with soft shadows). Sample counts are rays a pixel, shared among the pixel's antialiasing rays: more is smoother and slower.")]
     public Task<string> SetScene(
         [Description("The first frame, 0 or more.")] int? first_frame = null,
         [Description("The last frame, not before the first.")] int? last_frame = null,
@@ -827,6 +827,11 @@ public sealed partial class ModelerTools
         [Description("Degrees the environment is turned about Y (default 0; positive turns what was ahead toward +X).")] double? environment_heading = null,
         [Description("Whether the environment lights the scene too, as soft light from every direction with shadows (default off: only seen).")] bool? environment_lighting = null,
         [Description("Environment lighting rays a pixel, 1 to 256 (default 16).")] int? environment_samples = null,
+        [Description("Global illumination on or off (default off): light bounces off surfaces onto others, so a red wall tints the floor beside it and light through a window brightens the room's corners. It's path traced: render_scene with denoise true smooths the grain few samples leave.")] bool? gi = null,
+        [Description("Global illumination bounces, 1 to 4 (default 1).")] int? gi_bounces = null,
+        [Description("Global illumination rays a pixel at the first bounce, 1 to 1024 (default 64; 16 to 32 with denoise is a quick look).")] int? gi_samples = null,
+        [Description("A scale on the bounced light, 0 to 4 (default 1).")] double? gi_strength = null,
+        [Description("Whether rays that meet nothing bring the backdrop's light, as a sky would (default true; an environment that lights the scene already does).")] bool? gi_backdrop = null,
         CancellationToken cancel = default) =>
         DoScene("changed the scene's settings", (c, l) =>
         {
@@ -861,9 +866,16 @@ public sealed partial class ModelerTools
             if (environment_samples is { } es) env = env with { Samples = es };
             env.Checked();
             if (env.Lighting && !env.On) throw new ArgumentException("environment_lighting needs an environment: give environment too (a file, or builtin:sky, builtin:studio or builtin:sun).");
+            var bounce = s.GlobalIllumination;
+            if (gi is { } giOn) bounce = bounce with { On = giOn };
+            if (gi_bounces is { } gb) bounce = bounce with { Bounces = gb };
+            if (gi_samples is { } gs) bounce = bounce with { Samples = gs };
+            if (gi_strength is { } gst) bounce = bounce with { Strength = gst };
+            if (gi_backdrop is { } gbd) bounce = bounce with { Backdrop = gbd };
+            bounce.Checked();
             bool settings = first_frame != null || last_frame != null || fps != null || ambient_color != null || ambient_intensity != null || background_color != null
                 || gradient != null || gradient_top != null || gradient_bottom != null || fog != null || fog_min != null || fog_max != null || fog_color != null || camera != null
-                || occlusion != s.Occlusion || env != s.Environment;
+                || occlusion != s.Occlusion || env != s.Environment || bounce != s.GlobalIllumination;
             // Only the frame: that isn't a change to the scene (nor an undo step).
             if (settings) s.Batch(() =>
             {
@@ -879,7 +891,7 @@ public sealed partial class ModelerTools
                 (s.FogMinDistance, s.FogMaxDistance) = (fogMin, fogMax);
                 if (fogColour is { } fc) s.FogColor = fc;
                 if (cam != null) s.CurrentCamera = cam;
-                (s.Occlusion, s.Environment) = (occlusion, env);
+                (s.Occlusion, s.Environment, s.GlobalIllumination) = (occlusion, env, bounce);
                 s.Notify();
             });
             l.SetFrame(frame ?? l.Frame);
@@ -945,6 +957,55 @@ public sealed partial class ModelerTools
         string about = FormattableString.Invariant($"Frame {f:0.###} through {cam.Name}, {w}×{h}, {rays} ray{(rays == 1 ? "" : "s")} a pixel{(rays != samples ? " (raised by depth of field or motion blur)" : "")}, in {clock.Elapsed.TotalSeconds:0.0} s.");
         if (problems.Count > 0) about += " " + string.Join(" ", problems);
         return new CallToolResult { Content = [ImageContentBlock.FromBytes(image.ToPng(alpha: false), "image/png"), new TextContentBlock { Text = about }] };
+    }
+
+    [McpServerTool(Name = "bake_lighting", Destructive = true)]
+    [Description("Bakes a scene object's lighting into a PNG light map in the working folder, through its UV map (unwrap_uvs or make_uvs in the Modeler first; every face needs its own place in it): at each pixel a face covers, the light falling there as render_scene works it out: ambient (dimmed by ambient occlusion if on), the environment's light, every light with its shadows (soft lights sampled), and bounced light when set_scene's gi is on. With with_color (the default) it's the surface's colour times that light, plus its glow; without, the light alone (to multiply over a texture). Textures aren't baked in. Use it to preview lighting fast (lay the map on as the colour with luminosity 1 and diffuse 0, so the scene needn't be lit again) or to give a game asset its lighting in glTF. Pixels past the faces' edges are filled by padding. It changes nothing in the scene.")]
+    public async Task<string> BakeLighting(
+        [Description("The scene object, by name or #index.")] string @object,
+        [Description("The PNG to write, relative to the working folder (default: \"<object>_light.png\").")] string? file = null,
+        [Description("Width and height in pixels, 16 to 4096 (default 512).")] int size = 512,
+        [Description("The UV map (default: the object's first).")] string? uv_map = null,
+        [Description("Bake the surfaces' colour in (default true), or only the light.")] bool with_color = true,
+        [Description("Rays a pixel for ambient occlusion, the environment and bounced light, 1 to 1024 (default 32).")] int samples = 32,
+        [Description("Pixels past the faces' edges to fill, 0 to 64 (default 4).")] int padding = 4,
+        [Description("A scale on the light before it's written, more than 0 (default 1; lower it if the answer's brightest is over 1, which clips).")] double exposure = 1,
+        [Description("The frame (default: the current frame).")] double? frame = null,
+        [Description("Replace the file if it already exists.")] bool overwrite = false,
+        CancellationToken cancel = default)
+    {
+        var bake = new LightBakeSettings { Size = size, UVMap = uv_map, WithColor = with_color, Samples = samples, Padding = padding, Exposure = exposure };
+        try { bake.Checked(); }
+        catch (ArgumentException e) { throw new McpException(e.Message); }
+        var (copy, item, f, full, files) = await DoScene("baked lighting", (c, l) =>
+        {
+            var obj = SceneObject(l.Scene, @object);
+            var files = Files(c);
+            string path = file ?? $"{string.Concat(obj.Name.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_'))}_light.png";
+            if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("The light map is a PNG: give a file ending in .png.");
+            string full = files.Resolve(path);
+            files.CheckWritable([full], overwrite);
+            double fr = SceneCensus.Frame(l, frame);
+            var copy = ScenePictures.Copy(l.Scene);
+            return (copy, (ObjectItem)copy.Items[IndexOf(l.Scene, obj)], fr, full, files);
+        }, cancel, changes: false).ConfigureAwait(false);
+        var clock = Stopwatch.StartNew();
+        var result = await Rendering(t => RayTracer.BakeLighting(copy, item, f, bake, t), RenderTimeLimit,
+            "The bake took longer than {0} and was stopped: try a smaller size or fewer samples.", cancel).ConfigureAwait(false);
+        await File.WriteAllBytesAsync(full, result.Png, cancel).ConfigureAwait(false);
+        files.Wrote(full);
+        var answer = new JsonObject
+        {
+            ["written"] = full,
+            ["uv_map"] = result.UVMap,
+            ["pixels_covered"] = result.Covered,
+            ["of_pixels"] = result.Width * result.Height,
+            ["brightest"] = Math.Round(result.Brightest, 3),
+            ["seconds"] = Math.Round(clock.Elapsed.TotalSeconds, 1),
+        };
+        if (result.Brightest > 1) answer["note"] = "The brightest light is over 1, so it clipped to white there: bake again with a lower exposure to keep it.";
+        if (copy.GlobalIllumination.On) answer["bounced_light"] = true;
+        return answer.ToJsonString();
     }
 
     [McpServerTool(Name = "render_scene_view", ReadOnly = true, Idempotent = true)]

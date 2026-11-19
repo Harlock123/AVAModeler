@@ -21,6 +21,7 @@ public sealed class SceneSnapshot
     private readonly bool _gradient;
     private readonly FogType _fog;
     private readonly AmbientOcclusion _occlusion;
+    private readonly GlobalIllumination _bounce;
     private readonly EnvironmentSettings _environment;
     private readonly CompositingSettings _compositing;
     private readonly IReadOnlyList<SceneImage> _images;
@@ -38,7 +39,7 @@ public sealed class SceneSnapshot
         (_ambient, _ambientIntensity, _background, _gradient, _top, _bottom) =
             (scene.AmbientColor, scene.AmbientIntensity, scene.BackgroundColor, scene.GradientBackground, scene.GradientTop, scene.GradientBottom);
         (_fog, _fogMin, _fogMax, _fogColor) = (scene.Fog, scene.FogMinDistance, scene.FogMaxDistance, scene.FogColor);
-        (_occlusion, _environment) = (scene.Occlusion, scene.Environment);
+        (_occlusion, _environment, _bounce) = (scene.Occlusion, scene.Environment, scene.GlobalIllumination);
         (_compositing, _images) = (scene.Compositing, scene.Images);
         _extras = scene.Extras;
         _audio = scene.Audio;
@@ -66,7 +67,7 @@ public sealed class SceneSnapshot
         (Scene.AmbientColor, Scene.AmbientIntensity, Scene.BackgroundColor, Scene.GradientBackground, Scene.GradientTop, Scene.GradientBottom) =
             (_ambient, _ambientIntensity, _background, _gradient, _top, _bottom);
         (Scene.Fog, Scene.FogMinDistance, Scene.FogMaxDistance, Scene.FogColor) = (_fog, _fogMin, _fogMax, _fogColor);
-        (Scene.Occlusion, Scene.Environment) = (_occlusion, _environment);
+        (Scene.Occlusion, Scene.Environment, Scene.GlobalIllumination) = (_occlusion, _environment, _bounce);
         (Scene.Compositing, Scene.Images) = (_compositing, _images);
         Scene.Extras = _extras;
         Scene.Audio = _audio;

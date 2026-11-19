@@ -33,6 +33,10 @@ public sealed class SceneSettingsPanel : StackPanel
     public TextBox EnvironmentHeading { get; }
     public CheckBox EnvironmentLighting { get; }
     public TextBox EnvironmentSamples { get; }
+    public CheckBox Bounce { get; }
+    public TextBox BounceCount { get; }
+    public TextBox BounceSamples { get; }
+    public TextBox BounceStrength { get; }
 
     /// <summary>Raised after the settings are applied (the dialog closes).</summary>
     public event Action? Applied;
@@ -53,6 +57,11 @@ public sealed class SceneSettingsPanel : StackPanel
         OcclusionSamples = Box(ao.Samples.ToString(CultureInfo.InvariantCulture));
         OcclusionDistance = Box(F(ao.Distance));
         OcclusionStrength = Box(F(ao.Strength));
+        var gi = s.GlobalIllumination;
+        Bounce = Check("Bounce light off surfaces (global illumination)", gi.On, "Light bounces off surfaces onto others: a red wall tints the floor beside it. Path traced: Denoise in the render smooths its grain");
+        BounceCount = Box(gi.Bounces.ToString(CultureInfo.InvariantCulture));
+        BounceSamples = Box(gi.Samples.ToString(CultureInfo.InvariantCulture));
+        BounceStrength = Box(F(gi.Strength));
         var env = s.Environment;
         Environment = new TextBox { Text = env.Image, FontSize = 11, PlaceholderText = "none: a file, or builtin:sky / builtin:studio / builtin:sun" };
         EnvironmentIntensity = Box(F(env.Intensity));
@@ -70,6 +79,9 @@ public sealed class SceneSettingsPanel : StackPanel
         Children.Add(Heading("Ambient occlusion"));
         Children.Add(Occlusion);
         Children.Add(Grid2(("Samples a pixel", OcclusionSamples), ("Distance (m)", OcclusionDistance), ("Strength (0–1)", OcclusionStrength)));
+        Children.Add(Heading("Global illumination"));
+        Children.Add(Bounce);
+        Children.Add(Grid2(("Bounces (1–4)", BounceCount), ("Samples a pixel", BounceSamples), ("Strength", BounceStrength)));
         Children.Add(Heading("Environment (replaces the backdrop)"));
         Children.Add(envRow);
         Children.Add(Grid2(("Intensity", EnvironmentIntensity), ("Heading °", EnvironmentHeading)));
@@ -112,11 +124,17 @@ public sealed class SceneSettingsPanel : StackPanel
                 Samples = Whole(EnvironmentSamples, "Environment samples"),
             }.Checked();
             if (env.On && EnvironmentMap.Load(env.Image, null, out var problem) == null) throw new ArgumentException(problem);
+            var gi = s.GlobalIllumination with
+            {
+                On = Bounce.IsChecked == true, Bounces = Whole(BounceCount, "Bounces"), Samples = Whole(BounceSamples, "Global illumination samples"),
+                Strength = Number(BounceStrength, "The bounced light's strength"),
+            };
+            gi.Checked();
             _session.Edit("Scene Settings", () =>
             {
                 (s.FirstFrame, s.LastFrame, s.FramesPerSecond, s.AmbientIntensity) = (first, last, fps, ambient);
                 s.GradientBackground = Gradient.IsChecked == true;
-                (s.Occlusion, s.Environment) = (ao, env);
+                (s.Occlusion, s.Environment, s.GlobalIllumination) = (ao, env, gi);
                 s.Notify();
             });
             _problem.Text = "";

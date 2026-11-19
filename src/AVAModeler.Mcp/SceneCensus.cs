@@ -203,6 +203,9 @@ internal static partial class SceneCensus
                 : new JsonObject { ["gradient"] = false, ["color"] = Json.ColourJson(s.BackgroundColor) },
             ["fog"] = s.Fog == FogType.Off ? new JsonObject { ["type"] = "off" }
                 : new JsonObject { ["type"] = "linear", ["min_distance"] = Round(s.FogMinDistance), ["max_distance"] = Round(s.FogMaxDistance), ["color"] = Json.ColourJson(s.FogColor) },
+            ["global_illumination"] = s.GlobalIllumination.On
+                ? new JsonObject { ["on"] = true, ["bounces"] = s.GlobalIllumination.Bounces, ["samples"] = s.GlobalIllumination.Samples, ["strength"] = Round(s.GlobalIllumination.Strength), ["backdrop"] = s.GlobalIllumination.Backdrop }
+                : new JsonObject { ["on"] = false },
             ["ambient_occlusion"] = s.Occlusion.On
                 ? new JsonObject { ["on"] = true, ["samples"] = s.Occlusion.Samples, ["distance"] = Round(s.Occlusion.Distance), ["strength"] = Round(s.Occlusion.Strength) }
                 : new JsonObject { ["on"] = false },

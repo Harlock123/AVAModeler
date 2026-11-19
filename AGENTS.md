@@ -290,6 +290,15 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     (work counts the tests read through `RenderSettings.Counters`). A new light effect gets its own branch in the
     `Tracer`, built in `PrepareLightEffects`; count expensive work through `RenderCounters` so tests assert work, not time.
     `Lws/LwsLightBits.cs` holds the flare bits for .lws.
+  - `Rendering/RayTracer.Bounce.cs`: global illumination (`Scene.GlobalIllumination`, the `GlobalIllumination`
+    record in RenderEffects.cs; in `Scene.Copy`, snapshots and SceneJson when not the default; not in .lws) as the
+    `Tracer`'s `_gi` branch in `Shade` (`Indirect`: cosine-weighted rays, the camera ray's share of the samples at
+    the first bounce and one after; `Radiance`: the hit's ambient, lights through `DirectDiffuse`, glow and deeper
+    bounces, or the backdrop), and light maps: `RayTracer.BakeLighting` (`LightBakeSettings`, `LightBakeResult`)
+    rasterises the object's frame mesh by UV (its render-level SubPatch surface, which carries UVs), lights each texel
+    through `Tracer.BakeIrradiance` (ambient with `OcclusionWith`, `EnvironmentLightWith`, `DirectDiffuse` with soft
+    lights sampled through `SoftLight`, and `Indirect`), and bleeds. `bake_lighting` in LayoutTools.cs bakes a
+    `ScenePictures.Copy` off the host's thread, as render_scene renders, and writes only inside the working folder.
   - `Rendering/RenderPasses.cs`: `RayTracer.Passes` (one ray through each pixel's centre: depth along the view, the
     shading normal, the object's index, albedo, emission, the share of direct light in shadow, the reflected colour;
     `Tracer.Probe`) as `PassImages` (`ToImage`, `Names`), and `RayTracer.Denoise`, an edge-stopping à-trous filter on

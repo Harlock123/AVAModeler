@@ -90,6 +90,7 @@ public static class SceneJson
                 FogMaxDistance = scene.FogMaxDistance,
                 FogColor = Arr(scene.FogColor),
                 Occlusion = scene.Occlusion == new AmbientOcclusion() ? null : scene.Occlusion,
+                GlobalIllumination = scene.GlobalIllumination == new GlobalIllumination() ? null : scene.GlobalIllumination,
                 Environment = scene.Environment == new EnvironmentSettings() ? null : scene.Environment with { Image = EnvironmentPath(scene.Environment.Image, baseDir, Relative) },
                 Images = scene.Images.Count == 0 ? null : scene.Images.Select(i => new ImageDto
                 {
@@ -237,6 +238,7 @@ public static class SceneJson
             FogMaxDistance = s.FogMaxDistance,
             FogColor = Vec(s.FogColor),
             Occlusion = s.Occlusion ?? new AmbientOcclusion(),
+            GlobalIllumination = s.GlobalIllumination?.Checked() ?? new GlobalIllumination(),
             Environment = s.Environment is { } env ? env with { Image = EnvironmentPath(env.Image ?? "", baseDir, Absolute) } : new EnvironmentSettings(),
             Images = (s.Images ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Path))
                 .Select(i => new SceneImage { Path = Absolute(i.Path, baseDir)!, Sequence = i.Sequence == true, Offset = i.Offset ?? 0, Loop = i.Loop == true }).ToList(),
@@ -579,6 +581,7 @@ public static class SceneJson
         public double FogMaxDistance { get; set; }
         public double[]? FogColor { get; set; }
         public AmbientOcclusion? Occlusion { get; set; }
+        public GlobalIllumination? GlobalIllumination { get; set; }
         public EnvironmentSettings? Environment { get; set; }
         public List<ImageDto>? Images { get; set; }
         public CompositingDto? Compositing { get; set; }

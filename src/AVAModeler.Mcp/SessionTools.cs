@@ -46,7 +46,7 @@ public sealed partial class ModelerTools
     {
         "batch", "checkpoint", "restore_checkpoint", "list_checkpoints", "diff",
         "undo", "redo", "undo_scene", "redo_scene", "get_history",
-        "new", "open", "save", "new_scene", "open_scene", "save_scene", "export_scene", "bake_maps", "slice_to_gcode",
+        "new", "open", "save", "new_scene", "open_scene", "save_scene", "export_scene", "bake_maps", "bake_lighting", "slice_to_gcode",
         "render_view", "render", "render_scene", "render_scene_view", "render_animation", "make_movie", "compare_to_reference",
         "render_checkpoint", "run_steps", "save_steps", "start_job", "job_status", "job_result", "cancel_job", "lock", "unlock",
     };

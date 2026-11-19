@@ -28,6 +28,36 @@ public static class RenderEffects
 }
 
 /// <summary>
+/// Global illumination: light bouncing off surfaces onto others, by path tracing. At each hit, rays go out over the
+/// hemisphere (weighted toward its normal) and bring back the light the surfaces they meet reflect diffusely (their
+/// direct light, ambient and glow, and with more bounces their own bounced light), tinted by the surface's colour. A red
+/// wall lights the floor beside it pink; a room lit through its window brightens its corners. <see cref="Samples"/>
+/// rays a pixel at the first bounce, one ray a bounce after; off, every render is as it always was.
+/// </summary>
+public sealed record GlobalIllumination
+{
+    /// <summary>Whether light bounces off surfaces onto others (off by default: renders are as they always were).</summary>
+    public bool On { get; init; }
+    /// <summary>How many times light bounces, 1 to 4 (default 1: light off each surface onto the next).</summary>
+    public int Bounces { get; init; } = 1;
+    /// <summary>Rays a pixel gathering the bounced light, 1 to 1024 (default 64; the denoiser smooths what few leave).</summary>
+    public int Samples { get; init; } = 64;
+    /// <summary>A scale on the bounced light, 0 to 4 (default 1).</summary>
+    public double Strength { get; init; } = 1;
+    /// <summary>Whether rays that meet nothing bring the backdrop's light (a sky; off with an environment lighting the scene, which already does).</summary>
+    public bool Backdrop { get; init; } = true;
+
+    /// <summary>Throws an <see cref="ArgumentException"/> saying what's wrong, if anything.</summary>
+    public GlobalIllumination Checked()
+    {
+        if (Bounces is < 1 or > 4) throw new ArgumentException("Global illumination bounces must be from 1 to 4.");
+        if (Samples is < 1 or > 1024) throw new ArgumentException("Global illumination samples must be from 1 to 1024 rays a pixel.");
+        if (!(Strength >= 0 && Strength <= 4)) throw new ArgumentException("The global illumination strength must be from 0 to 4.");
+        return this;
+    }
+}
+
+/// <summary>
 /// Ambient occlusion: the ambient light is dimmed where nearby surfaces hide the sky from a point, so creases, corners
 /// and the ground under things darken. Rays go out over the hemisphere above each hit (weighted toward its normal); one
 /// that meets a surface within <see cref="Distance"/> metres hides some of the ambient light, more the nearer the

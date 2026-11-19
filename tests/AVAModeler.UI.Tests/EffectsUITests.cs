@@ -35,7 +35,11 @@ public class EffectsUITests
         panel.EnvironmentIntensity.Text = "0.6";
         panel.EnvironmentHeading.Text = "45";
         panel.Ambient.Text = "0.1";
+        panel.Bounce.IsChecked = true;
+        panel.BounceCount.Text = "2";
+        panel.BounceSamples.Text = "24";
         Assert.True(panel.Apply());
+        Assert.Equal(new GlobalIllumination { On = true, Bounces = 2, Samples = 24 }, session.Scene.GlobalIllumination);
         var s = session.Scene;
         Assert.Equal(new AmbientOcclusion { On = true, Samples = 32, Distance = 0.5 }, s.Occlusion);
         Assert.Equal(new EnvironmentSettings { Image = "builtin:studio", Lighting = true, Intensity = 0.6, Heading = 45 }, s.Environment);
@@ -51,6 +55,7 @@ public class EffectsUITests
         }
 
         session.Undo();
+        Assert.False(s.GlobalIllumination.On);
         Assert.False(s.Occlusion.On);
         Assert.False(s.Environment.On);
 
@@ -60,6 +65,10 @@ public class EffectsUITests
         Assert.False(again.Apply());
         Assert.Contains("distance", again.Problem);
         again.OcclusionDistance.Text = "1";
+        again.BounceCount.Text = "9";
+        Assert.False(again.Apply());
+        Assert.Contains("bounces", again.Problem);
+        again.BounceCount.Text = "1";
         again.Environment.Text = "/nowhere/sky.hdr";
         Assert.False(again.Apply());
         Assert.Contains("Can't find the environment image", again.Problem);

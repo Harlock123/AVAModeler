@@ -442,6 +442,7 @@ public static partial class RayTracer
             _environment = environment;
             _environmentIntensity = scene.Environment.Intensity;
             _occlusion = scene.Occlusion.On && scene.Occlusion.Strength > 0 ? scene.Occlusion : null;
+            _gi = scene.GlobalIllumination.On && scene.GlobalIllumination.Strength > 0 ? scene.GlobalIllumination : null;
             _ambient = scene.AmbientColor * scene.AmbientIntensity;
             var tris = new List<Triangle>();
             var bounds = Box3.Empty;
@@ -848,6 +849,8 @@ public static partial class RayTracer
             if (_occlusion != null) ambient *= Occlusion(p + lift, ns, nf, pixel, depth);
             var lit = ambient + look.Color * look.Luminosity;
             if (_environment != null && _scene.Environment.Lighting) lit += Vec3.Scale(diffuse, EnvironmentLight(p + lift, ns, nf, pixel, depth));
+            // Bounced light: its own branch, so a render without it is as it always was.
+            if (_gi != null) lit += Vec3.Scale(diffuse, Indirect(p + lift, ns, nf, pixel, depth, 0));
             var highlight = Vec3.Zero;
             for (int li = 0; li < _lights.Count; li++)
             {

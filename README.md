@@ -531,6 +531,12 @@ Modeler and Layout shows the change at once.
     that, pixel for pixel), and each repeatable: the same scene renders the same picture on any number of threads.
     - **Ambient occlusion** (Scene › Scene Settings): the ambient light dims where nearby surfaces hide it, so creases,
       corners and the ground under things darken. Samples, distance (metres) and strength.
+    - **Global illumination** (Scene Settings): light bounces off surfaces onto others, path traced. At each hit, rays
+      over the hemisphere bring back the light the surfaces they meet reflect (their direct light, ambient and glow,
+      and with more bounces their own bounced light), tinted by their colour, so a red wall turns the floor beside it
+      pink and a room lit through its window brightens in its corners. Bounces (1 to 4), samples a pixel at the first
+      bounce (one ray each bounce after), strength, and whether rays that miss bring the backdrop's light as a sky.
+      The denoiser (`render_scene`'s `denoise`) smooths the grain a few samples leave.
     - **Soft shadows**: area lights (a rectangle in the light's XY plane, shining from its front, sized in metres and
       scaled with the item, as LightWave sizes area lights), and point and spot lights with a radius. Shadow samples
       per light.
@@ -552,6 +558,10 @@ Modeler and Layout shows the change at once.
       out without noise. A 320 × 240 frame of a test scene that takes 1.7 s plain (4 rays a pixel, 8 threads) takes
       2.4 s with ambient occlusion, 3.2 s with environment lighting, 2.4 s with an area light (16 samples each), 5.3 s
       with depth of field and 5.1 s with motion blur (16 rays a pixel), and 10 s with all of them.
+  - **Light maps** (`bake_lighting`): an object's lighting baked through its UV map into a PNG: the ambient (with
+    occlusion), the environment, every light with its shadows (soft ones sampled), and bounced light when that's on,
+    times the surfaces' colours with their glow (or the light alone). Lay it on as the colour with luminosity 1 and
+    diffuse 0 for a lit look that needs no lights, or export it with a game asset.
   - Render › Render Animation (F10) renders a run of frames, with a step, into numbered PNGs (`frame0001.png`…), in
     `<scene>_frames` beside the saved scene by default. Each frame shows as it finishes, with the time left and a
     Cancel button; you can go on working while it renders, as it renders a copy of the scene. If
@@ -1077,6 +1087,7 @@ The Layout tools:
 | `sculpt` | A brush (draw, inflate, smooth, pinch, flatten, crease, grab, paint_weights, paint_colors) along a stroke of points on the surface, one undo step. |
 | `measure` | Distances (between places or points, with x, y, z parts), the angle at a middle point, and the selection's area and size. |
 | `bake_maps` | Normal, ambient occlusion, curvature or colour into a PNG in the working folder through a UV map, laid on the surface. |
+| `bake_lighting` | A scene object's lighting (ambient and occlusion, environment, lights and shadows, bounced light) through its UV map into a PNG light map in the working folder, with or without its colours; says how bright it got, so a clipped one can be baked again lower. |
 | `skelegons_to_bones` | Layout's Skelegons → Bones: a bone for each 2-point polygon on a "Skelegon…" surface, chained where one's base is on another's tip. |
 | `set_ik`, `bake_ik` | Inverse kinematics: a bone's goal (its chain reaches for it), full-time IK, anchor, locked channels and heading, pitch and bank limits; and baking the chain's solved rotations into keys over a run of frames. `get_scene` shows each bone's chain, reach, `tip_to_goal` and `ik_rotation`. |
 | `set_transform`, `look_at` | Position, rotation and scale at a frame, as keys or as plain values (the rule is in the tool's description); turning anything to face a point or another item. |
@@ -1088,7 +1099,7 @@ The Layout tools:
 | `load_image`, `remove_image`, `set_compositing` | The scene's image list (a still or a numbered `sequence` with an `offset` and `loop`, from the working folder, only read), and compositing: a `background` and a `foreground` from the list, keyed by `color` (`key_low`, `key_high`, 0–255) or `alpha` (`foreground_alpha`), with `foreground_dissolve`. |
 | `set_follow_path`, `bake_path` | Following a path: an item travels along a smooth curve through other items (nulls), open or closed, by its keyable `path.position` channel (`from_frame` and `to_frame` key an even speed), aligned to face along it with a look-ahead, and banking into turns; and baking that into position and rotation keys. `get_scene` shows `follow_path` with the path's length and where it puts the item. |
 | `shift_keys`, `scale_keys` | Moving keys in time, as the dope sheet does: an item's keys (or every item's), on one channel or all, between two frames, shifted by whole frames or scaled about a pivot frame (snapped to frames, keeping their values and TCB settings). |
-| `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame; ambient occlusion (`ao`, samples, distance in metres, strength) and the environment (`environment`: a lat-long `.hdr`, `.png` or `.jpg` in the working folder, or `builtin:sky` or `builtin:studio`; intensity, heading, and `environment_lighting` with its samples). |
+| `set_scene` | The frame range and rate, ambient light, the backdrop (a colour or a gradient), fog, the current camera and the current frame; global illumination (`gi`, `gi_bounces`, `gi_samples`, `gi_strength`, `gi_backdrop`), ambient occlusion (`ao`, samples, distance in metres, strength) and the environment (`environment`: a lat-long `.hdr`, `.png` or `.jpg` in the working folder, or `builtin:sky` or `builtin:studio`; intensity, heading, and `environment_lighting` with its samples). |
 | `undo_scene`, `redo_scene` | Layout's undo and redo, on the history the person's Ctrl+Z uses: each scene call is one step ("Agent: …"), and the person's steps can be undone too. |
 | `render_scene_view` | A quick picture as Layout's view draws it, through the camera (bank included) or from above, the front, the side or an orbit, with the lights, cameras, nulls and bones drawn; it also says where each item landed in the picture. |
 | `render_scene`, `render_animation` | A ray-traced frame through a camera; or a run of frames written as numbered PNGs in the working folder, with a contact sheet back, and optionally joined into an MP4 or a looping GIF (with ffmpeg). Both honour the render effects, and are bounded in size and time (depth of field's and motion blur's samples count as rays a pixel against `render_animation`'s limit). |

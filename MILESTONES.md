@@ -199,9 +199,13 @@ ten side edges of a tilted cylinder follow it (Remesh's grid: four in ten).
 
 ## Milestone L: light maps
 
+**Status:** done. `RayTracer.BakeLighting` (`Rendering/RayTracer.Bounce.cs`), agents' `bake_lighting`. It isn't hooked up
+on the surface by itself: in Layout the surface belongs to the object's file, so laying the map on is left to the
+Modeler (`set_texture`, `set_surface`).
+
 1. **Bake Lighting** in Layout: an object's lighting (direct light with shadows, ambient, occlusion, and bounced light
-   when it's on) baked through its UV map into a picture, optionally times its colour, and hooked up as its
-   luminosity texture for a fast preview or a game export.
+   when it's on) baked through its UV map into a picture, optionally times its colour, for a fast preview or a game
+   export.
 2. Agents: `bake_lighting`.
 
 ## Milestone M: shrinkwrap
@@ -224,6 +228,9 @@ ten side edges of a tilted cylinder follow it (Remesh's grid: four in ten).
 3. Layout's File › Load Motion Capture; agents' `load_bvh`.
 
 ## Milestone P: bounced light
+
+**Status:** done. `GlobalIllumination` (RenderEffects.cs), the ray tracer's `Indirect` and `Radiance`; Scene Settings'
+Global illumination section; agents' `set_scene` `gi`, `gi_bounces`, `gi_samples`, `gi_strength`, `gi_backdrop`.
 
 1. **Global illumination**: bounced diffuse light by path tracing (bounces, samples per hit), off by default, so
    every render without it is as it was. With the denoiser, a few samples go a long way.

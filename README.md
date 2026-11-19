@@ -55,7 +55,7 @@ phases 0 to 7 and Layout phases L1 to L6.
     curves in the order they stack: a sheet from open ones, a tube such as a vase or a hull from closed
     cross-sections, straight or smooth through them), Bevel, Smooth Shift, Inset, Chamfer and Bridge.
   - **Polygon**: Flip, Triple, Merge Points, Align, Unify, Remove Degenerate, Select Problems, Subdivide (faceted or
-    smooth), Metaform, Surface, Make UVs, Merge Polygons, Split, Loop Cut, Knife, Reduce Polygons, Remesh, Fill Hole, Spline Patch (a grid of quads across a closed loop of lines in 3
+    smooth), Metaform, Surface, Make UVs, Merge Polygons, Split, Loop Cut, Knife, Reduce Polygons, Remesh, Quad Remesh, Unwrap UVs, SubPatch, Set Crease, Fill Hole, Spline Patch (a grid of quads across a closed loop of lines in 3
     or 4 sides, cornered where it turns most or at the points chosen, meeting every side exactly) and Remove; and
     Select Loop and Select Ring.
   - **Sculpt**: Draw, Inflate, Smooth, Pinch, Flatten, Crease and Grab brushes.
@@ -116,6 +116,12 @@ phases 0 to 7 and Layout phases L1 to L6.
   over, and UVs and weight and colour maps carry over. For game assets, heavy scans and imports.
 - **Remesh** (Polygon tab): rebuilds a closed solid as an even skin of quads a voxel size across (surface nets), smoothed
   and pulled back onto the original: a clean base for sculpting, or a repair for messy Boolean results.
+- **Quad Remesh** (Polygon tab): rebuilds the selection (or everything) as quads that follow the shape: along sharp
+  edges, open edges and the directions the surface curves most, at an edge length you choose. Even triangles are
+  laid over the surface, a cross field is combed along its creases and curvature, the points are drawn onto a grid
+  along it, the triangles are paired into quads along the field and split once into all quads, which are drawn
+  along the field again. Closed stays closed, sharp edges and the selection's border stay put, and faces keep their
+  surfaces. A good start for SubPatch modeling, sculpting or rigging.
 - **Measure** (Tools tab): drag a ruler between two places in a view; its ends snap to points nearby, and it's labelled
   with its length and X, Y and Z parts. Keep Ruler leaves it drawn; Clear Rulers takes them away. Mesh Info (W) has a
   Measure section for the selection: the distance between two chosen points, the angle at the middle of three (in the
@@ -1299,7 +1305,11 @@ Layout reuses them.
 - **Reduce Polygons** leaves triangles (not quads) and works on whole layers' worth of faces at once (selected, or
   all); a seam or border keeps all its points, so a mesh made mostly of seams reduces little. **Remesh** needs closed
   solids, keeps no UVs or weight and colour maps (do them after), and follows the voxel grid, so its quads are even but
-  don't flow along the shape; detail smaller than a voxel is lost and the grid is at most 400 voxels a side. Rulers
+  don't flow along the shape; detail smaller than a voxel is lost and the grid is at most 400 voxels a side. **Quad
+  Remesh** keeps no UVs or maps either; its quads follow the shape over most of the surface (on a tilted cylinder,
+  about seven side edges in ten run along it or round it, against four in ten for Remesh's grid) but not everywhere:
+  where the field's directions meet awkwardly some quads slant, and points with three or five edges appear, as a
+  field-aligned parameterisation would avoid. Rulers
   are a display setting: they aren't kept in the object file.
 - **Byte-identical LWOB round trips** are tested on hand-built files covering every chunk type. Files with more than
   one SRFS chunk, or a repeated PNTS/POLS in a layer, read correctly but are rewritten in the standard order.

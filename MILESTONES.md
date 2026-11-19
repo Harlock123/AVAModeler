@@ -188,6 +188,10 @@ every tool keeps it; creases are on points, so they follow every edit.
 
 ## Milestone K: quad remeshing along the shape
 
+**Status:** done. `Geometry/QuadRemesh.cs`, `QuadRemeshTool` (Polygon tab). Besides pairing, the points are drawn onto a
+grid along the field (before pairing, and again on the quads), which is what makes them follow it; about seven in
+ten side edges of a tilted cylinder follow it (Remesh's grid: four in ten).
+
 1. **Quad Remesh** (Construct tab): an isotropic triangle remesh at a target edge length projected onto the original,
    a smoothed cross field aligned with curvature and sharp edges, triangles paired into quads along the field, and one
    Catmull–Clark-style split to all quads, projected back. Closed stays closed.

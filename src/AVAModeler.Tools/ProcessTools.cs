@@ -58,6 +58,42 @@ public sealed class RemeshTool : Tool
     }
 }
 
+/// <summary>
+/// Quad Remesh: rebuilds the selected faces (or all) as quads that follow the shape (see <see cref="QuadRemesh"/>):
+/// along sharp edges, open edges and the directions the surface curves most, at an even edge length. Closed stays
+/// closed, sharp edges and the selection's border stay where they are, and the rest of the object stays stitched on.
+/// </summary>
+public sealed class QuadRemeshTool : Tool
+{
+    public override string Name => "Quad Remesh";
+    public override string Tab => "Polygon";
+    public override ToolKind Kind => ToolKind.Requester;
+    public override string Summary => "Rebuilds the selected faces (every face, with none selected) as quads about Edge length metres across that follow the shape: along sharp edges (sharper than Sharp angle), open edges and the directions the surface curves most, unlike Remesh's grid. Closed stays closed, sharp edges and the selection's border stay put, faces keep their surfaces; UVs aren't kept. A clean base for SubPatch, sculpting and rigging. Clears the selection.";
+
+    [Param("Edge length", Distance = true, Min = 0, Description = "The new quads' size, in metres.")] public double EdgeLength { get; set; } = 0.1;
+    [Param("Sharp angle", Angle = true, Min = 0, Max = 180, Step = 5, Description = "Edges whose faces meet more sharply than this stay as sharp edges the quads run along.")] public double SharpAngle { get; set; } = 40;
+    [Param("Iterations", Min = 1, Max = 20, Step = 1, Description = "Rounds evening the triangles out before they're paired.")] public int Iterations { get; set; } = 5;
+    [Param("Smoothing", Min = 0, Max = 20, Step = 1, Description = "Passes evening the quads out.")] public int Smoothing { get; set; } = 2;
+
+    /// <summary>What the last run made, per layer.</summary>
+    public IReadOnlyList<(int Layer, QuadRemeshResult Result)> Results { get; private set; } = [];
+
+    protected override void Apply()
+    {
+        if (!(EdgeLength > 0)) throw new ArgumentException("Quad Remesh needs an edge length of more than 0 metres.");
+        var results = new List<(int, QuadRemeshResult)>();
+        foreach (var (layer, mesh, polys) in ActivePolygons().ToList())
+        {
+            var faces = polys.Where(p => mesh.Polygons[p].Count >= 3).ToList();
+            if (faces.Count == 0) continue;
+            results.Add((layer, QuadRemesh.Apply(mesh, faces, new QuadRemeshOptions { EdgeLength = EdgeLength, SharpAngle = SharpAngle, Iterations = Iterations, Smoothing = Smoothing })));
+        }
+        if (results.Count == 0) throw new InvalidOperationException("Quad Remesh needs faces (polygons of three or more points) in the foreground.");
+        Results = results;
+        Doc.Selection.Clear(allModes: true);
+    }
+}
+
 /// <summary>Measure: a ruler between two places in a view.</summary>
 public sealed class MeasureTool : Tool
 {

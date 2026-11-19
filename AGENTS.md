@@ -87,6 +87,15 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     closed loop in 3 or 4 sides; `SharpestCorners` finds the corners) and `Loft` (a skin across curves, ordered by
     where they stack, each turned and started to line up with the one before). The tools are `CurveTools.cs` in
     AVAModeler.Tools (Pen, Make Curve, Smooth Curve, Loft).
+  - `QuadRemesh.cs` (`QuadRemesh.Apply`, `QuadRemeshOptions`, `QuadRemeshResult`): a working triangle mesh (`Tri`:
+    points, triangles with surfaces, point-to-triangle sets, creases, the border with faces left out, fixed points),
+    Botsch–Kobbelt isotropic remeshing at twice the target (split, collapse with the link condition and no flips, flip
+    toward valence six, relax and pull back through a `TriangleBvh` of the original), a 4-RoSy cross field (creases
+    held, curvature tensors as a soft pull, neighbours' directions matched by quarter turns), `Snap` (points drawn onto
+    a grid along the field) with `DelaunayFlips`, greedy pairing of triangles into quads whose sides follow the field
+    (well-aligned first), one split into quads round each face's centre, and the quads drawn along the field again.
+    Border edges keep their points; their new middles go into the faces left out, so the mesh stays stitched.
+    `QuadRemeshTool` (ProcessTools.cs).
   - SubPatches (`Subdivision.cs`): `Mesh.SubPatch` (a mesh setting, so undo and `Clone` keep it; LWOB's `AVSP` chunk,
     written only when set, which turns replay off; .avascene's `MeshDto.SubPatch`) and `SubPatches` (`CreaseMap`, the
     weight map creases live in, an edge as sharp as the lesser end; `Sharpness`, `Surface`, `Freeze`, `ExportLevel`).

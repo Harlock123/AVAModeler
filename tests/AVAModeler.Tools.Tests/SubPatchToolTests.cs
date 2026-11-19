@@ -94,3 +94,23 @@ public class SubPatchToolTests
         Assert.Equal(1, map.Weight(moved), 6);
     }
 }
+
+/// <summary>Quad Remesh as a tool: one undo step, the selection's border kept stitched.</summary>
+public class QuadRemeshToolTests
+{
+    [Fact]
+    public void A_ball_is_remeshed_into_quads_in_one_undo_step()
+    {
+        var (d, c) = Make.Empty();
+        new BallTool().Run(c);
+        int before = d.Current.Mesh.Polygons.Count;
+        var tool = new QuadRemeshTool { EdgeLength = 0.08 };
+        tool.Run(c);
+        Assert.All(d.Current.Mesh.Polygons, p => Assert.Equal(4, p.Count));
+        Assert.True(MeshCheck.Mesh(d.Current.Mesh).Solid);
+        Assert.Single(tool.Results);
+        d.UndoLast();
+        Assert.Equal(before, d.Current.Mesh.Polygons.Count);
+        Assert.Throws<ArgumentException>(() => new QuadRemeshTool { EdgeLength = 0 }.Run(c));
+    }
+}

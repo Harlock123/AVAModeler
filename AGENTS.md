@@ -394,7 +394,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   - `AnimationRender.cs` (Render Animation's work: a run of frames from a `Scene.Copy` into numbered PNGs on a worker
     thread, with progress and cancelling) and `MovieEncoder.cs` (joins the frames into MP4 and GIF with the ffmpeg on
     the PATH, using `carbon_atom.py`'s arguments; render_animation's movie parameter and make_movie use it too).
-- `src/AVAModeler.Mcp/`: the MCP server for AI agents (on the official C# SDK, `ModelContextProtocol.Core`). No UI.
+- `src/AVAModeler.Mcp/`: the MCP server for AI agents (on the official C# SDK, `ModelContextProtocol.Core`, and
+  `ModelContextProtocol.AspNetCore` for the network door). No UI.
   - `ModelerTools.cs` is every Modeler tool, `LayoutTools.cs` every Layout (scene) tool and `DeformTools.cs` the
     tools that deform scene objects (`copy_layer`, morphs, displacements, `skelegons_to_bones`), one partial class in
     the SDK's attribute model; `ModelerServer.cs` builds the server, its instructions to agents and its prompts.
@@ -416,7 +417,9 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     the chat's `McpToolBridge` all take a profile, AVA Modeler's unless given. A new tool goes in `ToolGroups.Scene` or
     `ToolGroups.Modeling` (a test checks each tool is in one); the `Recipes.Recipe` builder and `Recipes.Number`,
     `Whole`, `Colour` and `LightRig` are public so another app's recipes are written the same way.
-  - `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
+  - `NetworkListener.cs` (the network door: Streamable HTTP with a token, `NetworkSettings`, `NetworkToken`; `--mcp
+    --http` and the app's Preferences open it),
+    `LiveListener.cs` (the app's local pipe, with a one-line handshake), `LiveBridge.cs` (`--mcp --attach`, an MCP
     proxy to that pipe), `McpCommandLine.cs` (`--mcp`), `Workspace.cs` (the working folder's file rules),
     `Pictures.cs` (render_view and render), `CheckReport.cs` (check_mesh's JSON, with `how_to_fix`), `ScenePictures.cs` (render_scene_view, render_scene, render_animation; make_movie is in LayoutTools.cs).
 - `src/AVAModeler.Mcp/SessionTools.cs`: `batch`, `checkpoint`, `list_checkpoints`, `restore_checkpoint`, `diff` and
@@ -670,8 +673,17 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
   scene). A call made from inside another (`Reentry`) skips the gate and the busy wait: only a batch's steps should
   do it.
 - **The live listener is local and per user.** It listens on a named pipe opened with `PipeOptions.CurrentUserOnly`
-  (a Unix socket on Linux and macOS), so no token is needed; it is off until the person allows agents. Don't add a
-  network listener. Paths agents give stay inside the working folder (`Workspace`), and nothing is deleted.
+  (a Unix socket on Linux and macOS), so no token is needed; it is off until the person allows agents. Paths agents
+  give stay inside the working folder (`Workspace`), and nothing is deleted.
+- **The network door always asks for its token.** `NetworkListener` (Mcp) is the only network listener: the SDK's
+  Streamable HTTP handler (`ModelContextProtocol.AspNetCore`) on Kestrel at `/mcp`, off until the person turns it on
+  (`Preferences.AllowNetworkAgents`, or `--mcp --http`). Every request passes `Guard` (a bearer token compared in
+  constant time; no `Origin` from another host) before the MCP handler sees it: keep it in front of anything added.
+  The token lives only in `mcp-network-token` (`NetworkToken`, owner-only) or comes from `--token` or the profile's
+  `TokenVariable`; never write it into preferences, a status line, a log or an exception (the headless server prints
+  only one it made itself). Sessions get options from `ModelerServer.Configure`, so the door serves exactly the tools,
+  filters and resources the pipe does; `SessionMode` is `StatefulForInitializeClients`. It knows nothing of the
+  Modeler (a `configure` callback), so another app on this engine uses it as it is. Tests listen on localhost, port 0.
 - **Merged undo steps.** `LayoutSession.Edit(..., merge: true)` (`SceneUndo.Record(before, label, merge)`, `CanMerge`)
   folds a step into the one before when it has the same label, the last thing that happened to the history was that
   step being recorded, the scene is exactly as that step left it, and it isn't the saved state: for repeated updates

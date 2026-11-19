@@ -136,9 +136,17 @@ public static class ModelerServer
     public static McpServerOptions Options(IModelerHost host) => Options(host, ServerProfile.Modeler);
 
     /// <summary>The server's options for a profile: its info and instructions, its tools bound to the host, its prompts.</summary>
-    public static McpServerOptions Options(IModelerHost host, ServerProfile profile)
+    public static McpServerOptions Options(IModelerHost host, ServerProfile profile) => Configure(new McpServerOptions(), host, profile);
+
+    /// <summary>
+    /// Fills a new session's options (ones the network door's HTTP handler made) as <see cref="Options(IModelerHost, ServerProfile)"/>
+    /// makes them: the info and instructions, a session of tools bound to the host, the resources and prompts.
+    /// </summary>
+    public static McpServerOptions Configure(McpServerOptions options, IModelerHost host, ServerProfile profile)
     {
-        var options = new McpServerOptions { ServerInfo = InfoFor(profile), ServerInstructions = profile.Instructions, ToolCollection = [] };
+        options.ServerInfo = InfoFor(profile);
+        options.ServerInstructions = profile.Instructions;
+        options.ToolCollection = [];
         var target = new ModelerTools(host) { Profile = profile };
         _sessions.AddOrUpdate(options, target);
         options.Filters.Request.CallToolFilters.Add(next => async (request, cancel) =>

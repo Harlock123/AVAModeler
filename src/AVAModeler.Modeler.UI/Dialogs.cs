@@ -292,6 +292,43 @@ public sealed class PreferencesWindow : Window
             Content = "Allow AI agents to drive AVA Modeler (MCP, from this user's programs only)", IsChecked = p.AllowAgents, Foreground = Look.Text,
         };
         ToolTip.SetTip(agents, "An agent configured with \"AVAModeler --mcp --attach\" can then build in the open object: you see its work in the views, and Ctrl+Z undoes it.");
+        // The network door: agents on other computers, with the access token (kept by the app, never in preferences.json).
+        var network = new CheckBox
+        {
+            Content = "Allow AI agents on other computers (MCP over the network, with an access token)", IsChecked = p.AllowNetworkAgents, Foreground = Look.Text,
+        };
+        ToolTip.SetTip(network, "Any MCP client on your network that has the token can build in the open object, as an agent on this computer can: you see its work, and Ctrl+Z undoes it. Plain HTTP unless you give a certificate.");
+        var netAddress = new TextBox { Text = p.NetworkAgentsAddress, PlaceholderText = "0.0.0.0 (every network), localhost, or one of this computer's addresses" };
+        var netPort = new TextBox { Text = (p.NetworkAgentsPort ?? DefaultNetworkPort).ToString(CultureInfo.InvariantCulture) };
+        var netFolder = new TextBox { Text = p.NetworkAgentsFolder ?? "", PlaceholderText = "Their working folder (Documents if empty)" };
+        var netCert = new TextBox { Text = p.NetworkAgentsCertificate ?? "", PlaceholderText = "HTTPS certificate, a PEM file (plain HTTP if empty)" };
+        var netKey = new TextBox { Text = p.NetworkAgentsKey ?? "", PlaceholderText = "The certificate's private key, a PEM file" };
+        var netPanel = new StackPanel { Spacing = 4, Children = { Label("Listen on address"), netAddress, Label("Port"), netPort, Label("Working folder for network agents"), netFolder, netCert, netKey } };
+        if (session.NetworkDoor is { } door)
+        {
+            var token = new TextBlock { Text = MaskToken(door.Token), Foreground = Look.Text, FontFamily = new FontFamily("monospace"), VerticalAlignment = VerticalAlignment.Center };
+            var copy = new Button { Content = "Copy Token" };
+            copy.Click += async (_, _) =>
+            {
+                if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) await Avalonia.Input.Platform.ClipboardExtensions.SetTextAsync(clipboard, door.Token);
+            };
+            var renew = new Button { Content = "New Token" };
+            ToolTip.SetTip(renew, "Makes a new access token: agents given the old one can no longer connect.");
+            renew.Click += (_, _) => token.Text = MaskToken(door.RenewToken());
+            var urls = new TextBlock
+            {
+                Foreground = Look.Text, FontSize = 11, TextWrapping = TextWrapping.Wrap,
+                Text = door.Urls.Count > 0
+                    ? "Agents connect to " + string.Join(" or ", door.Urls) + " with the header \"Authorization: Bearer <token>\"."
+                    : "The door opens when you save with the box ticked; agents then connect to http://<this computer>:<port>/mcp with the header \"Authorization: Bearer <token>\".",
+            };
+            netPanel.Children.Add(Label("Access token"));
+            netPanel.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { token, copy, renew } });
+            netPanel.Children.Add(urls);
+        }
+        void ShowNetwork() => netPanel.IsVisible = network.IsChecked == true;
+        network.IsCheckedChanged += (_, _) => ShowNetwork();
+        ShowNetwork();
         var hub = new CheckBox { Content = "Link with AVALightWave (the hub: this user's programs only)", IsChecked = p.HubEnabled, Foreground = Look.Text };
         ToolTip.SetTip(hub, "AVALightWave's Edit in Modeler opens its objects here, and saving them updates its scene. Takes effect when AVA Modeler next starts.");
         var liveSync = new CheckBox { Content = "Live sync with AVALightWave (send a linked object's changes as you model)", IsChecked = p.HubLiveSync, Foreground = Look.Text };
@@ -329,6 +366,13 @@ public sealed class PreferencesWindow : Window
             if (int.TryParse(level.SelectedItem as string, out int l)) p.SubdivisionLevel = l;
             if (Enum.TryParse<DisplayStyle>(style.SelectedItem as string, out var st)) p.PerspectiveStyle = st;
             p.AllowAgents = agents.IsChecked == true;
+            p.AllowNetworkAgents = network.IsChecked == true;
+            p.NetworkAgentsAddress = string.IsNullOrWhiteSpace(netAddress.Text) ? new Preferences().NetworkAgentsAddress : netAddress.Text.Trim();
+            if (int.TryParse(netPort.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int port) && port is >= 1 and <= 65535)
+                p.NetworkAgentsPort = port == DefaultNetworkPort ? null : port;
+            p.NetworkAgentsFolder = string.IsNullOrWhiteSpace(netFolder.Text) ? null : netFolder.Text.Trim();
+            p.NetworkAgentsCertificate = string.IsNullOrWhiteSpace(netCert.Text) ? null : netCert.Text.Trim();
+            p.NetworkAgentsKey = string.IsNullOrWhiteSpace(netKey.Text) ? null : netKey.Text.Trim();
             p.HubEnabled = hub.IsChecked == true;
             p.HubLiveSync = liveSync.IsChecked == true;
             p.LightWavePath = string.IsNullOrWhiteSpace(lightWave.Text) ? null : lightWave.Text.Trim();
@@ -361,7 +405,7 @@ public sealed class PreferencesWindow : Window
                         {
                             Label("Viewports"), renderer, Label("Perspective view"), style, Label("Undo levels"), undo,
                             Label("Auto-save every (minutes, 0 for never)"), autosave, Label("MetaNURBS smoothing level"), level,
-                            Label("AI agents"), agents,
+                            Label("AI agents"), agents, network, netPanel,
                             Label("AVALightWave"), hub, liveSync, lightWave,
                             Label("AI Chat model"), chatProvider, chatServer, chatHistory,
                             Label("Keys (e.g. T, Shift+X, Ctrl+Z)"), keys,
@@ -373,6 +417,12 @@ public sealed class PreferencesWindow : Window
     }
 
     private static TextBlock Label(string text) => new() { Text = text, Foreground = Look.Text, FontSize = 12, FontWeight = FontWeight.Bold, Margin = new Thickness(0, 8, 0, 2) };
+
+    /// <summary>AVA Modeler's network door port when the preferences give none.</summary>
+    public const int DefaultNetworkPort = 8765;
+
+    /// <summary>A token as it's shown: its first and last four characters.</summary>
+    public static string MaskToken(string token) => token.Length <= 12 ? new string('•', token.Length) : token[..4] + "…" + token[^4..];
 
     /// <summary>The AI Chat's providers, as <see cref="Preferences.ChatProvider"/> keeps them and as they're shown.</summary>
     public static readonly List<(string Id, string Label)> ChatProviders =

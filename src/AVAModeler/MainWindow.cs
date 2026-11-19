@@ -32,6 +32,9 @@ public sealed class MainWindow : Window
     /// <summary>AI agents' live access (MCP), open while the preference allows it.</summary>
     internal LiveAgents Agents { get; }
 
+    /// <summary>The network door's token and addresses (the token's file only outside tests).</summary>
+    internal NetworkDoor Network { get; }
+
     /// <summary>The hub: the live link with AVALightWave (Edit in Modeler, saves going back, Send to AVALightWave).</summary>
     internal ModelerHub Hub { get; }
 
@@ -69,6 +72,9 @@ public sealed class MainWindow : Window
         Modeler = new ModelerWorkspace(Session);
         Modeler.ShowLayout += ShowLayout;
         Agents = new LiveAgents(Session, _layoutSession);
+        Network = new NetworkDoor(Agents, loadPlugins ? Preferences.Folder : null);
+        Session.NetworkDoor = Network;
+        Network.Renewed += () => _ = SyncNetworkAsync();
         Modeler.AgentsChanged += SyncAgents;
         Modeler.ToggleChat += ToggleChat;
         Hub = new ModelerHub(Session, path => Modeler.Open(path), () => { ShowModeler(); Activate(); });
@@ -123,6 +129,7 @@ public sealed class MainWindow : Window
             Chat.SaveHistory();
             _ = _chatTools.DisposeAsync().AsTask();
             _ = Agents.StopAsync();
+            _ = Agents.StopNetworkAsync();
             _ = Hub.StopAsync();
         };
     }
@@ -157,6 +164,48 @@ public sealed class MainWindow : Window
             _ = Agents.StopAsync();
             Session.SetStatus("AI agents can no longer connect.");
         }
+        _ = SyncNetworkAsync();
+    }
+
+    private Task? _networkSync;
+    private bool _syncNetworkAgain;
+
+    /// <summary>
+    /// Opens, closes or reopens the network door to match the preferences (and the token): a change of address, port,
+    /// folder, certificate or token while it's open reopens it. One at a time; a change meanwhile runs again after, and
+    /// the task ends when the door is as the preferences now say.
+    /// </summary>
+    internal Task SyncNetworkAsync()
+    {
+        if (_networkSync is { IsCompleted: false })
+        {
+            _syncNetworkAgain = true;
+            return _networkSync;
+        }
+        return _networkSync = RunNetworkSync();
+    }
+
+    private async Task RunNetworkSync()
+    {
+        do
+        {
+            _syncNetworkAgain = false;
+            var p = Session.Preferences;
+            var want = p.AllowNetworkAgents ? new NetworkSettings(p.NetworkAgentsAddress, p.NetworkAgentsPort ?? ServerProfile.Modeler.NetworkPort, Network.Token, p.NetworkAgentsCertificate, p.NetworkAgentsKey) : null;
+            string root = p.NetworkAgentsFolder ?? ChatRoot;
+            if (Agents.NetworkRunning && (want == null || want != Agents.NetworkSettings || root != Agents.NetworkRoot))
+            {
+                await Agents.StopNetworkAsync();
+                if (want == null) Session.SetStatus("AI agents on other computers can no longer connect.");
+            }
+            if (want != null && !Agents.NetworkRunning)
+            {
+                Session.SetStatus(await Agents.StartNetworkAsync(want, root) is { } problem
+                    ? $"AI agents on other computers can't connect: {problem}"
+                    : $"AI agents on other computers may connect (MCP): {Agents.NetworkUrls.FirstOrDefault()}, with the access token from Edit › Preferences.");
+            }
+        }
+        while (_syncNetworkAgain);
     }
 
     private void UpdateTitle()

@@ -194,7 +194,7 @@ public class EndToEndTests
     }
 
     /// <summary>The app as built alongside these tests (same configuration), to start as a process.</summary>
-    private static string BuiltApp()
+    internal static string BuiltApp()
     {
         // The tests run from tests/AVAModeler.Mcp.Tests/bin/<configuration>/<framework>/.
         var here = new DirectoryInfo(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar));

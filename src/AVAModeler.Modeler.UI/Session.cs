@@ -51,6 +51,20 @@ public sealed class Preferences
     /// </summary>
     public bool AllowAgents { get; set; }
     /// <summary>
+    /// Whether AI agents on other computers may drive the open document, over the network door (MCP Streamable HTTP at
+    /// <c>/mcp</c>, every request carrying the access token). Off unless turned on.
+    /// </summary>
+    public bool AllowNetworkAgents { get; set; }
+    /// <summary>The address the network door listens on: 0.0.0.0 (every network), localhost, or one of this computer's.</summary>
+    public string NetworkAgentsAddress { get; set; } = "0.0.0.0";
+    /// <summary>The network door's port; null for the app's own (AVA Modeler 8765, AVALightWave 8766), so both can be open at once.</summary>
+    public int? NetworkAgentsPort { get; set; }
+    /// <summary>The working folder for agents on the network (their open and save paths start there and stay inside); Documents if null.</summary>
+    public string? NetworkAgentsFolder { get; set; }
+    /// <summary>A certificate (PEM) for the network door to serve HTTPS with, and its private key (PEM); plain HTTP if null.</summary>
+    public string? NetworkAgentsCertificate { get; set; }
+    public string? NetworkAgentsKey { get; set; }
+    /// <summary>
     /// Whether AVA Modeler is on the hub, the live link with AVALightWave (the standalone Layout) over a local pipe only
     /// this user can open: its Edit in Modeler opens objects here, and saves go back to its scene. On unless turned off.
     /// </summary>
@@ -187,8 +201,27 @@ public sealed class Keymap
 /// The Modeler's state apart from its controls: the document, the tools and the active one, the selection mode,
 /// display settings and MetaNURBS, so the logic can be driven (and tested) without a window.
 /// </summary>
+/// <summary>
+/// The app's network door for AI agents as the Preferences window sees it: the access token (kept by the app in a file
+/// of its own, never in the preferences) and where the door listens now.
+/// </summary>
+public interface INetworkDoor
+{
+    /// <summary>The access token, made if there is none yet.</summary>
+    string Token { get; }
+
+    /// <summary>Makes a new token (the old one stops working; an open door reopens with the new one) and returns it.</summary>
+    string RenewToken();
+
+    /// <summary>The addresses agents can be given while the door is open (none while it's closed).</summary>
+    IReadOnlyList<string> Urls { get; }
+}
+
 public sealed class ModelerSession
 {
+    /// <summary>The network door, when the app has one (a window made for tests may not).</summary>
+    public INetworkDoor? NetworkDoor { get; set; }
+
     public Document Document { get; private set; }
     public ToolContext Context { get; private set; }
     public ToolRegistry Registry { get; }

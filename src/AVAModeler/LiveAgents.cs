@@ -8,7 +8,8 @@ namespace AVAModeler;
 
 /// <summary>
 /// The app's live MCP door: while AI agents are allowed (Macros › Allow AI Agents, or Preferences), a
-/// <see cref="LiveListener"/> takes connections from <c>AVAModeler --mcp --attach</c> bridges, and every call runs on
+/// <see cref="LiveListener"/> takes connections from <c>AVAModeler --mcp --attach</c> bridges (and, while agents on
+/// other computers are allowed, a <see cref="NetworkListener"/> from MCP clients on the network), and every call runs on
 /// the UI thread against the open document, through the session's command API, and against Layout's scene, so the views
 /// redraw as the agent works and Ctrl+Z undoes its modeling steps. Calls wait while the person has a tool armed or a
 /// dialog box open. Scene calls don't switch the window to Layout: the person may be modeling, and Layout shows the
@@ -90,5 +91,86 @@ internal sealed class LiveAgents(ModelerSession session, LayoutSession layout) :
         await listener.DisposeAsync();
     }
 
-    public async ValueTask DisposeAsync() => await StopAsync();
+    private NetworkListener? _network;
+
+    /// <summary>Whether the network door is open.</summary>
+    public bool NetworkRunning => _network != null;
+
+    /// <summary>The settings and working folder the network door was opened with (to tell when they've changed).</summary>
+    public NetworkSettings? NetworkSettings { get; private set; }
+
+    public string? NetworkRoot { get; private set; }
+
+    /// <summary>Where the network door listens, while it's open.</summary>
+    public IReadOnlyList<string> NetworkUrls => _network?.Urls ?? [];
+
+    /// <summary>The network door's port, while it's open (the one the system chose, for port 0).</summary>
+    public int NetworkPort => _network?.Port ?? 0;
+
+    /// <summary>
+    /// Opens the network door: agents on other computers reach the open document through the same live host as the
+    /// pipe's (UI thread, waiting while the person is busy, each call one undo step), working in <paramref name="root"/>.
+    /// Returns why it couldn't open, or null.
+    /// </summary>
+    public async Task<string?> StartNetworkAsync(NetworkSettings settings, string root)
+    {
+        if (_network != null) return null;
+        if (!Directory.Exists(root)) return $"the working folder {root} doesn't exist.";
+        var listener = new NetworkListener(settings, ServerProfile.Modeler.Name,
+            o => ModelerServer.Configure(o, new LiveHost(this, this, root) { BusyWait = BusyWait }, ServerProfile.Modeler), ModelerServer.EndSessionAsync);
+        listener.ConnectionsChanged += n => Dispatcher.UIThread.Post(() =>
+            session.SetStatus(n > 0 ? $"AI agents on the network: {n}. Their changes show here, and Ctrl+Z undoes them." : "No AI agent on the network is working just now."));
+        try
+        {
+            await listener.StartAsync();
+        }
+        catch (IOException e)
+        {
+            return e.Message;
+        }
+        _network = listener;
+        NetworkSettings = settings;
+        NetworkRoot = root;
+        return null;
+    }
+
+    public async Task StopNetworkAsync()
+    {
+        var listener = _network;
+        _network = null;
+        NetworkSettings = null;
+        NetworkRoot = null;
+        if (listener != null) await listener.DisposeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync();
+        await StopNetworkAsync();
+    }
+}
+
+/// <summary>
+/// The network door's token and addresses for the Preferences window: the token in its owner-only file beside the
+/// preferences (only in memory for a window made for tests).
+/// </summary>
+internal sealed class NetworkDoor(LiveAgents agents, string? folder) : INetworkDoor
+{
+    private string? _memory;
+
+    private NetworkToken? Store => folder == null ? null : NetworkToken.In(folder);
+
+    public string Token => Store?.Get() ?? (_memory ??= NetworkListener.NewToken());
+
+    public string RenewToken()
+    {
+        var token = Store?.Renew() ?? (_memory = NetworkListener.NewToken());
+        Renewed?.Invoke();
+        return token;
+    }
+
+    public IReadOnlyList<string> Urls => agents.NetworkUrls;
+
+    /// <summary>Raised when the token changes, so an open door reopens with the new one.</summary>
+    public event Action? Renewed;
 }

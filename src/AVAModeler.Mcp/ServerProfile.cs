@@ -50,6 +50,12 @@ public sealed record ServerProfile
     /// <summary>The program's name on the command line, for usage and messages ("AVAModeler").</summary>
     public string Program { get; init; } = "AVAModeler";
 
+    /// <summary>The port the network door listens on unless the person picks another (AVA Modeler 8765, AVALightWave 8766).</summary>
+    public int NetworkPort { get; init; } = 8765;
+
+    /// <summary>The environment variable that can give the network door's token on the command line.</summary>
+    public string TokenVariable { get; init; } = "AVAMODELER_MCP_TOKEN";
+
     /// <summary>The <c>--mcp</c> command line's usage text (<see cref="McpCommandLine.Usage"/> unless given).</summary>
     public string? Usage { get; init; }
 

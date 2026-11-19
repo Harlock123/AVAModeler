@@ -89,7 +89,7 @@ public static class ToolGroups
         "add_null", "add_bone", "remove_item", "set_item", "set_transform", "look_at", "set_key", "delete_key", "set_end_behavior",
         "set_follow_path", "bake_path", "shift_keys", "scale_keys", "set_scene", "undo_scene", "redo_scene", "render_scene",
         "render_scene_view", "render_animation", "make_movie",
-        "set_morph", "remove_morph", "add_displacement", "set_displacement", "remove_displacement", "add_deformer", "set_deformer", "remove_deformer", "bake_lighting", "skelegons_to_bones", "set_ik", "bake_ik",
+        "set_morph", "remove_morph", "add_displacement", "set_displacement", "remove_displacement", "add_deformer", "set_deformer", "remove_deformer", "bake_lighting", "load_bvh", "skelegons_to_bones", "set_ik", "bake_ik",
         "add_motion_modifier", "set_motion_modifier", "remove_motion_modifier",
         "load_image", "remove_image", "set_compositing", "set_dissolve", "set_particles", "set_hair", "set_soft_body", "comb_hair",
         "set_lens_flare", "set_volumetric_light", "set_shadow_map",

@@ -498,6 +498,12 @@ Modeler and Layout shows the change at once.
     goes from Low to High, repeating beyond) and **Oscillate** (amplitude · sin(2π(frame − start)/period + phase) ·
     e^(−damping·(frame − start)) on one channel). Kept in .avascene; LightWave scenes and motion files keep only the
     keys, with a warning.
+  - **Motion capture** (.bvh, `load_bvh`): a Biovision hierarchy from Mixamo, CMU or a mocap suit, put on an
+    object's bones. Each bone is matched to a joint by name (ignoring case, punctuation and a `mixamorig:` style
+    prefix) or by a map, and takes the joint's turn away from the capture's rest pose on top of its own rest pose, so
+    a capture made in a T-pose drives any rig resting in a T-pose, whatever its proportions. The root's moves move the
+    root bone, scaled by the two skeletons' heights; keys every frame (or every few) from a start frame, timed by the
+    capture's rate against the scene's, with angles kept continuous. One undo step.
   - **Motion files** (.mot), LightWave's Load and Save Motion: one item's nine channels. Version 1 (Layout 4/5:
     `LWMO`, `1`, `9`, the key count, then per key a line of nine values and a line of `frame linear tension continuity
     bias`, then `EndBehavior`) and version 3 (LightWave 6 on: `LWMO`, `3`, `NumChannels 9`, then per channel
@@ -1096,6 +1102,7 @@ The Layout tools:
 | `sculpt` | A brush (draw, inflate, smooth, pinch, flatten, crease, grab, paint_weights, paint_colors) along a stroke of points on the surface, one undo step. |
 | `measure` | Distances (between places or points, with x, y, z parts), the angle at a middle point, and the selection's area and size. |
 | `bake_maps` | Normal, ambient occlusion, curvature or colour into a PNG in the working folder through a UV map, laid on the surface. |
+| `load_bvh` | A motion capture (.bvh) from the working folder onto an object's bones, matched by name or map and retargeted from the capture's rest pose to the rig's; the root's moves scaled by height. Says which bones matched and which didn't. |
 | `bake_lighting` | A scene object's lighting (ambient and occlusion, environment, lights and shadows, bounced light) through its UV map into a PNG light map in the working folder, with or without its colours; says how bright it got, so a clipped one can be baked again lower. |
 | `skelegons_to_bones` | Layout's Skelegons → Bones: a bone for each 2-point polygon on a "Skelegon…" surface, chained where one's base is on another's tip. |
 | `set_ik`, `bake_ik` | Inverse kinematics: a bone's goal (its chain reaches for it), full-time IK, anchor, locked channels and heading, pitch and bank limits; and baking the chain's solved rotations into keys over a run of frames. `get_scene` shows each bone's chain, reach, `tip_to_goal` and `ik_rotation`. |
@@ -1277,7 +1284,7 @@ Layout reuses them.
 | `AVAModeler.Slicing` | 3D printing: printer and material profiles, placing the object on the bed, slicing it into layers, polygon offsetting and clipping (Clipper2) |
 | `AVAModeler.Tools` | The tool framework and every tool, Make UVs and UV space, the command API, Lua macros (MoonSharp) and their sandbox for other apps, plugins, SkiaSharp image reading |
 | `AVAModeler.Rendering` | `IRenderer`, the software and OpenGL renderers and their shared texturing (backdrops included), the view cameras, picking |
-| `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones and their inverse kinematics, path following, LWS and JSON scenes, the ray tracer and its render effects (ambient occlusion, soft and area lights, environment pictures, depth of field, motion blur, lens flares, volumetric lights, shadow maps, object dissolve, compositing), key spans, motion modifiers, the image list and .mot motion files |
+| `AVAModeler.Scene` | Layout: the scene graph, envelopes, cameras, lights, bones and their inverse kinematics, path following, LWS and JSON scenes, the ray tracer and its render effects (ambient occlusion, soft and area lights, environment pictures, depth of field, motion blur, lens flares, volumetric lights, shadow maps, object dissolve, compositing), key spans, motion modifiers, the image list, .mot motion files and .bvh motion capture, deformers, global illumination and light maps |
 | `AVAModeler.Layout` | Layout's state without its controls (the scene being worked on, its frame and chosen item, its undo history, scene files and glTF scene export, what the views draw, the dope sheet, the graph editor's curve editing and moving keys in time, rendering animations and joining them into movies with ffmpeg), shared by the Layout workspace and the MCP server |
 | `AVAModeler.Modeler.UI` | The Modeler workspace: the quad view, tool tabs, numeric panel, Mesh Info and Backdrop panels, layers, surface editor, preferences |
 | `AVAModeler.Layout.UI` | The Layout workspace: the scene view, items (with IK and path settings), timeline, graph editor, dope sheet, render and animation windows |

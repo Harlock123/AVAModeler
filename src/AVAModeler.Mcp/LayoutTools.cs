@@ -959,6 +959,37 @@ public sealed partial class ModelerTools
         return new CallToolResult { Content = [ImageContentBlock.FromBytes(image.ToPng(alpha: false), "image/png"), new TextContentBlock { Text = about }] };
     }
 
+    [McpServerTool(Name = "load_bvh", Destructive = true)]
+    [Description("Loads a motion capture (.bvh, Biovision hierarchy: Mixamo, CMU and most mocap tools write it) from the working folder onto a scene object's bones. Each bone is matched to a joint by name (ignoring case, punctuation and a \"prefix:\" such as mixamorig:), or by map; it takes the joint's turn away from the capture's rest pose, applied to its own rest pose, so a capture made in a T-pose drives a rig resting in a T-pose whatever its bones' lengths. The root joint's moves move the root bone, scaled by the two skeletons' heights (or scale). Keys every step frames from start_frame, timed by the capture's frame rate against the scene's. Bones that match nothing keep their keys. One undo step. Make bones first (skelegons_to_bones, add_bone) resting in the capture's pose.")]
+    public Task<string> LoadBvh(
+        [Description("The scene object with the bones, by name or #index.")] string @object,
+        [Description("The .bvh file, relative to the working folder.")] string file,
+        [Description("The scene frame the capture's first frame lands on (default 1).")] double start_frame = 1,
+        [Description("A key every this many scene frames, more than 0 (default 1: every frame).")] double step = 1,
+        [Description("Bone names to joint names, for bones whose names differ, e.g. {\"UpperArm_L\": \"LeftArm\"}.")] Dictionary<string, string>? map = null,
+        [Description("Move the root bone with the capture's root (default true); false keeps only the turns.")] bool move_root = true,
+        [Description("Metres a unit of the capture's moves (default: the rig's height over the capture's; BVH is often in centimetres).")] double? scale = null,
+        [Description("Clear the matched bones' rotation keys (and the root's position keys) first (default true).")] bool replace = true,
+        CancellationToken cancel = default) =>
+        DoScene($"loaded motion capture onto {@object}", (c, l) =>
+        {
+            var obj = SceneObject(l.Scene, @object);
+            if (!(step > 0)) throw new ArgumentException("step must be more than 0 frames.");
+            if (scale is { } sc && !(sc > 0)) throw new ArgumentException("scale must be more than 0.");
+            string full = Files(c).Resolve(file);
+            if (!full.EndsWith(".bvh", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("A motion capture is a .bvh file.");
+            if (!File.Exists(full)) throw new FileNotFoundException($"There's no file {file} in the working folder.", full);
+            var r = l.LoadMotionCapture(obj, full, new RetargetOptions { StartFrame = start_frame, Step = step, Map = map, MoveRoot = move_root, Scale = scale, Replace = replace });
+            var result = ItemNow(c, l, obj, l.Frame);
+            result["matched"] = new JsonObject(r.Matched.Select(m => KeyValuePair.Create(m.Bone, (JsonNode?)m.Joint)));
+            if (r.Unmatched.Count > 0) result["unmatched_bones"] = new JsonArray([.. r.Unmatched.Select(n => (JsonNode)n)]);
+            result["keys"] = r.Keys;
+            result["frames"] = new JsonArray(Math.Round(r.FirstFrame, 3), Math.Round(r.LastFrame, 3));
+            result["scale"] = Math.Round(r.Scale, 6);
+            if (r.LastFrame > l.Scene.LastFrame) result["note"] = $"The motion runs to frame {r.LastFrame:0.##}, past the scene's last frame ({l.Scene.LastFrame}): set_scene last_frame to see it all.";
+            return result;
+        }, cancel);
+
     [McpServerTool(Name = "bake_lighting", Destructive = true)]
     [Description("Bakes a scene object's lighting into a PNG light map in the working folder, through its UV map (unwrap_uvs or make_uvs in the Modeler first; every face needs its own place in it): at each pixel a face covers, the light falling there as render_scene works it out: ambient (dimmed by ambient occlusion if on), the environment's light, every light with its shadows (soft lights sampled), and bounced light when set_scene's gi is on. With with_color (the default) it's the surface's colour times that light, plus its glow; without, the light alone (to multiply over a texture). Textures aren't baked in. Use it to preview lighting fast (lay the map on as the colour with luminosity 1 and diffuse 0, so the scene needn't be lit again) or to give a game asset its lighting in glTF. Pixels past the faces' edges are filled by padding. It changes nothing in the scene.")]
     public async Task<string> BakeLighting(

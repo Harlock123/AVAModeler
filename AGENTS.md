@@ -385,6 +385,13 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     past its start, so `LocalMatrix` and everything after see the simulation; static bodies move by their keys and push.
     While it runs (`RigidBodyWorld.Simulating`) the scene's reads place dynamic bodies by their keys. Its keys are never
     changed: baking is the host's (AVALightWave's `bake_simulation`).
+  - `MotionCapture.cs`: `BvhFile` (`Parse`/`Read`: HIERARCHY with ROOT, JOINT, OFFSET, CHANNELS and End Site, then
+    MOTION; `LocalRotation` in channel order, `Position`, `RestPositions`; right-handed and Y up) and `MotionCapture.Apply`
+    (`RetargetOptions`, `RetargetResult`): bones matched by `Normalised` name or the map, parents before children; each
+    matched bone's pose is F·(joint's world turn)·F times its object-space rest rotation, keyed as heading, pitch and
+    bank relative to its posed parent (`Near` keeps angles continuous); the root bone moves by the root joint's moves
+    from frame 0, flipped and scaled by the skeletons' heights. `LayoutSession.LoadMotionCapture` makes it one undo
+    step; `load_bvh` in LayoutTools.cs.
   - `Lws/LwText.cs` is the line and envelope parser `LwsReader` and `Lws/MotionFile.cs` (.mot read, write and apply)
     share.
   - `Rendering/EnvironmentMap.cs`: an environment picture by direction (lat-long, turned by its heading), its 64 × 32

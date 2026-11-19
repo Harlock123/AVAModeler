@@ -465,6 +465,21 @@ public sealed class LayoutSession
     }
 
     /// <summary>
+    /// Loads a motion capture (.bvh) onto an object's bones (<see cref="MotionCapture"/>: matched by name or a map,
+    /// retargeted from the capture's rest pose to the bones'), as one undo step. Throws <see cref="InvalidDataException"/>
+    /// for a file that isn't a BVH and <see cref="InvalidOperationException"/> when no bone matches, changing nothing.
+    /// </summary>
+    public RetargetResult LoadMotionCapture(ObjectItem item, string path, RetargetOptions? options = null)
+    {
+        if (item.Scene != Scene) throw new ArgumentException($"{item.Name} isn't in the scene.");
+        var bvh = BvhFile.Read(path);
+        RetargetResult? result = null;
+        Edit($"Load Motion Capture onto {item.Name}", () => result = MotionCapture.Apply(Scene, item, bvh, options));
+        SetStatus($"Loaded {Path.GetFileName(path)} onto {item.Name}: {result!.Matched.Count} bone(s) matched{(result.Unmatched.Count > 0 ? $", {result.Unmatched.Count} left as they were" : "")}.");
+        return result;
+    }
+
+    /// <summary>
     /// Saves an item's nine motion channels as a LightWave motion file (Layout's Save Motion), version 3 unless asked
     /// for 1 (LightWave 4 and 5); see <see cref="MotionFile"/>. Not an undo step: the scene doesn't change. Returns the
     /// warnings (what the file couldn't hold).

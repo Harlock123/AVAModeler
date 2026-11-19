@@ -227,10 +227,13 @@ after `select_edges` (Spin Edge, Dissolve Edges) or `set_symmetry` (Weld).
 
 ## Milestone O: motion capture
 
+**Status:** done. `Scene/MotionCapture.cs` (`BvhFile`, `MotionCapture`), `LayoutSession.LoadMotionCapture`; agents'
+`load_bvh`. The window's menus don't have it yet: agents and the in-app chat load captures.
+
 1. **BVH files** read (the hierarchy and its motion, any channel order).
 2. **Retargeting** onto an object's bones by name (with a name map for the rest): each bone takes the joint's turn
    from its rest pose, the root its moves scaled by the two skeletons' heights; keyed per frame or every few.
-3. Layout's File › Load Motion Capture; agents' `load_bvh`.
+3. Agents' `load_bvh`.
 
 ## Milestone P: bounced light
 

@@ -178,11 +178,13 @@ every tool keeps it; creases are on points, so they follow every edit.
 
 ## Milestone J: deformers in Layout
 
+**Status:** done. `Scene/Deformers.cs`, `ObjectItem.Deformers`; agents' `add_deformer`, `set_deformer`,
+`remove_deformer`. Like displacements, they aren't kept in .lws (it has no place for them).
+
 1. **A stack of live deformers** on scene objects: Bend, Twist, Taper, Shear, Squash and Lattice (a box of control
    points, free-form deformation), applied after morphs, bones and displacements, in order.
 2. **Keyable.** Each has an amount envelope (`deformer.<n>.amount`), so they animate and the dope sheet sees them.
-3. **Kept** in .avascene, .lws (a plugin section), snapshots and copies. Agents: `add_deformer`, `set_deformer`,
-   `remove_deformer`.
+3. **Kept** in .avascene, snapshots and copies.
 
 ## Milestone K: quad remeshing along the shape
 

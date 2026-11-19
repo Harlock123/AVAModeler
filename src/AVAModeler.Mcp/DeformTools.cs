@@ -248,6 +248,141 @@ public sealed partial class ModelerTools
         if (phase is { } p2) d.Phase = p2;
     }
 
+    // ───────────────────────────── deformers ─────────────────────────────
+
+    private const string DeformerHow = "Kinds: bend (the range along axis curls into an arc of amount degrees toward the toward axis, like a bending reed: a positive angle curls toward +toward), twist (each slice along axis turns about it, up to amount degrees at the range's high end; right-handed, as the Modeler's Rotate), taper (each slice scales across axis from 1 at the low end to amount at the high end: 0.3 makes a point, 2 flares it), shear (each slice slides toward the toward axis, up to amount metres at the high end), squash (amount times as long along axis about center, and thinner or fatter across to keep the volume: 0.6 squashes, 1.4 stretches; the classic bouncing ball) and lattice (a box of control points, divisions along x, y and z, each moved by an offset in metres; what's in the box follows them smoothly, amount 0 to 1 of the way). All but lattice work along axis through center (object coordinates, metres), over range [low, high] in metres from center along axis: below low nothing moves; beyond high points carry on as the range's end leaves them. They apply in the object's own coordinates after morphs, bones and displacements, in the order added. The amount is a channel, deformer.<number>.amount (numbered from 1): key it with set_key to animate, e.g. a squash at the frame a ball lands. Needs enough points along the axis to bend smoothly (a Box with segments, a SubPatch cage is fine: it's subdivided after).";
+
+    [McpServerTool(Name = "add_deformer", Destructive = true)]
+    [Description("Adds a live deformer to a scene object: bend, twist, taper, shear, squash or lattice, as Layout's deformation plug-ins do. " + DeformerHow + " Defaults fit the object: center at its middle (its base for bend, twist, taper and shear), the range its extent along axis, a lattice's box its bounds.")]
+    public Task<string> AddDeformer(
+        [Description("The scene object, by name or #index.")] string @object,
+        [Description("bend, twist, taper, shear, squash or lattice.")] string kind,
+        [Description("The amount: degrees (bend, twist), a scale (taper, squash), metres (shear) or a share 0 to 1 (lattice). Default: 45 for bend, 90 for twist, 0.5 for taper, 0.2 for shear, 0.7 for squash, 1 for lattice.")] double? amount = null,
+        [Description("The axis it works along: x, y (default) or z.")] string? axis = null,
+        [Description("Bend and shear: the axis it curls or slides toward, not axis (default x, or z when axis is x).")] string? toward = null,
+        [Description("The centre [x, y, z] in the object's coordinates, metres.")] double[]? center = null,
+        [Description("The range [low, high] along axis, metres from center, high above low.")] double[]? range = null,
+        [Description("Lattice: control points along x, y and z, 2 to 8 each (default [3, 3, 3]).")] int[]? divisions = null,
+        [Description("Lattice: the box's [min x, min y, min z, max x, max y, max z] in the object's coordinates (default: its bounds, a little bigger).")] double[]? box = null,
+        [Description("Lattice: control points to move, each [i, j, k, dx, dy, dz]: indices from 0 along x, y and z, and metres to move it. More with set_deformer.")] double[][]? offsets = null,
+        CancellationToken cancel = default) =>
+        DoScene("added a deformer", (c, l) =>
+        {
+            var obj = SceneObject(l.Scene, @object);
+            var k = Json.Choice<DeformerKind>(kind, "kind");
+            var d = new Deformer(k);
+            var bounds = obj.BaseMesh().Bounds();
+            if (bounds.IsEmpty) bounds = new Box3(-Vec3.One / 2, Vec3.One / 2);
+            d.Axis = axis == null ? Axis.Y : Json.Choice<Axis>(axis, "axis");
+            d.Toward = d.Axis == Axis.X ? Axis.Z : Axis.X;
+            var mid = (bounds.Min + bounds.Max) / 2;
+            bool fromBase = k is DeformerKind.Bend or DeformerKind.Twist or DeformerKind.Taper or DeformerKind.Shear;
+            d.Center = fromBase ? mid.With(d.Axis, bounds.Min[d.Axis]) : mid;
+            double extent = Math.Max(bounds.Max[d.Axis] - bounds.Min[d.Axis], 1e-3);
+            (d.Low, d.High) = fromBase ? (0, extent) : (-extent / 2, extent / 2);
+            var pad = (bounds.Max - bounds.Min) * 0.02 + Vec3.One * 1e-3;
+            (d.LatticeMin, d.LatticeMax) = (bounds.Min - pad, bounds.Max + pad);
+            d.Divisions = (3, 3, 3);
+            d.Amount.SetConstant(k switch { DeformerKind.Bend => 45, DeformerKind.Twist => 90, DeformerKind.Taper => 0.5, DeformerKind.Shear => 0.2, DeformerKind.Squash => 0.7, _ => 1 });
+            SetDeformer(d, axis: null, toward, center, range, divisions, box, offsets, amount);
+            obj.AddDeformer(d);
+            var result = ItemNow(c, l, obj, l.Frame);
+            result["added"] = DeformerChannel(obj.Deformers.Count - 1);
+            return result;
+        }, cancel);
+
+    [McpServerTool(Name = "set_deformer", Destructive = true)]
+    [Description("Changes a deformer's settings, leaving out what you don't give. " + DeformerHow + " amount sets it throughout; when it's keyed, change its keys with set_key on deformer.<number>.amount instead. enabled false switches it off, keeping its settings.")]
+    public Task<string> SetDeformerTool(
+        [Description("The scene object, by name or #index.")] string @object,
+        [Description("Which deformer, numbered from 1 as get_scene lists them.")] int number,
+        [Description("The amount, throughout.")] double? amount = null,
+        [Description("x, y or z.")] string? axis = null,
+        [Description("Bend and shear: x, y or z, not axis.")] string? toward = null,
+        [Description("[x, y, z], metres, object coordinates.")] double[]? center = null,
+        [Description("[low, high], metres from center along axis.")] double[]? range = null,
+        [Description("Lattice: [nx, ny, nz], 2 to 8 each (changing them clears the offsets).")] int[]? divisions = null,
+        [Description("Lattice: [min x, min y, min z, max x, max y, max z].")] double[]? box = null,
+        [Description("Lattice: control points to move, each [i, j, k, dx, dy, dz] (replacing that point's offset).")] double[][]? offsets = null,
+        [Description("On or off.")] bool? enabled = null,
+        CancellationToken cancel = default) =>
+        DoScene("changed a deformer", (c, l) =>
+        {
+            var obj = SceneObject(l.Scene, @object);
+            var d = Deformer(obj, number);
+            if (amount == null && axis == null && toward == null && center == null && range == null && divisions == null && box == null && offsets == null && enabled == null)
+                throw new ArgumentException("Give a setting to change: amount, axis, toward, center, range, divisions, box, offsets or enabled.");
+            if (amount != null && Keying.IsAnimated(d.Amount)) throw new ArgumentException($"{DeformerChannel(number - 1)} is keyed: change its keys with set_key.");
+            SetDeformer(d, axis, toward, center, range, divisions, box, offsets, amount);
+            if (enabled is { } e) d.Enabled = e;
+            l.Scene.Notify();
+            return ItemNow(c, l, obj, l.Frame);
+        }, cancel);
+
+    [McpServerTool(Name = "remove_deformer", Destructive = true)]
+    [Description("Takes a deformer off an object, with its amount keys. Those after it move up a number (deformer 3 becomes 2, and so do their channels' names).")]
+    public Task<string> RemoveDeformer(
+        [Description("The scene object, by name or #index.")] string @object,
+        [Description("Which deformer, numbered from 1 as get_scene lists them.")] int number,
+        CancellationToken cancel = default) =>
+        DoScene("removed a deformer", (c, l) =>
+        {
+            var obj = SceneObject(l.Scene, @object);
+            obj.RemoveDeformer(Deformer(obj, number));
+            var result = ItemNow(c, l, obj, l.Frame);
+            result["removed"] = number;
+            return result;
+        }, cancel);
+
+    /// <summary>Checks and sets a deformer's settings (the ones given), all or none.</summary>
+    private static void SetDeformer(Deformer d, string? axis, string? toward, double[]? center, double[]? range, int[]? divisions, double[]? box, double[][]? offsets, double? amount)
+    {
+        var trial = d.Clone();
+        if (axis != null)
+        {
+            trial.Axis = Json.Choice<Axis>(axis, "axis");
+            if (toward == null && trial.Toward == trial.Axis) trial.Toward = trial.Axis == Axis.X ? Axis.Z : Axis.X;
+        }
+        if (toward != null) trial.Toward = Json.Choice<Axis>(toward, "toward");
+        if (center != null) trial.Center = Vector(center, "center");
+        if (range != null)
+        {
+            if (range is not { Length: 2 } || !range.All(double.IsFinite)) throw new ArgumentException("range is [low, high], metres from center along axis.");
+            (trial.Low, trial.High) = (range[0], range[1]);
+        }
+        if (divisions != null)
+        {
+            if (divisions is not { Length: 3 }) throw new ArgumentException("divisions is [nx, ny, nz], 2 to 8 each.");
+            trial.Divisions = (divisions[0], divisions[1], divisions[2]);
+            trial.Offsets = [];
+        }
+        if (box != null)
+        {
+            if (box is not { Length: 6 } || !box.All(double.IsFinite)) throw new ArgumentException("box is [min x, min y, min z, max x, max y, max z], metres.");
+            (trial.LatticeMin, trial.LatticeMax) = (new Vec3(box[0], box[1], box[2]), new Vec3(box[3], box[4], box[5]));
+        }
+        if (amount is { } a && !double.IsFinite(a)) throw new ArgumentException("amount must be a number.");
+        if (trial.Problem() is { } problem) throw new ArgumentException(problem);
+        if (offsets != null)
+        {
+            if (trial.Kind != DeformerKind.Lattice) throw new ArgumentException("offsets are a lattice's: this deformer is a " + trial.Kind.ToString().ToLowerInvariant() + ".");
+            var all = new Vec3[trial.ControlPoints];
+            Array.Copy(trial.Offsets, all, Math.Min(trial.Offsets.Length, all.Length));
+            foreach (var o in offsets)
+            {
+                if (o is not { Length: 6 } || !o.All(double.IsFinite)) throw new ArgumentException("Each offset is [i, j, k, dx, dy, dz]: control point indices from 0, and metres.");
+                int i = (int)o[0], j = (int)o[1], k = (int)o[2];
+                if (i != o[0] || j != o[1] || k != o[2] || i < 0 || j < 0 || k < 0 || i >= trial.Divisions.X || j >= trial.Divisions.Y || k >= trial.Divisions.Z)
+                    throw new ArgumentException($"Control point [{o[0]}, {o[1]}, {o[2]}] isn't in a {trial.Divisions.X} × {trial.Divisions.Y} × {trial.Divisions.Z} lattice: indices run from 0 to one less than each division.");
+                all[i + trial.Divisions.X * (j + trial.Divisions.Y * k)] = new Vec3(o[3], o[4], o[5]);
+            }
+            trial.Offsets = all;
+        }
+        (d.Axis, d.Toward, d.Center, d.Low, d.High) = (trial.Axis, trial.Toward, trial.Center, trial.Low, trial.High);
+        (d.Divisions, d.LatticeMin, d.LatticeMax, d.Offsets) = (trial.Divisions, trial.LatticeMin, trial.LatticeMax, trial.Offsets);
+        if (amount is { } am) d.Amount.SetConstant(am);
+    }
+
     // ───────────────────────────── skelegons ─────────────────────────────
 
     [McpServerTool(Name = "skelegons_to_bones", Destructive = true)]

@@ -15,7 +15,7 @@ public static class SceneChannels
     /// <summary>The nine motion channels' names, in the order of <see cref="Channel"/>.</summary>
     public static readonly string[] MotionNames = ["position.x", "position.y", "position.z", "heading", "pitch", "bank", "scale.x", "scale.y", "scale.z"];
 
-    public const string MorphPrefix = "morph.", DisplacementPrefix = "displacement.";
+    public const string MorphPrefix = "morph.", DisplacementPrefix = "displacement.", DeformerPrefix = "deformer.";
 
     /// <summary>An item's channels, each with its name and envelope.</summary>
     public static IEnumerable<(string Name, Envelope Envelope)> Of(SceneItem item)
@@ -32,6 +32,7 @@ public static class SceneChannels
             yield return (Dissolve, o.Dissolve);
             foreach (var m in o.Morphs) yield return (MorphChannel(m), m.Weight);
             for (int i = 0; i < o.Displacements.Count; i++) yield return (DisplacementChannel(i), o.Displacements[i].Amplitude);
+            for (int i = 0; i < o.Deformers.Count; i++) yield return (DeformerChannel(i), o.Deformers[i].Amount);
         }
         if (item.Path != null) yield return (PathPosition, item.PathPosition);
     }
@@ -54,6 +55,9 @@ public static class SceneChannels
 
     /// <summary>A morph's weight channel: "morph." and its name.</summary>
     public static string MorphChannel(MorphTarget m) => MorphPrefix + m.Name;
+
+    /// <summary>A deformer's amount channel, numbered from 1: "deformer.1.amount".</summary>
+    public static string DeformerChannel(int index) => string.Create(CultureInfo.InvariantCulture, $"{DeformerPrefix}{index + 1}.amount");
 
     /// <summary>A displacement's amplitude channel, numbered from 1: "displacement.1.amplitude".</summary>
     public static string DisplacementChannel(int index) => string.Create(CultureInfo.InvariantCulture, $"{DisplacementPrefix}{index + 1}.amplitude");

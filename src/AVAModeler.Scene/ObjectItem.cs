@@ -4,14 +4,16 @@ namespace AVAModeler.Scene;
 
 /// <summary>
 /// An object: a mesh from a Modeler document (one layer, or every non-empty layer merged), with optional bones,
-/// morph targets and displacements that deform it over time. Deformation happens in the object's own coordinates in
-/// this order: morphs, then bones, then displacements; the item's transform then places the result in the world.
+/// morph targets, displacements and deformers that deform it over time. Deformation happens in the object's own
+/// coordinates in this order: morphs, then bones, then displacements, then deformers (in their order); SubPatch layers
+/// are subdivided after that; the item's transform then places the result in the world.
 /// </summary>
 public sealed class ObjectItem : SceneItem
 {
     private readonly List<Bone> _bones = [];
     private readonly List<MorphTarget> _morphs = [];
     private readonly List<WaveDisplacement> _displacements = [];
+    private readonly List<Deformer> _deformers = [];
     private readonly Lock _lock = new();
     private Mesh? _base;
     private int _baseStamp;
@@ -126,6 +128,8 @@ public sealed class ObjectItem : SceneItem
     public IReadOnlyList<Bone> Bones => _bones;
     public IReadOnlyList<MorphTarget> Morphs => _morphs;
     public IReadOnlyList<WaveDisplacement> Displacements => _displacements;
+    /// <summary>Its live deformers (bend, twist, taper, shear, squash, lattice), applied in this order after the displacements.</summary>
+    public IReadOnlyList<Deformer> Deformers => _deformers;
 
     /// <summary>The document's surface table, which the mesh's polygons index.</summary>
     public IReadOnlyList<Surface> Surfaces => Document?.Surfaces ?? [];
@@ -134,6 +138,7 @@ public sealed class ObjectItem : SceneItem
     internal List<Bone> BoneList => _bones;
     internal List<MorphTarget> MorphList => _morphs;
     internal List<WaveDisplacement> DisplacementList => _displacements;
+    internal List<Deformer> DeformerList => _deformers;
 
     internal void AttachBone(Bone b) => _bones.Add(b);
     internal void DetachBone(Bone b) => _bones.Remove(b);
@@ -162,6 +167,19 @@ public sealed class ObjectItem : SceneItem
     public void RemoveDisplacement(WaveDisplacement displacement)
     {
         if (_displacements.Remove(displacement)) Scene?.Notify();
+    }
+
+    public Deformer AddDeformer(Deformer deformer)
+    {
+        Watch(deformer.Amount);
+        _deformers.Add(deformer);
+        Scene?.Notify();
+        return deformer;
+    }
+
+    public void RemoveDeformer(Deformer deformer)
+    {
+        if (_deformers.Remove(deformer)) Scene?.Notify();
     }
 
     private int GeometryStamp()
@@ -256,7 +274,7 @@ public sealed class ObjectItem : SceneItem
 
     private Mesh Deform(Mesh b, double frame)
     {
-        if (_morphs.Count == 0 && _displacements.Count == 0 && !_bones.Any(x => x.Active))
+        if (_morphs.Count == 0 && _displacements.Count == 0 && !_bones.Any(x => x.Active) && !_deformers.Any(x => x.Enabled))
             return new Mesh { Points = b.Points, Polygons = b.Polygons, UVMaps = b.UVMaps, PointMaps = b.PointMaps };
         var pts = b.Points.ToArray();
         foreach (var m in _morphs)
@@ -269,6 +287,7 @@ public sealed class ObjectItem : SceneItem
         BoneDeformer.Apply(this, pts, frame, b);
         foreach (var d in _displacements)
             for (int i = 0; i < pts.Length; i++) pts[i] = d.Displace(pts[i], frame);
+        foreach (var d in _deformers) d.Apply(pts, frame);
         return new Mesh { Points = [.. pts], Polygons = b.Polygons, UVMaps = b.UVMaps, PointMaps = b.PointMaps };
     }
 }

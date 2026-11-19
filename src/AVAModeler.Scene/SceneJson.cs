@@ -158,6 +158,8 @@ public static class SceneJson
                         Shape = x.Shape, Direction = x.Direction, Along = x.Along, Center = Arr(x.Center),
                         Wavelength = x.Wavelength, Speed = x.Speed, Phase = x.Phase, Amplitude = Env(x.Amplitude),
                     }).ToList();
+                    // Written only when there are some, so other scenes' files are as they were.
+                    d.Deformers = o.Deformers.Count == 0 ? null : o.Deformers.Select(DeformerDto.Of).ToList();
                     break;
                 case Bone b:
                     d.Owner = items.IndexOf(b.Owner);
@@ -395,6 +397,12 @@ public static class SceneJson
             };
             SetEnv(w.Amplitude, x.Amplitude);
             o.AddDisplacement(w);
+        }
+        foreach (var x in d.Deformers ?? [])
+        {
+            var def = x.ToDeformer();
+            SetEnv(def.Amount, x.Amount);
+            o.AddDeformer(def);
         }
         return o;
     }
@@ -862,6 +870,48 @@ public static class SceneJson
         public EnvelopeDto? Amplitude { get; set; }
     }
 
+    private sealed class DeformerDto
+    {
+        public DeformerKind Kind { get; set; }
+        public Axis Axis { get; set; }
+        public Axis Toward { get; set; }
+        public double[]? Center { get; set; }
+        public double Low { get; set; }
+        public double High { get; set; }
+        public bool? Enabled { get; set; }
+        public double[]? LatticeMin { get; set; }
+        public double[]? LatticeMax { get; set; }
+        public int[]? Divisions { get; set; }
+        public double[]? Offsets { get; set; }
+        public EnvelopeDto? Amount { get; set; }
+
+        public static DeformerDto Of(Deformer d)
+        {
+            bool lattice = d.Kind == DeformerKind.Lattice;
+            return new DeformerDto
+            {
+                Kind = d.Kind, Axis = d.Axis, Toward = d.Toward, Center = Arr(d.Center), Low = d.Low, High = d.High,
+                Enabled = d.Enabled ? null : false,
+                LatticeMin = lattice ? Arr(d.LatticeMin) : null,
+                LatticeMax = lattice ? Arr(d.LatticeMax) : null,
+                Divisions = lattice ? [d.Divisions.X, d.Divisions.Y, d.Divisions.Z] : null,
+                Offsets = lattice ? d.Offsets.SelectMany(v => new[] { v.X, v.Y, v.Z }).ToArray() : null,
+                Amount = Env(d.Amount),
+            };
+        }
+
+        public Deformer ToDeformer()
+        {
+            var d = new Deformer(Kind) { Axis = Axis, Toward = Toward, Center = Vec(Center), Low = Low, High = High, Enabled = Enabled ?? true };
+            if (LatticeMin != null) d.LatticeMin = Vec(LatticeMin);
+            if (LatticeMax != null) d.LatticeMax = Vec(LatticeMax);
+            if (Divisions is { Length: 3 } n) d.Divisions = (Math.Clamp(n[0], 2, 8), Math.Clamp(n[1], 2, 8), Math.Clamp(n[2], 2, 8));
+            if (Offsets != null)
+                d.Offsets = [.. Enumerable.Range(0, Math.Min(Offsets.Length / 3, d.ControlPoints)).Select(i => new Vec3(Offsets[3 * i], Offsets[3 * i + 1], Offsets[3 * i + 2]))];
+            return d;
+        }
+    }
+
     /// <summary>A path an item follows: its points by item index, and its settings.</summary>
     private sealed class PathDto
     {
@@ -993,6 +1043,7 @@ public static class SceneJson
         public ScatterSettings? Scatter { get; set; }
         public List<MorphDto>? Morphs { get; set; }
         public List<DisplacementDto>? Displacements { get; set; }
+        public List<DeformerDto>? Deformers { get; set; }
 
         public int? Owner { get; set; }
         public double[]? RestPosition { get; set; }

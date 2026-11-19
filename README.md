@@ -642,6 +642,12 @@ Modeler and Layout shows the change at once.
   Weight map in its settings; Weight map only, the default, uses the map alone, otherwise the map times the distance
   falloff). Skelegons in the Modeler turn into bones, each following the weight map of its name if the object has
   one. Morph targets blend by envelope, and there is wave and ripple displacement.
+- **Deformers**: a stack of live deformers on an object, after its morphs, bones and displacements: Bend (a range along
+  an axis curls into an arc), Twist, Taper, Shear, Squash (squash and stretch, keeping the volume) and Lattice (a box
+  of control points, free-form deformation). Each works over a range along its axis from a centre, and its amount is
+  a keyable channel (`deformer.1.amount`), so the dope sheet and graph editor see it: a ball squashing as it lands, a
+  reed bending in the wind. They're kept in .avascene files (not .lws, which has no place for them, as for
+  displacements), in undo and in copies. Agents add them with `add_deformer`.
 - **Following a path** (the Path section of any item's settings but a bone's): the item travels along a smooth curve
   (a centripetal Catmull–Rom spline, which doesn't overshoot) through other items, usually nulls placed for it, in
   the item list's order, open or **closed** into a loop; move or animate a null and the path changes with it. Where
@@ -1059,6 +1065,7 @@ The Layout tools:
 | `add_light`, `add_camera`, `add_null`, `add_bone`, `remove_item` | Distant, point, spot and area lights with colour, intensity, cone, range and shadows (an area light's `area_size` in metres, a point or spot light's `radius` for soft shadows, and their `shadow_samples`); cameras by zoom factor or field of view; nulls; bones that bend an object. Lights and cameras can be aimed at a point as they're added. |
 | `set_item` | An item's name, parent, pivot, visibility, lock and its own settings (a light's, soft shadows included; a camera's, with depth of field (`focal_distance` in metres or `focus_on` an item, `f_stop` or `aperture` in metres, `dof_samples`) and motion blur (`shutter` as a fraction of a frame, `blur_samples`); an object's shadows and SubPatch levels (`subpatch_level`, `subpatch_render_level`); a bone's rest pose, strength and activity, with Rest Here and resetting its pose). |
 | `add_morph`, `set_morph`, `remove_morph` | Morph targets: a copy of a Modeler layer with the object's points in the same order (a mismatch is refused, saying why), blended by a weight channel, `morph.<name>`. |
+| `add_deformer`, `set_deformer`, `remove_deformer` | Live bend, twist, taper, shear, squash and lattice deformers over a range along an axis, after the displacements; the amount a channel, `deformer.<number>.amount`. Defaults fit the object. |
 | `add_displacement`, `set_displacement`, `remove_displacement` | Wave and ripple displacements: points move along an axis by a travelling sine wave, its amplitude a channel, `displacement.<number>.amplitude`. |
 | `set_weights`, `get_weights`, `auto_weights` | Weight maps: give points weights (mirrored with symmetry on), read them, or make one map per skelegon automatically. |
 | `sculpt` | A brush (draw, inflate, smooth, pinch, flatten, crease, grab, paint_weights, paint_colors) along a stroke of points on the surface, one undo step. |
@@ -1086,7 +1093,7 @@ away from you in the Front view; faces seen from the side where their points run
 as the app's buttons show them, and points and polygons counted from 0; colours as [r, g, b] from 0 to 255
 everywhere, for surfaces, lights and the scene alike. Scene channels are named as `get_keys` lists them:
 `position.x` to `scale.z`, `heading`, `pitch`, `bank`, a light's `intensity`, a camera's `zoom`, an object's morph
-weights (`morph.Smile`: 0 is the base shape, 1 the target) and displacement amplitudes (`displacement.1.amplitude`,
+weights (`morph.Smile`: 0 is the base shape, 1 the target), deformer amounts (`deformer.1.amount`) and displacement amplitudes (`displacement.1.amplitude`,
 numbered from 1). A morph target is made from a copy of the base layer (`copy_layer`) changed only by moving points, and
 the object goes in the scene by its own layer, so the target's layer isn't merged into it. A skelegon is a 2-point
 polygon on a surface whose name starts with "Skelegon": its first point is the bone's base, its second the tip, and

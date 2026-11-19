@@ -349,6 +349,7 @@ public sealed partial class Scene
                     w.Amplitude.CopyFrom(x.Amplitude);
                     obj.AddDisplacement(w);
                 }
+                foreach (var x in o.Deformers) obj.AddDeformer(x.Clone());
                 c = obj;
                 break;
             case LightItem l:

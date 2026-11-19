@@ -341,6 +341,12 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     close. Agents' `set_particles`, `set_hair`, `comb_hair` and `set_soft_body` are in `ParticleTools.cs`. In .lws they
     are plugin sections (`LwsEffects`: `AVA_Particles`, `AVA_Hair`, `AVA_SoftBody`, `AVA_RigidBody`), one line of SceneJson's JSON each
     (`SceneJson.OneLineOf`, `FromOneLine`).
+  - `Deformers.cs`: `Deformer` (`DeformerKind` Bend, Twist, Taper, Shear, Squash, Lattice; axis, toward, centre,
+    range, enabled, a lattice's box, divisions and `Offsets`; the `Amount` envelope, neutral at 0, or 1 for taper and
+    squash; `Problem`, `Clone`, `Apply`) on `ObjectItem.Deformers` (`AddDeformer`, `RemoveDeformer`), applied last in
+    `ObjectItem.Deform` (an object with none takes the old path). SceneJson's `DeformerDto` (written only when there
+    are some), `SceneSnapshot.DeformerState`, `Scene.Copy` (cloned), `SceneChannels`' `deformer.<n>.amount`, the
+    census's `DeformerJson`, and `add_deformer`/`set_deformer`/`remove_deformer` in `DeformTools.cs`. Not in .lws.
   - `Scatter.cs`: `ObjectItem.Scatter` (`ScatterSettings`: the object copied by name, count, seed, scale range, a random
     turn, along the surface or upright, one surface only, a density picture laid from above, sink) and `Scattering`
     (`Spots`: hashed spots by area; `Add`: the copies into the frame's mesh, the copy's surfaces after the object's,

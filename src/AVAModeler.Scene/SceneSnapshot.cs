@@ -155,6 +155,8 @@ public sealed class SceneSnapshot
             List<Bone> bones = [.. o.BoneList];
             List<MorphTarget> morphs = [.. o.MorphList];
             List<WaveDisplacement> displacements = [.. o.DisplacementList];
+            List<Deformer> deformers = [.. o.DeformerList];
+            var deformerStates = deformers.Select(DeformerState).ToArray();
             var morphStates = morphs.Select(Morph).ToArray();
             var dissolve = new EnvelopeState(o.Dissolve);
             var displacementStates = displacements.Select(Displacement).ToArray();
@@ -166,6 +168,8 @@ public sealed class SceneSnapshot
                 Replace(o.BoneList, bones);
                 Replace(o.MorphList, morphs);
                 Replace(o.DisplacementList, displacements);
+                Replace(o.DeformerList, deformers);
+                foreach (var d in deformerStates) d();
                 dissolve.Restore();
                 foreach (var m in morphStates) m();
                 foreach (var d in displacementStates) d();
@@ -180,6 +184,19 @@ public sealed class SceneSnapshot
             {
                 (m.Name, m.Target) = (name, target);
                 weight.Restore();
+            };
+        }
+
+        private static Action DeformerState(Deformer d)
+        {
+            var (kind, axis, toward, center, low, high, enabled) = (d.Kind, d.Axis, d.Toward, d.Center, d.Low, d.High, d.Enabled);
+            var (min, max, divisions, offsets) = (d.LatticeMin, d.LatticeMax, d.Divisions, d.Offsets);
+            var amount = new EnvelopeState(d.Amount);
+            return () =>
+            {
+                (d.Kind, d.Axis, d.Toward, d.Center, d.Low, d.High, d.Enabled) = (kind, axis, toward, center, low, high, enabled);
+                (d.LatticeMin, d.LatticeMax, d.Divisions, d.Offsets) = (min, max, divisions, offsets);
+                amount.Restore();
             };
         }
 

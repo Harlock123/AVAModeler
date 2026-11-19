@@ -60,7 +60,19 @@ internal static partial class SceneCensus
     /// <summary>A displacement's amplitude channel, numbered from 1: "displacement.1.amplitude".</summary>
     public static string DisplacementChannel(int index) => SceneChannels.DisplacementChannel(index);
 
-    public const string MorphPrefix = SceneChannels.MorphPrefix, DisplacementPrefix = SceneChannels.DisplacementPrefix;
+    public const string MorphPrefix = SceneChannels.MorphPrefix, DisplacementPrefix = SceneChannels.DisplacementPrefix, DeformerPrefix = SceneChannels.DeformerPrefix;
+
+    /// <summary>A deformer's amount channel, numbered from 1: "deformer.1.amount".</summary>
+    public static string DeformerChannel(int index) => SceneChannels.DeformerChannel(index);
+
+    /// <summary>An object's deformer by its number, from 1 as get_scene lists them.</summary>
+    public static Deformer Deformer(ObjectItem obj, int number)
+    {
+        if (obj.Deformers.Count == 0) throw new ArgumentException($"{obj.Name} has no deformers. Add one with add_deformer.");
+        if (number < 1 || number > obj.Deformers.Count)
+            throw new ArgumentException($"{obj.Name} has no deformer {number}: its deformers are numbered 1 to {obj.Deformers.Count}.");
+        return obj.Deformers[number - 1];
+    }
 
     /// <summary>The frames an item has keys at, on any of its channels (morph weights and displacements' amplitudes too).</summary>
     public static IReadOnlyList<double> KeyFrames(SceneItem item)
@@ -110,6 +122,16 @@ internal static partial class SceneCensus
             {
                 var m = Morph(obj, c[MorphPrefix.Length..]);
                 return (MorphChannel(m), m.Weight);
+            }
+            if (c.StartsWith(DeformerPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                string rest = c[DeformerPrefix.Length..];
+                int dot = rest.IndexOf('.');
+                string number = dot < 0 ? rest : rest[..dot];
+                if (dot >= 0 && !string.Equals(rest[(dot + 1)..], "amount", StringComparison.OrdinalIgnoreCase)
+                    || !int.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out int n))
+                    throw new ArgumentException($"A deformer's channel is \"deformer.<number>.amount\" (numbered from 1), e.g. \"deformer.1.amount\", not \"{channel}\".");
+                return (DeformerChannel(n - 1), Deformer(obj, n).Amount);
             }
             if (c.StartsWith(DisplacementPrefix, StringComparison.OrdinalIgnoreCase))
             {
@@ -328,6 +350,7 @@ internal static partial class SceneCensus
                 if (obj.Bones.Count > 0) o["bones"] = Strings(obj.Bones.Select(b => b.Name));
                 if (obj.Morphs.Count > 0) o["morphs"] = Morphs(obj, frame);
                 if (obj.Displacements.Count > 0) o["displacements"] = Displacements(obj, frame);
+                if (obj.Deformers.Count > 0) o["deformers"] = new JsonArray(obj.Deformers.Select((d, i) => (JsonNode)DeformerJson(d, i, frame)).ToArray());
                 if (obj.DissolveAt(frame) != 0 || !Keying.IsConstant(obj.Dissolve, s)) o["dissolve"] = Round(obj.DissolveAt(frame));
                 if (obj.Particles is { } particles) o["particles"] = Particles(particles);
                 if (obj.Hair is { } hair) o["hair"] = Hair(hair);
@@ -495,6 +518,35 @@ internal static partial class SceneCensus
             if (problems.FirstOrDefault(p => p.StartsWith($"Morph target \"{m.Name}\" ", StringComparison.Ordinal)) is { } problem) o["problem"] = problem;
             return (JsonNode)o;
         }).ToArray());
+    }
+
+    /// <summary>A deformer's settings and its amount at a frame.</summary>
+    public static JsonObject DeformerJson(Deformer d, int index, double frame)
+    {
+        var o = new JsonObject
+        {
+            ["number"] = index + 1,
+            ["channel"] = DeformerChannel(index),
+            ["kind"] = d.Kind.ToString().ToLowerInvariant(),
+            ["amount"] = Round(d.Amount.Evaluate(frame)),
+        };
+        if (d.Amount.Keys.Count > 1) o["keyed"] = true;
+        if (!d.Enabled) o["enabled"] = false;
+        if (d.Kind == AVAModeler.Scene.DeformerKind.Lattice)
+        {
+            o["box"] = new JsonObject { ["min"] = Vec(d.LatticeMin), ["max"] = Vec(d.LatticeMax) };
+            o["divisions"] = new JsonArray(d.Divisions.X, d.Divisions.Y, d.Divisions.Z);
+            o["moved_points"] = d.Offsets.Count(v => v != Vec3.Zero);
+        }
+        else
+        {
+            o["axis"] = d.Axis.ToString().ToLowerInvariant();
+            if (d.Kind is AVAModeler.Scene.DeformerKind.Bend or AVAModeler.Scene.DeformerKind.Shear) o["toward"] = d.Toward.ToString().ToLowerInvariant();
+            o["center"] = Vec(d.Center);
+            o["range"] = new JsonArray(Round(d.Low), Round(d.High));
+        }
+        if (d.Problem() is { } p) o["problem"] = p;
+        return o;
     }
 
     /// <summary>An object's displacements at a frame, numbered from 1, with every setting and the amplitude then.</summary>

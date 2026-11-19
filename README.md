@@ -49,12 +49,12 @@ phases 0 to 7 and Layout phases L1 to L6.
     selected points in order), each open or closed and straight or smooth through its points.
   - **Modify**: Move, Rotate, Size, Stretch, Shear, Bend, Twist, Taper, Magnet (its pull fading Smooth, Linear,
     Sharp or Dome), Drag, Jitter, Smooth, Smooth Curve (rounds curves through their points, or lays them out in
-    even pieces), Center and Quantize.
+    even pieces), Center, Quantize and Shrinkwrap.
   - **Multiply**: Extrude, Lathe, Mirror, Clone, Instance and Freeze Instances, Array (rectangular and radial), Path Extrude, Rail Extrude (along a
     background rail of lines, straight from point to point or smoothed into a curve), Loft (a skin across two or more
     curves in the order they stack: a sheet from open ones, a tube such as a vase or a hull from closed
     cross-sections, straight or smooth through them), Bevel, Smooth Shift, Inset, Chamfer and Bridge.
-  - **Polygon**: Flip, Triple, Merge Points, Align, Unify, Remove Degenerate, Select Problems, Subdivide (faceted or
+  - **Polygon**: Flip, Triple, Merge Points, Weld, Spin Edge, Dissolve Edges, Align, Unify, Remove Degenerate, Select Problems, Subdivide (faceted or
     smooth), Metaform, Surface, Make UVs, Merge Polygons, Split, Loop Cut, Knife, Reduce Polygons, Remesh, Quad Remesh, Unwrap UVs, SubPatch, Set Crease, Fill Hole, Spline Patch (a grid of quads across a closed loop of lines in 3
     or 4 sides, cornered where it turns most or at the points chosen, meeting every side exactly) and Remove; and
     Select Loop and Select Ring.
@@ -122,6 +122,15 @@ phases 0 to 7 and Layout phases L1 to L6.
   along it, the triangles are paired into quads along the field and split once into all quads, which are drawn
   along the field again. Closed stays closed, sharp edges and the selection's border stay put, and faces keep their
   surfaces. A good start for SubPatch modeling, sculpting or rigging.
+- **Shrinkwrap** (Modify tab): moves the selected points onto the background layers' surface, to the nearest place or
+  along their normals (either way), an offset out from it and a share of the way, keeping symmetric partners
+  mirrored. Draw a light cage over a sculpt in the background and wrap it on (retopology by hand), or fit armour over a
+  body.
+- **Clean-up** (Polygon tab): **Spin Edge** turns each selected edge two faces share one step round them (two triangles
+  swap their diagonal, two quads turn their shared edge), keeping their point counts, surfaces, winding and UVs.
+  **Dissolve Edges** removes selected edges, joining their faces, and the points left in a straight line that nothing
+  else uses. **Weld** merges points within a distance as Merge Points does, but with symmetry on it first puts the
+  points that near the mirror plane onto it, so a model built in halves joins cleanly down its middle.
 - **Measure** (Tools tab): drag a ruler between two places in a view; its ends snap to points nearby, and it's labelled
   with its length and X, Y and Z parts. Keep Ruler leaves it drawn; Clear Rulers takes them away. Mesh Info (W) has a
   Measure section for the selection: the distance between two chosen points, the angle at the middle of three (in the

@@ -1,4 +1,5 @@
 using AVAModeler.Core;
+using AVAModeler.Geometry;
 
 namespace AVAModeler.Tools;
 
@@ -448,5 +449,86 @@ public sealed class QuantizeTool : Tool
     {
         static double Q(double v, double s) => s > 0 ? Math.Round(v / s) * s : v;
         MapPoints(p => new Vec3(Q(p.X, Step.X), Q(p.Y, Step.Y), Q(p.Z, Step.Z)));
+    }
+}
+
+/// <summary>Where Shrinkwrap puts each point.</summary>
+public enum ShrinkwrapMode
+{
+    /// <summary>The nearest place on the background's surface.</summary>
+    Nearest,
+    /// <summary>Where a line along the point's normal (either way) meets the background's surface.</summary>
+    AlongNormal,
+}
+
+/// <summary>
+/// Shrinkwrap: moves the selected points (or all) onto the background layers' surface, to the nearest place or along
+/// their normals, Offset metres out from it and Strength of the way. With symmetry on, partners stay mirrored. For
+/// retopology by hand (draw a low cage over a sculpt and wrap it on) and fitting clothes or armour over a body.
+/// </summary>
+public sealed class ShrinkwrapTool : Tool
+{
+    public override string Name => "Shrinkwrap";
+    public override string Tab => "Modify";
+    public override string Summary => "Moves the selected points (or all) in the foreground onto the background layers' surface: to the nearest place on it, or along each point's normal (either way) to where that line meets it. Offset keeps them that far out along the surface's normal (negative: inside); Strength 0 to 1 moves them that share of the way; Max distance (0: any) leaves farther points alone. Symmetry keeps partners mirrored. For retopology and fitting one shape over another.";
+    public override ToolKind Kind => ToolKind.Requester;
+
+    [Param("Mode", Description = "Nearest: the closest place on the background. Along normal: along each point's normal, either way.")] public ShrinkwrapMode Mode { get; set; } = ShrinkwrapMode.Nearest;
+    [Param("Offset", Distance = true, Step = 0.001, Description = "How far out from the surface, along its normal, in metres (negative: inside).")] public double Offset { get; set; }
+    [Param("Strength", Min = 0, Max = 1, Step = 0.05, Description = "The share of the way each point moves.")] public double Strength { get; set; } = 1;
+    [Param("Max distance", Distance = true, Min = 0, Description = "Points farther than this from the surface stay put (0: no limit).")] public double MaxDistance { get; set; }
+
+    /// <summary>How many points the last run moved.</summary>
+    public int Moved { get; private set; }
+
+    protected override void Apply()
+    {
+        var target = Doc.BackgroundMesh();
+        if (target.Polygons.All(p => p.Count < 3)) throw new InvalidOperationException("Shrinkwrap wraps onto the background layers' faces: put the shape to wrap onto in a background layer first.");
+        var bvh = new TriangleBvh(target);
+        var faceNormals = target.Polygons.Select(p => p.Count >= 3 ? target.Normal(p) : Vec3.Zero).ToArray();
+        int moved = 0;
+        var normals = new Dictionary<int, Vec3[]>();
+        Vec3 PointNormal(int layer, int i)
+        {
+            if (!normals.TryGetValue(layer, out var n))
+            {
+                var mesh = Doc.Layers[layer].Mesh;
+                n = new Vec3[mesh.Points.Count];
+                foreach (var p in mesh.Polygons)
+                    if (p.Count >= 3)
+                    {
+                        var fn = mesh.Normal(p) * mesh.Area(p);
+                        foreach (int q in p.Points) n[q] += fn;
+                    }
+                normals[layer] = n = [.. n.Select(v => v.Normalized())];
+            }
+            return n[i];
+        }
+        MapPoints((layer, i, p) =>
+        {
+            Vec3 hit;
+            int polygon;
+            if (Mode == ShrinkwrapMode.Nearest)
+            {
+                if (bvh.Nearest(p) is not { } near) return p;
+                (hit, polygon) = (near.Point, near.Polygon);
+            }
+            else
+            {
+                var n = PointNormal(layer, i);
+                if (n.LengthSquared == 0) return p;
+                var outward = bvh.Raycast(new Ray(p, n));
+                var inward = bvh.Raycast(new Ray(p, -n));
+                var best = outward is { } o && (inward is not { } w || o.Distance <= w.Distance) ? outward : inward;
+                if (best is not { } b) return p;
+                (hit, polygon) = (b.Point, b.Polygon);
+            }
+            if (MaxDistance > 0 && Vec3.Distance(p, hit) > MaxDistance) return p;
+            var to = hit + faceNormals[polygon] * Offset;
+            moved++;
+            return Vec3.Lerp(p, to, Strength);
+        });
+        Moved = moved;
     }
 }

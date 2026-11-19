@@ -256,6 +256,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     finds a picture's subject, `Compare` scores and draws the difference) and `compare_to_reference`
     (`Mcp/CompareTools.cs`: a flat view projects through `BackdropMapping.ImagePoint` when the picture is that view's
     backdrop, a matched photo through its `CameraMatch`, else the outline is fitted by height).
+  - `ShrinkwrapTool` (ModifyTools.cs: a `TriangleBvh` of `Document.BackgroundMesh`, nearest or a ray along the
+    point's normal either way, through `MapPoints` so symmetry holds) and, in PolygonTools.cs, `SpinEdgeTool`,
+    `DissolveEdgesTool` and `WeldTool` (`EdgeCleanup.Join`: two faces on an edge as one outline in the first's winding,
+    `CarryUVs`). Weld with symmetry snaps points within the distance onto the plane, then merges each side and the plane
+    on its own, finding the chosen points again by place after each merge.
   - `EdgeTools.cs` has Loop Cut, Bridge, Fill Hole, Inset and Chamfer; Select Loop and Select Ring are `SelectionOps`
     commands (in `PolygonTools.cs`, beside Select Connected), with `Commands.SelectEdges`, `SelectLoop` and
     `SelectRing` for macros (`seledges`, `selloop`, `selring`) and agents (`select_edges`, `select_loop`, `select_ring`).

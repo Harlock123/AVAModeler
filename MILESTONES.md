@@ -210,10 +210,15 @@ Modeler (`set_texture`, `set_surface`).
 
 ## Milestone M: shrinkwrap
 
+**Status:** done. `ShrinkwrapTool` (Modify tab); agents run it with `run_tool`.
+
 1. **Shrinkwrap** (Modify tab): moves the selected points onto the background layers' surface: to the nearest place,
    or along their normals, with an offset and a strength, keeping symmetry. Hand retopology and fitting clothes.
 
 ## Milestone N: cleanup tools
+
+**Status:** done. `SpinEdgeTool`, `DissolveEdgesTool` and `WeldTool` (Polygon tab); agents run them with `run_tool`
+after `select_edges` (Spin Edge, Dissolve Edges) or `set_symmetry` (Weld).
 
 1. **Spin Edge**: turns the edge two selected faces share to their other corners.
 2. **Dissolve Edges**: removes the selected edges, joining the faces either side, and the points left with two edges.

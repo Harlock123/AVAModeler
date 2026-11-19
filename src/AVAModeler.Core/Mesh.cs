@@ -86,15 +86,22 @@ public sealed partial class Mesh
 
     public void Touch() => Version++;
 
-    public Mesh Clone() => new() { Points = [.. Points], Polygons = Polygons.Select(p => p.Clone()).ToList(), UVMaps = UVMaps.Select(m => m.Clone()).ToList(), PointMaps = PointMaps.Select(m => m.Clone()).ToList() };
+    /// <summary>
+    /// Whether the mesh is a SubPatch cage (LightWave 6's subdivision surfaces): its faces are shown and rendered as
+    /// their Catmull–Clark surface. A setting of the mesh, so undo keeps it; Geometry's SubPatches works it out.
+    /// </summary>
+    public bool SubPatch;
 
-    /// <summary>Takes another mesh's points, polygons and UV maps as its own (the other mesh shouldn't be used after).</summary>
+    public Mesh Clone() => new() { Points = [.. Points], Polygons = Polygons.Select(p => p.Clone()).ToList(), UVMaps = UVMaps.Select(m => m.Clone()).ToList(), PointMaps = PointMaps.Select(m => m.Clone()).ToList(), SubPatch = SubPatch };
+
+    /// <summary>Takes another mesh's points, polygons, maps and SubPatch setting as its own (the other mesh shouldn't be used after).</summary>
     public void TakeFrom(Mesh other)
     {
         Points = other.Points;
         Polygons = other.Polygons;
         UVMaps = other.UVMaps;
         PointMaps = other.PointMaps;
+        SubPatch = other.SubPatch;
         Touch();
     }
 

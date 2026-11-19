@@ -334,6 +334,7 @@ public sealed partial class Scene
                 var obj = new ObjectItem(o.Name, doc, o.Layer)
                 {
                     SourcePath = o.SourcePath, CastShadows = o.CastShadows, ReceiveShadows = o.ReceiveShadows, BoneFalloffExponent = o.BoneFalloffExponent,
+                    SubPatchLevel = o.SubPatchLevel, SubPatchRenderLevel = o.SubPatchRenderLevel,
                 };
                 obj.Dissolve.CopyFrom(o.Dissolve);
                 (obj.Particles, obj.Hair, obj.SoftBody, obj.RigidBody, obj.Scatter) = (o.Particles, o.Hair, o.SoftBody, o.RigidBody, o.Scatter);
@@ -422,7 +423,13 @@ public sealed partial class Scene
     /// Works out the scene at a frame: every item's world transform and every object's deformed mesh, in object and
     /// world coordinates.
     /// </summary>
-    public SceneFrame Evaluate(double frame)
+    public SceneFrame Evaluate(double frame) => Evaluate(frame, false);
+
+    /// <summary>
+    /// The scene at a frame, as <see cref="Evaluate(double)"/>, for rendering (<paramref name="render"/>: SubPatch
+    /// objects subdivided at their render level) or for the views (at their display level).
+    /// </summary>
+    public SceneFrame Evaluate(double frame, bool render)
     {
         var world = new Dictionary<SceneItem, Mat4>();
         foreach (var item in _items) item.WorldMatrix(frame, world);
@@ -432,6 +439,7 @@ public sealed partial class Scene
         {
             var mesh = o.DeformedMesh(frame);
             if (!o.IsPlaceholder && o.SoftBody is { } soft) mesh = SoftBodies.At(this, o, soft, mesh, frame);
+            if (!o.IsPlaceholder && o.HasSubPatches) mesh = o.SubPatched(mesh, render ? o.SubPatchRenderLevel : o.SubPatchLevel);
             var grown = !o.IsPlaceholder && (o.Particles != null || o.Hair != null || o.Scatter != null) ? Grown(o, mesh, world[o], frame) : null;
             objects.Add(grown == null ? new ObjectFrame(o, world[o], mesh)
                 : new ObjectFrame(o, world[o], grown.Mesh, grown.Surfaces) { Soft = grown.Soft, ViewOnlySurface = grown.ViewOnly });

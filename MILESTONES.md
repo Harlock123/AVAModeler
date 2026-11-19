@@ -143,9 +143,87 @@ and `printable_part` measuring and slicing. AVALightWave moved to this engine an
 4. **AVALightWave.** Once this is done, move AVALightWave's submodule to it. Its `make_object` engine calls then reach
    the new tools, and its characters get weight-mapped bones.
 
+## Milestones H to P: the second review
+
+The user asked for these on 19 November 2026, from a list of what the engine lacked next. They are built in this
+order, one commit per stage, with tests and docs; AVALightWave's submodule moves to the result and both are released.
+Every change is additive: files written before read and render as they did, and every off path is unchanged.
+
+## Milestone H: UV unwrapping from seams
+
+**Status:** done. `Geometry/Unwrap.cs`, `UnwrapUVsTool` (Polygon tab); agents' `unwrap_uvs`.
+
+1. **Charts.** The faces are cut along seams: the selected edges (Edges mode) or the agent's point pairs, open and
+   non-manifold edges, edges between surfaces, and edges sharper than Seam angle. A piece that isn't a disc is split
+   across its longest side until it is.
+2. **Flattening.** Least-squares conformal maps, two points pinned at their true distance, scaled to true area, faces
+   wound as the views see them.
+3. **Packing.** Each chart turned to its smallest box and packed in rows into the 0-1 square, a margin apart, all at
+   one scale. The answer reports charts, stretch, coverage and flipped faces.
+
+## Milestone I: SubPatch surfaces with creases
+
+**Status:** done. `Mesh.SubPatch`, `Geometry/Subdivision.cs`'s `SubPatches` and semi-sharp Catmull–Clark, the SubPatch,
+Set Crease and Freeze SubPatch tools, LWOB's AVSP chunk, `ObjectItem.SubPatchLevel`/`SubPatchRenderLevel`; agents'
+`set_subpatch`, `set_creases`, `set_item` levels. SubPatch is per layer (not per polygon, as LightWave 6 has it), so
+every tool keeps it; creases are on points, so they follow every edit.
+
+1. **SubPatch polygons.** A face can be a SubPatch (LightWave 6's way): kept as the cage you edit, shown and rendered
+   as its Catmull–Clark surface. SubPatch (Polygon tab) turns the selection's faces on or off; Freeze SubPatch bakes them.
+2. **Creases.** Edges carry a sharpness (semi-sharp creases, DeRose et al.: whole levels sharp, the fraction blended);
+   Set Crease gives the selected edges one.
+3. **Levels.** Layout's objects subdivide at a display level in the views and a render level in the ray tracer.
+   Formats that can't keep SubPatches get the surface frozen.
+4. **Agents.** `set_subpatch`, `set_creases`; `set_item`'s subpatch levels.
+
+## Milestone J: deformers in Layout
+
+1. **A stack of live deformers** on scene objects: Bend, Twist, Taper, Shear, Squash and Lattice (a box of control
+   points, free-form deformation), applied after morphs, bones and displacements, in order.
+2. **Keyable.** Each has an amount envelope (`deformer.<n>.amount`), so they animate and the dope sheet sees them.
+3. **Kept** in .avascene, .lws (a plugin section), snapshots and copies. Agents: `add_deformer`, `set_deformer`,
+   `remove_deformer`.
+
+## Milestone K: quad remeshing along the shape
+
+1. **Quad Remesh** (Construct tab): an isotropic triangle remesh at a target edge length projected onto the original,
+   a smoothed cross field aligned with curvature and sharp edges, triangles paired into quads along the field, and one
+   Catmull–Clark-style split to all quads, projected back. Closed stays closed.
+2. Agents run it with `run_tool`; `check_mesh` confirms the result.
+
+## Milestone L: light maps
+
+1. **Bake Lighting** in Layout: an object's lighting (direct light with shadows, ambient, occlusion, and bounced light
+   when it's on) baked through its UV map into a picture, optionally times its colour, and hooked up as its
+   luminosity texture for a fast preview or a game export.
+2. Agents: `bake_lighting`.
+
+## Milestone M: shrinkwrap
+
+1. **Shrinkwrap** (Modify tab): moves the selected points onto the background layers' surface: to the nearest place,
+   or along their normals, with an offset and a strength, keeping symmetry. Hand retopology and fitting clothes.
+
+## Milestone N: cleanup tools
+
+1. **Spin Edge**: turns the edge two selected faces share to their other corners.
+2. **Dissolve Edges**: removes the selected edges, joining the faces either side, and the points left with two edges.
+3. **Weld** (Merge Points by distance, aware of symmetry): merges near points without merging across the mirror
+   plane, and snaps points near the plane onto it.
+
+## Milestone O: motion capture
+
+1. **BVH files** read (the hierarchy and its motion, any channel order).
+2. **Retargeting** onto an object's bones by name (with a name map for the rest): each bone takes the joint's turn
+   from its rest pose, the root its moves scaled by the two skeletons' heights; keyed per frame or every few.
+3. Layout's File › Load Motion Capture; agents' `load_bvh`.
+
+## Milestone P: bounced light
+
+1. **Global illumination**: bounced diffuse light by path tracing (bounces, samples per hit), off by default, so
+   every render without it is as it was. With the denoiser, a few samples go a long way.
+2. Scene Settings has it; agents' `set_scene` gets `gi_bounces` and `gi_samples`.
+
 ## What's left out
 
-- A true quad-flow retopology (field-guided quad remeshing). Remesh's voxel quads are even but follow the grid.
 - Exact-arithmetic Booleans. Stage D's welding and cleanup handle the near-coplanar cases, not every degenerate one.
-- A lighting bake (light maps).
 - Photo match from vanishing lines alone. It needs six known points.

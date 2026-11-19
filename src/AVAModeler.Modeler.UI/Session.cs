@@ -523,11 +523,14 @@ public sealed class ModelerSession
         SetStatus(MetaNurbs ? "MetaNURBS on: the cage's smooth surface is shown (Metaform bakes it)." : "MetaNURBS off.");
     }
 
-    /// <summary>A layer's smoothed surface for MetaNURBS, cached until the layer changes.</summary>
+    /// <summary>
+    /// A layer's smoothed surface, for MetaNURBS (every foreground layer while it's on) and SubPatch layers (always),
+    /// cached until the layer changes.
+    /// </summary>
     public Mesh? Smoothed(int layer)
     {
-        if (!MetaNurbs || Subdivide == null) return null;
         var mesh = Document.Layers[layer].Mesh;
+        if (!(MetaNurbs || mesh.SubPatch) || Subdivide == null) return null;
         if (mesh.Polygons.Count == 0) return null;
         if (_smoothCache.TryGetValue(layer, out var c) && c.Version == mesh.Version) return c.Smooth;
         var smooth = Subdivide(mesh, Math.Clamp(Preferences.SubdivisionLevel, 1, 4));

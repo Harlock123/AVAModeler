@@ -70,6 +70,9 @@ public static class LwsWriter
                     if (!(obj.Dissolve.IsConstant && obj.Dissolve.Evaluate(0) == 0)) Value("ObjectDissolve", obj.Dissolve);
                     L($"ShadowOptions {(obj.CastShadows ? 2 : 0) | (obj.ReceiveShadows ? 4 : 0)}");
                     L($"BoneFalloffType {(int)Math.Round(Math.Log2(Math.Max(1, obj.BoneFalloffExponent)))}");
+                    // LightWave 6's line, written only when not the defaults so older scenes' files are as they were.
+                    if (obj.SubPatchLevel != ObjectItem.DefaultSubPatchLevel || obj.SubPatchRenderLevel != ObjectItem.DefaultSubPatchRenderLevel)
+                        L($"SubPatchLevel {obj.SubPatchLevel} {obj.SubPatchRenderLevel}");
                     WriteEffects(obj);
                     foreach (var b in obj.Bones) WriteBone(b);
                 }

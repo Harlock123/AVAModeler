@@ -87,6 +87,17 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     closed loop in 3 or 4 sides; `SharpestCorners` finds the corners) and `Loft` (a skin across curves, ordered by
     where they stack, each turned and started to line up with the one before). The tools are `CurveTools.cs` in
     AVAModeler.Tools (Pen, Make Curve, Smooth Curve, Loft).
+  - SubPatches (`Subdivision.cs`): `Mesh.SubPatch` (a mesh setting, so undo and `Clone` keep it; LWOB's `AVSP` chunk,
+    written only when set, which turns replay off; .avascene's `MeshDto.SubPatch`) and `SubPatches` (`CreaseMap`, the
+    weight map creases live in, an edge as sharp as the lesser end; `Sharpness`, `Surface`, `Freeze`, `ExportLevel`).
+    `Subdivision.CatmullClark(mesh, levels, faces, sharpness)` is semi-sharp Catmull–Clark (DeRose): open and
+    non-manifold edges stay creases by the old rules, so without a crease map every result is as before. The views
+    show a SubPatch layer smoothed always (`ModelerSession.Smoothed`; `ViewScene.FromDocument` does it by itself when
+    given no smoothing, as render_view is); `ObjectFiles.FrozenSubPatches` freezes for every format but LWOB and for
+    printing. In Layout, `ObjectItem.SubPatchLevel` and `SubPatchRenderLevel` (SceneJson when not the defaults, .lws's
+    `SubPatchLevel display render`, snapshots, `Copy`) and `ObjectItem.SubPatched` (only the SubPatch layers' faces,
+    cached by frame mesh and level); `Scene.Evaluate(frame, render)` subdivides after deformation and soft bodies,
+    and the ray tracer and render passes ask for `render: true`. AVAModeler.Scene references Geometry for this.
   - `MeshCheck.cs` is the mesh check (Mesh Info, `check_mesh`, Lua's `checkmesh()`): `MeshCheck.Document` gives a
     `MeshReport` of `LayerCheck`s (counts, bounds, area, shells, holes, boundary, non-manifold and inconsistent edges,
     the faces Align would turn, cavities, degenerate and non-planar polygons, duplicate and unused points, volume and
@@ -98,6 +109,12 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     faces or holes), `Inset.cs` (`Insets.Apply`, individual or group, the group bevel) and `Chamfer.cs` (edge bevel,
     closing corners with `Holes.Fill`). New UVs come from `UVTransfer.Interpolant` (a face's UVs as a function of
     position) or from interpolating along edges, face by face so seams stay seams.
+  - `Unwrap.cs` is UV unwrapping (`Unwrap.Run`, `UnwrapOptions`, `UnwrapResult`): charts from the faces joined
+    across uncut edges (seams given, open and non-manifold edges, surfaces, sharp angles), corners grouped into flat
+    points across uncut edges (so a slit gives a point two), a chart that isn't a disc (Euler characteristic 1, one
+    boundary loop) split across its longest side, least-squares conformal maps by conjugate gradients on the normal
+    equations with two pins, mirrored so faces wind clockwise in UV (as the views and Make UVs have it), scaled to true
+    area, turned to the smallest box and shelf-packed. `UnwrapUVsTool` (UVTools.cs) and `unwrap_uvs` use it.
 - `src/AVAModeler.Slicing/`: 3D printing, from the object to G-code (Clipper2 for the 2D polygon work). No UI.
   - `Profiles.cs`: `PrinterProfile` (bed, height, nozzle, filament, flavour, start and end G-code with `Placeholders`)
     and `MaterialProfile` (temperatures, retraction, fan, density), immutable with `Checked()`, and the `Presets`.

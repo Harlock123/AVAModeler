@@ -1,3 +1,4 @@
+using AVAModeler.Geometry;
 using AVAModeler.Core;
 
 namespace AVAModeler.Rendering;
@@ -105,10 +106,11 @@ public sealed partial class ViewScene
     /// <summary>
     /// A document as the Modeler's views draw it: its foreground and background layers (layers that are off or empty
     /// are left out), with the foreground's selection in the current mode. <paramref name="smoothed"/> gives a layer's
-    /// MetaNURBS surface, if any.
+    /// MetaNURBS surface, if any; without it, SubPatch layers show their surface at <see cref="SubPatches.ExportLevel"/>.
     /// </summary>
     public static ViewScene FromDocument(Document document, DisplayStyle style, bool backfaceTint = true, Func<int, Mesh?>? smoothed = null)
     {
+        smoothed ??= i => document.Layers[i].Mesh is { SubPatch: true } m ? SubPatches.Surface(m, SubPatches.ExportLevel) : null;
         var sel = document.Selection;
         var scene = new ViewScene
         {

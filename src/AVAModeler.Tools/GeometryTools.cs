@@ -87,6 +87,95 @@ public sealed class MetaformTool : Tool
     }
 }
 
+/// <summary>What the SubPatch tool does to the foreground layers.</summary>
+public enum SubPatchMode { Toggle, On, Off }
+
+/// <summary>
+/// SubPatch: makes the foreground layers SubPatch cages (LightWave 6's subdivision surfaces), or plain polygons again.
+/// A SubPatch layer is edited as it is and shown, rendered in Layout and exported as its smooth Catmull–Clark surface,
+/// creased where Set Crease says.
+/// </summary>
+public sealed class SubPatchTool : Tool
+{
+    public override string Name => "SubPatch";
+    public override string Tab => "Polygon";
+    public override string Summary => "Makes the foreground layers SubPatch cages (or plain polygons again): their faces are edited as they are but shown, rendered in Layout and exported (frozen) as the smooth Catmull-Clark surface, creased where Set Crease says. Freeze SubPatch bakes it.";
+    public override ToolKind Kind => ToolKind.Immediate;
+
+    [Param("Mode", Description = "Toggle (each layer the other way), On or Off.")] public SubPatchMode Mode { get; set; } = SubPatchMode.Toggle;
+
+    protected override void Apply()
+    {
+        var layers = Layers.Where(l => Doc.Layers[l].Mesh.Polygons.Count > 0).ToList();
+        if (layers.Count == 0) throw new InvalidOperationException("SubPatch needs polygons in the foreground.");
+        foreach (int l in layers)
+        {
+            var mesh = Doc.Layers[l].Mesh;
+            mesh.SubPatch = Mode switch { SubPatchMode.On => true, SubPatchMode.Off => false, _ => !mesh.SubPatch };
+            mesh.Touch();
+        }
+    }
+}
+
+/// <summary>
+/// Set Crease: how sharp the selected edges are in a SubPatch surface, 0 (smooth) to 1 (a hard crease); between, the
+/// edge is rounded off a little. Creases live on points (the "SubPatch Crease" weight map): an edge is as sharp as the
+/// lesser of its ends, so they follow every edit.
+/// </summary>
+public sealed class SetCreaseTool : Tool
+{
+    public override string Name => "Set Crease";
+    public override string Tab => "Polygon";
+    public override string Summary => "Makes the selected edges (in Points mode, the edges between selected points) creases in a SubPatch surface: 0 smooth, 1 a hard crease, between it is rounded off. Stored on the points (the SubPatch Crease weight map), so an edge is as sharp as the lesser of its two ends.";
+    public override ToolKind Kind => ToolKind.Requester;
+
+    [Param("Crease", Min = 0, Max = 1, Step = 0.05, Description = "0 smooth, 1 a hard crease; 0.5 stays sharp two rounds, then rounds off.")] public double Crease { get; set; } = 1;
+
+    protected override void Apply()
+    {
+        if (!Doc.Selection.Any) throw new InvalidOperationException("Set Crease works on selected edges: select some in Edges mode (or their points) first.");
+        int count = 0;
+        foreach (int l in Layers)
+        {
+            var mesh = Doc.Layers[l].Mesh;
+            var edges = Doc.Selection.Mode == SelectionMode.Points
+                ? Doc.Selection.ActivePoints(l, mesh).Select(p => (p, p)).ToList()
+                : Doc.Selection.ActiveEdges(l, mesh).Select(e => (e.A, e.B)).ToList();
+            if (edges.Count == 0) continue;
+            var map = mesh.AddPointMap(SubPatches.CreaseMap, PointMapKind.Weight);
+            foreach (var (a, b) in edges)
+            {
+                map.SetWeight(a, Crease);
+                map.SetWeight(b, Crease);
+                count++;
+            }
+            if (Crease <= 0) foreach (var k in map.Values.Where(kv => kv.Value[0] <= 0).Select(kv => kv.Key).ToList()) map.Values.Remove(k);
+            if (map.Values.Count == 0) mesh.RemovePointMap(SubPatches.CreaseMap);
+            mesh.Touch();
+        }
+        if (count == 0) throw new InvalidOperationException("Set Crease works on selected edges: select some in Edges mode (or their points) first.");
+    }
+}
+
+/// <summary>Freeze SubPatch: bakes the foreground's SubPatch surfaces into polygons at a level.</summary>
+public sealed class FreezeSubPatchTool : Tool
+{
+    public override string Name => "Freeze SubPatch";
+    public override string Tab => "Polygon";
+    public override string Summary => "Bakes each foreground SubPatch layer's smooth surface into ordinary polygons at Level rounds of subdivision (creases kept) and turns SubPatch off. Clears the selection.";
+    public override ToolKind Kind => ToolKind.Requester;
+
+    [Param("Level", Min = 1, Max = 6, Step = 1, Description = "Rounds of subdivision: each turns a quad into four.")] public int Level { get; set; } = 2;
+
+    protected override void Apply()
+    {
+        var layers = Layers.Where(l => Doc.Layers[l].Mesh.SubPatch).ToList();
+        if (layers.Count == 0) throw new InvalidOperationException("No foreground layer is a SubPatch: make one with the SubPatch tool first.");
+        foreach (int l in layers) SubPatches.Freeze(Doc.Layers[l].Mesh, Level);
+        Doc.Selection.Clear(allModes: true);
+    }
+}
+
 /// <summary>Merge Polygons: joins connected faces that lie flat together and share a surface into one.</summary>
 public sealed class MergePolygonsTool : Tool
 {

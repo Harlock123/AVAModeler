@@ -351,6 +351,15 @@ public static class LwsReader
                 case "BoneActive" when _current is Bone b: b.Active = Int(rest, key) != 0; break;
                 case "BoneWeightMapName" when _current is Bone b: b.WeightMap = rest.Trim().Trim('"') is { Length: > 0 } wm ? wm : null; break;
                 case "BoneWeightMapOnly" when _current is Bone b: b.WeightMapOnly = Int(rest, key) != 0; break;
+                case "SubPatchLevel" when _lastObject != null:
+                {
+                    var parts = rest.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length >= 1 && int.TryParse(parts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int display))
+                        _lastObject.SubPatchLevel = Math.Clamp(display, 0, 6);
+                    if (parts.Length >= 2 && int.TryParse(parts[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int render))
+                        _lastObject.SubPatchRenderLevel = Math.Clamp(render, 0, 6);
+                    break;
+                }
                 case "BoneFalloffType" when _lastObject != null:
                     _lastObject.BoneFalloffExponent = Math.Pow(2, Int(rest, key));
                     break;

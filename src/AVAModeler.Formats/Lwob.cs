@@ -51,6 +51,8 @@ public static class Lwob
 
     /// <summary>AVA's own chunk: the layer's points' and polygons' ids for AI agents (see <see cref="Layer.Ids"/>).</summary>
     public const string IdsId = "AVID";
+    /// <summary>AVA's own chunk: the layer is a SubPatch cage (see <see cref="Mesh.SubPatch"/>); its body is a U2 flag.</summary>
+    public const string SubPatchId = "AVSP";
     /// <summary>A surface's vertex colour map, as LWO2's VCOL sub-chunk: intensity, envelope, map type and name.</summary>
     public const string VertexColorId = "VCOL";
 
@@ -151,6 +153,10 @@ public static class Lwob
                         list.Add(Mat4.FromRows(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], 0, 0, 0, 1));
                     }
                     doc.Layers[layer].Instances = new LayerInstances { Source = source, Places = list };
+                    break;
+                case SubPatchId:
+                    // AVA's own: the layer is a SubPatch cage (LightWave skips the chunk; it sees the cage's polygons).
+                    doc.Layers[layer].Mesh.SubPatch = body.U2() != 0;
                     break;
                 case IdsId:
                     // AVA's own: agents' ids for the layer's points and polygons (LightWave skips the chunk).
@@ -384,7 +390,7 @@ public static class Lwob
         foreach (var l in doc.Layers) CheckPolygons(doc, l.Mesh);
         var used = Enumerable.Range(0, doc.Layers.Count).Where(i => !doc.Layers[i].Mesh.IsEmpty || doc.Layers[i].Instances is { Places.Count: > 0 }).ToList();
         var info = InfoOf(doc);
-        bool replay = info != null && !Instancing.Any(doc) && !doc.Layers.Any(l => l.Ids?.Fits(l.Mesh) == true) && Fits(doc, info, used);
+        bool replay = info != null && !Instancing.Any(doc) && !doc.Layers.Any(l => l.Ids?.Fits(l.Mesh) == true || l.Mesh.SubPatch) && Fits(doc, info, used);
         string type = replay ? info!.FormType : used.Count > 1 ? "LWLO" : "LWOB";
         var w = new IffWriter();
         w.Chunk("FORM", () =>
@@ -439,6 +445,7 @@ public static class Lwob
                 VertexMaps.WriteVmads(w, mesh);
                 WriteInstances(w, doc.Layers[used.DefaultIfEmpty(0).First()]);
                 WriteIds(w, doc.Layers[used.DefaultIfEmpty(0).First()]);
+                WriteSubPatch(w, doc.Layers[used.DefaultIfEmpty(0).First()]);
             }
             else
                 for (int i = 0; i < used.Count; i++)
@@ -452,6 +459,7 @@ public static class Lwob
                     VertexMaps.WriteVmads(w, mesh);
                     WriteInstances(w, doc.Layers[used[i]]);
                     WriteIds(w, doc.Layers[used[i]]);
+                    WriteSubPatch(w, doc.Layers[used[i]]);
                 }
             foreach (var s in doc.Surfaces) WriteSurface(w, s);
             if (info != null) foreach (var c in info.Unknown) w.Chunk(c);
@@ -494,6 +502,13 @@ public static class Lwob
                 for (int r = 0; r < 3; r++)
                     for (int c = 0; c < 4; c++) w.F4((float)m[r, c]);
         });
+    }
+
+    /// <summary>The layer's SubPatch flag, only when it is one (so other objects' files are as they were).</summary>
+    private static void WriteSubPatch(IffWriter w, Layer layer)
+    {
+        if (!layer.Mesh.SubPatch) return;
+        w.Chunk(SubPatchId, () => w.U2(1));
     }
 
     /// <summary>The layer's agents' ids, when it has them and they fit its mesh (otherwise nothing: they'd be wrong).</summary>

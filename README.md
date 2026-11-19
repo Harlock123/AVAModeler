@@ -182,6 +182,15 @@ phases 0 to 7 and Layout phases L1 to L6.
   - Macros set them with `backdrop()` and AI agents with `set_backdrop`; agents see them in `render_view`.
 - **MetaNURBS**: Tab shows the foreground as the smooth (Catmull–Clark) surface of its cage, with the cage drawn in
   blue. Metaform bakes the smoothing into the mesh.
+- **SubPatch surfaces** (LightWave 6's way): the SubPatch tool (Polygon tab) makes the foreground layers cages that are
+  always shown, rendered in Layout and exported as their smooth surface, while you edit the few cage polygons.
+  - **Set Crease** gives the selected edges a sharpness: 0 smooth, 1 a hard crease, and in between a semi-sharp edge
+    that stays sharp a few rounds and then rounds off (DeRose's rules). Creases are kept on points, in the SubPatch
+    Crease weight map, so an edge is as sharp as the lesser of its ends and they follow every edit.
+  - **Freeze SubPatch** bakes the surface into polygons at a level. .lwo files keep SubPatch layers (an AVSP chunk
+    LightWave skips); OBJ, glTF, STL, 3MF and 3D printing get the surface frozen at two rounds.
+  - In Layout, a SubPatch object shows at its display level and renders at its render level (2 and 3 by default),
+    after its bones, morphs and displacements have moved the cage, as LightWave 6 does.
 - **Surfaces**: named polygon groups with colour, diffuse, specular, glossiness, luminosity, transparency,
   reflection, smoothing and smoothing angle. They are edited live in the surface editor, and smooth surfaces are
   smooth-shaded in the views.
@@ -219,6 +228,11 @@ phases 0 to 7 and Layout phases L1 to L6.
 - **UV maps**: named per-point UVs, with per-polygon-corner UVs where a seam needs them (as LWO2's VMAP and VMAD).
   - **Make UVs** (Polygon tab) lays out the selection by a planar, cylindrical, spherical, cubic or atlas projection,
     into a new or existing map, cutting seams where a wrap needs them and leaving the neighbours' UVs as they were.
+  - **Unwrap UVs** (Polygon tab) flattens the selection along seams: select the edges to cut in Edges mode (open
+    edges, edges between surfaces and edges sharper than Seam angle are cut too), and each chart is laid flat keeping
+    its angles (least-squares conformal maps) at its true size, then the charts are packed into the square a margin
+    apart. A piece that can't lie flat (a closed ball, a ring) is split across its longest side until it can, and
+    faces come out wound as the views see them, so paint in the UV view lands unmirrored.
   - **The UV view**: U (or View › UV View) turns the view under the mouse into the current UV map, laid out over its
     texture. Points and polygons are picked there as anywhere, and Move, Rotate, Size and the other tools that move
     points move UVs (one undo step each). View › Next UV Map chooses another map.
@@ -1008,6 +1022,8 @@ Things to know:
 | `set_selection_mode`, `select_points`, `select_polygons`, `select_box`, `select_all`, `select_none`, `select_invert`, `select_connected` | The selection. |
 | `set_symmetry` | Models with symmetry across X, Y or Z (or off): tools act on both sides and keep them matched. |
 | `select_edges`, `select_loop`, `select_ring` | Edges by their two points, then the edge loop or ring through them: what Loop Cut, Chamfer, Bridge and Fill Hole (all through `run_tool`) start from. |
+| `set_subpatch`, `set_creases` | SubPatch cages on or off or frozen at a level, and creases on edges (0 smooth to 1 hard): model a rough box of quads and let it round off, with sharp panel lines where wanted. |
+| `unwrap_uvs` | Unwraps faces into a UV map along seams (point pairs, or the selected edges) and sharp edges: charts flattened keeping their angles, packed into the square; says how many charts, the stretch, the coverage and any flipped faces. |
 | `set_layers` | The foreground and background layers. |
 | `copy_layer` | Copies a layer into an empty one, points in the same order: the start of a morph target. |
 | `compare_to_reference` | The model's outline against a reference picture (from a flat view, placed by its backdrop or fitted; or a matched photo's camera): overlap, what's missing or sticks out and where, and a picture of the difference. |
@@ -1041,7 +1057,7 @@ The Layout tools:
 | `export_scene` | The scene as glTF 2.0 (`.glb`, or `.gltf`): hierarchy, cameras, lights and keyed motion sampled per frame, for other programs. The scene and its file are left as they are. |
 | `add_object` | The Modeler's object, live (later modeling shows in the scene), one of its layers, or an object file. |
 | `add_light`, `add_camera`, `add_null`, `add_bone`, `remove_item` | Distant, point, spot and area lights with colour, intensity, cone, range and shadows (an area light's `area_size` in metres, a point or spot light's `radius` for soft shadows, and their `shadow_samples`); cameras by zoom factor or field of view; nulls; bones that bend an object. Lights and cameras can be aimed at a point as they're added. |
-| `set_item` | An item's name, parent, pivot, visibility, lock and its own settings (a light's, soft shadows included; a camera's, with depth of field (`focal_distance` in metres or `focus_on` an item, `f_stop` or `aperture` in metres, `dof_samples`) and motion blur (`shutter` as a fraction of a frame, `blur_samples`); an object's shadows; a bone's rest pose, strength and activity, with Rest Here and resetting its pose). |
+| `set_item` | An item's name, parent, pivot, visibility, lock and its own settings (a light's, soft shadows included; a camera's, with depth of field (`focal_distance` in metres or `focus_on` an item, `f_stop` or `aperture` in metres, `dof_samples`) and motion blur (`shutter` as a fraction of a frame, `blur_samples`); an object's shadows and SubPatch levels (`subpatch_level`, `subpatch_render_level`); a bone's rest pose, strength and activity, with Rest Here and resetting its pose). |
 | `add_morph`, `set_morph`, `remove_morph` | Morph targets: a copy of a Modeler layer with the object's points in the same order (a mismatch is refused, saying why), blended by a weight channel, `morph.<name>`. |
 | `add_displacement`, `set_displacement`, `remove_displacement` | Wave and ripple displacements: points move along an axis by a travelling sine wave, its amplitude a channel, `displacement.<number>.amplitude`. |
 | `set_weights`, `get_weights`, `auto_weights` | Weight maps: give points weights (mirrored with symmetry on), read them, or make one map per skelegon automatically. |

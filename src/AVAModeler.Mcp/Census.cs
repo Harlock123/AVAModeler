@@ -107,6 +107,11 @@ internal static class Census
             };
             if (layer.Name.Length > 0) o["name"] = layer.Name;
             if (!layer.Mesh.IsEmpty) o["bounds"] = BoxJson(layer.Mesh.Bounds());
+            if (layer.Mesh.SubPatch)
+            {
+                o["subpatch"] = true;
+                if (layer.Mesh.FindPointMap(AVAModeler.Geometry.SubPatches.CreaseMap) is { Values.Count: > 0 } creases) o["creased_points"] = creases.Values.Count;
+            }
             if (layer.Instances is { } inst)
                 o["instances"] = new JsonObject { ["of_layer"] = inst.Source + 1, ["copies"] = inst.Places.Count, ["shown"] = AVAModeler.Core.Instancing.Valid(doc, i) };
             layers.Add(o);

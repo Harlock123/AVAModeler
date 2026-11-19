@@ -145,6 +145,9 @@ public static class SceneJson
                     d.CastShadows = o.CastShadows;
                     d.ReceiveShadows = o.ReceiveShadows;
                     d.BoneFalloffExponent = o.BoneFalloffExponent;
+                    // Written only when not the defaults, so other scenes' files are as they were.
+                    d.SubPatchLevel = o.SubPatchLevel == ObjectItem.DefaultSubPatchLevel ? null : o.SubPatchLevel;
+                    d.SubPatchRenderLevel = o.SubPatchRenderLevel == ObjectItem.DefaultSubPatchRenderLevel ? null : o.SubPatchRenderLevel;
                     // Written only when it isn't the default (solid throughout), so other scenes' files are as they were.
                     d.Dissolve = o.Dissolve.Keys.Count == 1 && o.Dissolve.Keys[0].Value == 0 && o.Dissolve.PreBehavior == EndBehavior.Constant && o.Dissolve.PostBehavior == EndBehavior.Constant
                         ? null : Env(o.Dissolve);
@@ -372,6 +375,8 @@ public static class SceneJson
             CastShadows = d.CastShadows ?? true,
             ReceiveShadows = d.ReceiveShadows ?? true,
             BoneFalloffExponent = d.BoneFalloffExponent ?? 4,
+            SubPatchLevel = Math.Clamp(d.SubPatchLevel ?? ObjectItem.DefaultSubPatchLevel, 0, 6),
+            SubPatchRenderLevel = Math.Clamp(d.SubPatchRenderLevel ?? ObjectItem.DefaultSubPatchRenderLevel, 0, 6),
         };
         SetEnv(o.Dissolve, d.Dissolve);
         (o.Particles, o.Hair, o.SoftBody, o.RigidBody, o.Scatter) = (d.Particles?.Checked(), d.Hair?.Checked(), d.SoftBody?.Checked(), d.RigidBody?.Checked(), d.Scatter?.Checked());
@@ -640,9 +645,12 @@ public static class SceneJson
         public List<PolygonDto> Polygons { get; set; } = [];
         public List<UVMapDto>? UVMaps { get; set; }
         public List<PointMapDto>? PointMaps { get; set; }
+        /// <summary>A SubPatch cage (written only when it is one).</summary>
+        public bool? SubPatch { get; set; }
 
         public static MeshDto Of(Mesh m) => new()
         {
+            SubPatch = m.SubPatch ? true : null,
             Points = m.Points.SelectMany(p => new[] { p.X, p.Y, p.Z }).ToArray(),
             Polygons = m.Polygons.Select(PolygonDto.Of).ToList(),
             UVMaps = m.UVMaps.Count == 0 ? null : m.UVMaps.Select(u => new UVMapDto { Name = u.Name, Points = Flat(u.Points) }).ToList(),
@@ -651,7 +659,7 @@ public static class SceneJson
 
         public Mesh ToMesh()
         {
-            var m = new Mesh();
+            var m = new Mesh { SubPatch = SubPatch == true };
             for (int i = 0; i + 2 < Points.Length; i += 3) m.Points.Add(new Vec3(Points[i], Points[i + 1], Points[i + 2]));
             m.Polygons.AddRange(Polygons.Select(p => p.ToPolygon()));
             foreach (var u in UVMaps ?? [])
@@ -975,6 +983,8 @@ public static class SceneJson
         public bool? CastShadows { get; set; }
         public bool? ReceiveShadows { get; set; }
         public double? BoneFalloffExponent { get; set; }
+        public int? SubPatchLevel { get; set; }
+        public int? SubPatchRenderLevel { get; set; }
         public EnvelopeDto? Dissolve { get; set; }
         public ParticleSettings? Particles { get; set; }
         public HairSettings? Hair { get; set; }

@@ -167,7 +167,7 @@ public static partial class RayTracer
         for (int k = 0; k < moments; k++)
         {
             double t = moving ? frame + blur.Shutter * ((k + 0.5) / moments - 0.5) : frame;
-            tracers[k] = new Tracer(scene, scene.Evaluate(t), t, settings, spread, environment);
+            tracers[k] = new Tracer(scene, scene.Evaluate(t, render: true), t, settings, spread, environment);
             toWorld[k] = camera.CameraToWorld(t);
             eyes[k] = toWorld[k].TransformPoint(Vec3.Zero);
         }

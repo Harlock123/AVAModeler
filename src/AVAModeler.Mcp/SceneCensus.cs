@@ -342,6 +342,7 @@ internal static partial class SceneCensus
                     };
                 if (!obj.CastShadows) o["cast_shadows"] = false;
                 if (!obj.ReceiveShadows) o["receive_shadows"] = false;
+                if (obj.HasSubPatches) o["subpatch_levels"] = new JsonObject { ["views"] = obj.SubPatchLevel, ["render"] = obj.SubPatchRenderLevel };
                 break;
             case Bone bone:
                 o["object"] = bone.Owner.Name;

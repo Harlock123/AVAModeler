@@ -24,13 +24,35 @@ public static class Subdivision
     }
 
     /// <summary>
+    /// A SubPatch surface: <paramref name="levels"/> rounds of Catmull–Clark on the faces given (or all), with the
+    /// mesh's creases (<see cref="SubPatches.Sharpness"/>) as semi-sharp edges (DeRose, Kass and Truong 1998): an edge
+    /// of sharpness s is subdivided as a crease for its first ⌊s⌋ rounds, then blended by the fraction left, then
+    /// smooth. Faces outside the set keep their shape and are stitched to the new edge points.
+    /// </summary>
+    public static Mesh CatmullClark(Mesh mesh, int levels, IEnumerable<int>? faces, IReadOnlyDictionary<Edge, double>? sharpness)
+    {
+        var m = mesh.Clone();
+        var only = faces?.ToHashSet();
+        var sharp = sharpness == null ? null : new Dictionary<Edge, double>(sharpness);
+        for (int i = 0; i < levels; i++)
+        {
+            int before = m.Polygons.Count;
+            sharp = CatmullClarkStep(m, only, sharp);
+            // The faces made from the chosen ones are the chosen ones next round: their first pieces keep their
+            // indices and the rest come after every face there was.
+            if (only != null) only = [.. only, .. Enumerable.Range(before, m.Polygons.Count - before)];
+        }
+        return m;
+    }
+
+    /// <summary>
     /// Metaform: one round of Catmull–Clark baked into the mesh, on the faces given (or all). Points shared with faces
     /// outside the selection stay where they are, so the rest of the mesh doesn't move; the new points on the
     /// selection's edge are put into the neighbouring faces too, so the mesh stays stitched. Each face's first quad
     /// takes its index; the rest are added at the end.
     /// </summary>
     public static void Metaform(Mesh mesh, IEnumerable<int>? polygons = null) =>
-        CatmullClarkStep(mesh, polygons?.ToHashSet());
+        CatmullClarkStep(mesh, polygons?.ToHashSet(), SubPatches.Sharpness(mesh));
 
     /// <summary>
     /// Faceted subdivide on the faces given (or all): each triangle becomes four (corners and middle), and each face of
@@ -107,10 +129,15 @@ public static class Subdivision
         }
     }
 
-    private static void CatmullClarkStep(Mesh mesh, HashSet<int>? only)
+    private static void CatmullClarkStep(Mesh mesh, HashSet<int>? only) => CatmullClarkStep(mesh, only, null);
+
+    /// <summary>One round, with edges' sharpness (null: none); returns the new edges' sharpness, a round less.</summary>
+    private static Dictionary<Edge, double>? CatmullClarkStep(Mesh mesh, HashSet<int>? only, Dictionary<Edge, double>? sharp)
     {
         var faces = Faces(mesh, only);
-        if (faces.Count == 0) return;
+        if (faces.Count == 0) return sharp;
+        if (sharp is { Count: 0 }) sharp = null;
+        double SharpOf(Edge e) => sharp != null && sharp.TryGetValue(e, out double v) ? v : 0;
         var selected = faces.ToHashSet();
         var points = mesh.Points;
 
@@ -151,9 +178,13 @@ public static class Subdivision
                 var e = Edge.Of(a, b);
                 if (edgePos.ContainsKey(e)) continue;
                 var mid = (points[a] + points[b]) / 2;
-                edgePos[e] = Smooth(e)
-                    ? (points[a] + points[b] + facePoint[edgeFaces[e][0]] + facePoint[edgeFaces[e][1]]) / 4
-                    : mid;
+                if (!Smooth(e)) edgePos[e] = mid;
+                else
+                {
+                    var round = (points[a] + points[b] + facePoint[edgeFaces[e][0]] + facePoint[edgeFaces[e][1]]) / 4;
+                    double sh = SharpOf(e);
+                    edgePos[e] = sh >= 1 ? mid : sh > 0 ? Vec3.Lerp(round, mid, sh) : round;
+                }
                 foreach (int p in new[] { a, b })
                 {
                     if (!incident.TryGetValue(p, out var l)) incident[p] = l = [];
@@ -168,15 +199,30 @@ public static class Subdivision
             if (pinned.Contains(p)) continue;
             var creases = edges.Where(e => !Smooth(e)).ToList();
             var P = points[p];
-            if (creases.Count == 0 && edges.Count >= 3)
+            Vec3? SmoothRule()
             {
+                if (edges.Count < 3) return null;
                 int n = edges.Count;
                 var F = touching[p].Aggregate(Vec3.Zero, (s, f) => s + facePoint[f]) / touching[p].Count;
                 var R = edges.Aggregate(Vec3.Zero, (s, e) => s + (points[e.A] + points[e.B]) / 2) / n;
-                newPos[p] = (F + 2 * R + (n - 3) * P) / n;
+                return (F + 2 * R + (n - 3) * P) / n;
             }
-            else if (creases.Count == 2)
-                newPos[p] = P * 0.75 + (points[creases[0].Other(p)] + points[creases[1].Other(p)]) * 0.125;
+            if (sharp == null || creases.Count > 0)
+            {
+                // Open and non-manifold edges are creases for ever: the rules as they always were.
+                if (creases.Count == 0 && SmoothRule() is { } sm) newPos[p] = sm;
+                else if (creases.Count == 2)
+                    newPos[p] = P * 0.75 + (points[creases[0].Other(p)] + points[creases[1].Other(p)]) * 0.125;
+                continue;
+            }
+            var sharpEdges = edges.Where(e => SharpOf(e) > 0).ToList();
+            var smooth = SmoothRule();
+            if (sharpEdges.Count < 2) { if (smooth is { } sm) newPos[p] = sm; continue; }
+            var hard = sharpEdges.Count == 2
+                ? P * 0.75 + (points[sharpEdges[0].Other(p)] + points[sharpEdges[1].Other(p)]) * 0.125
+                : P;
+            double amount = sharpEdges.Average(SharpOf);
+            newPos[p] = amount >= 1 || smooth == null ? hard : Vec3.Lerp(smooth.Value, hard, amount);
         }
 
         int before = mesh.Polygons.Count;
@@ -200,6 +246,18 @@ public static class Subdivision
         }
         InsertIntoNeighbours(mesh, selected, before, edgePoint);
         mesh.Touch();
+        if (sharp == null) return null;
+        // Each sharp edge's halves are a round less sharp; an infinitely sharp one stays so.
+        var child = new Dictionary<Edge, double>();
+        foreach (var (e, sh) in sharp)
+        {
+            if (!edgePoint.TryGetValue(e, out int m)) { if (sh > 0) child[e] = sh; continue; }
+            double left = sh >= SubPatches.Infinite ? sh : sh - 1;
+            if (left <= 0) continue;
+            child[Edge.Of(e.A, m)] = left;
+            child[Edge.Of(m, e.B)] = left;
+        }
+        return child;
     }
 
     /// <summary>The faces (3 or more points) among those given, or all of them.</summary>
@@ -295,5 +353,54 @@ public static class Subdivision
             }
             if (pts != null) poly.Points = pts;
         }
+    }
+}
+
+/// <summary>
+/// SubPatch surfaces: a mesh marked <see cref="Mesh.SubPatch"/> is a cage shown and rendered as its Catmull–Clark
+/// surface. Creases are a weight map (<see cref="CreaseMap"/>, 0 smooth to 1 sharp) on points: an edge is as sharp as
+/// the lesser of its two points, so crease a run of edges by giving their points a value. A value under 1 is that
+/// share of <see cref="SharpLevels"/> rounds sharp (rounded off after); 1 is sharp for ever.
+/// </summary>
+public static class SubPatches
+{
+    /// <summary>The weight map creases live in.</summary>
+    public const string CreaseMap = "SubPatch Crease";
+    /// <summary>Rounds a crease of 0.99 stays sharp for.</summary>
+    public const double SharpLevels = 4;
+    /// <summary>Sharpness that never wears off.</summary>
+    public const double Infinite = 1e9;
+    /// <summary>The level formats without SubPatches get the surface frozen at.</summary>
+    public const int ExportLevel = 2;
+
+    /// <summary>A crease value (0 to 1) as sharpness in rounds.</summary>
+    public static double ToSharpness(double crease) => crease >= 1 ? Infinite : crease <= 0 ? 0 : crease * SharpLevels;
+
+    /// <summary>Every creased edge's sharpness, from the crease map (null if it has none).</summary>
+    public static Dictionary<Edge, double>? Sharpness(Mesh mesh)
+    {
+        if (mesh.PointMaps.Find(m => m.Name == CreaseMap && !m.IsColor) is not { Values.Count: > 0 } map) return null;
+        var result = new Dictionary<Edge, double>();
+        foreach (var e in mesh.EdgeMap().Keys)
+            if (map.Values.TryGetValue(e.A, out var a) && map.Values.TryGetValue(e.B, out var b))
+            {
+                double s = ToSharpness(Math.Min(a[0], b[0]));
+                if (s > 0) result[e] = s;
+            }
+        return result.Count == 0 ? null : result;
+    }
+
+    /// <summary>The surface of a SubPatch mesh at a level (the mesh itself if it isn't one, or the level is 0).</summary>
+    public static Mesh Surface(Mesh mesh, int levels) =>
+        !mesh.SubPatch || levels <= 0 || mesh.Polygons.Count == 0 ? mesh : Subdivision.CatmullClark(mesh, Math.Min(levels, 6), null, Sharpness(mesh));
+
+    /// <summary>Bakes a SubPatch mesh's surface into it at a level and turns SubPatch off (nothing if it isn't one).</summary>
+    public static void Freeze(Mesh mesh, int levels)
+    {
+        if (!mesh.SubPatch) return;
+        var surface = Subdivision.CatmullClark(mesh, Math.Clamp(levels, 1, 6), null, Sharpness(mesh));
+        surface.SubPatch = false;
+        mesh.TakeFrom(surface);
+        mesh.SubPatch = false;
     }
 }

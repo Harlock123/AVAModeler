@@ -1,5 +1,6 @@
 using System.Text;
 using AVAModeler.Core;
+using AVAModeler.Geometry;
 
 namespace AVAModeler.Formats;
 
@@ -135,10 +136,28 @@ public static class ObjectFiles
         return changed;
     }
 
+    /// <summary>
+    /// The document with its SubPatch layers baked into polygons at <see cref="SubPatches.ExportLevel"/>, for the formats
+    /// that have no SubPatches (all but LightWave's): a copy, or the document itself if it has none.
+    /// </summary>
+    public static Document FrozenSubPatches(Document doc)
+    {
+        if (!doc.Layers.Any(l => l.Mesh.SubPatch)) return doc;
+        var copy = doc.Copy();
+        foreach (var l in copy.Layers)
+            if (l.Mesh.SubPatch)
+            {
+                var mesh = l.Mesh.Clone();
+                SubPatches.Freeze(mesh, SubPatches.ExportLevel);
+                l.Mesh = mesh;
+            }
+        return copy;
+    }
+
     private static void Write(Document doc, string path, SaveOptions options)
     {
         // Only LightWave files keep instances as instances; every other format gets them as real geometry.
-        if (Path.GetExtension(path).ToLowerInvariant() is not (".lwo" or ".lw")) doc = Instancing.Frozen(doc);
+        if (Path.GetExtension(path).ToLowerInvariant() is not (".lwo" or ".lw")) doc = FrozenSubPatches(Instancing.Frozen(doc));
         switch (Path.GetExtension(path).ToLowerInvariant())
         {
             case ".lwo" or ".lw":

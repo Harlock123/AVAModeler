@@ -82,6 +82,47 @@ public sealed class ObjectItem : SceneItem
 
     public bool IsPlaceholder => Document == null;
 
+    /// <summary>Rounds of subdivision a SubPatch object shows with in the views (LightWave's Display SubPatch Level).</summary>
+    public int SubPatchLevel { get; set; } = DefaultSubPatchLevel;
+
+    /// <summary>Rounds of subdivision a SubPatch object renders with (LightWave's Render SubPatch Level).</summary>
+    public int SubPatchRenderLevel { get; set; } = DefaultSubPatchRenderLevel;
+
+    public const int DefaultSubPatchLevel = 2, DefaultSubPatchRenderLevel = 3;
+
+    /// <summary>Whether any of the object's layers is a SubPatch cage, so its frames are subdivided.</summary>
+    public bool HasSubPatches
+    {
+        get
+        {
+            lock (_lock) return CachedBase(GeometryStamp()) is not null && _subFaces != null;
+        }
+    }
+
+    private HashSet<int>? _subFaces;
+    private Dictionary<Edge, double>? _subSharpness;
+    private readonly Dictionary<(Mesh, int), Mesh> _subdivided = [];
+
+    /// <summary>
+    /// A deformed frame of the object (as <see cref="DeformedMesh"/> gives it) with its SubPatch faces subdivided
+    /// <paramref name="levels"/> rounds, creases kept; the frame itself when there are none. Kept for the last few frames.
+    /// </summary>
+    public Mesh SubPatched(Mesh deformed, int levels)
+    {
+        lock (_lock)
+        {
+            CachedBase(GeometryStamp());
+            if (_subFaces == null || levels <= 0) return deformed;
+            if (_subdivided.TryGetValue((deformed, levels), out var done)) return done;
+            var cage = new Mesh { Points = deformed.Points, Polygons = deformed.Polygons, UVMaps = deformed.UVMaps, PointMaps = deformed.PointMaps };
+            bool all = _subFaces.Count == cage.Polygons.Count;
+            var result = Geometry.Subdivision.CatmullClark(cage, Math.Clamp(levels, 1, 6), all ? null : _subFaces, _subSharpness);
+            if (_subdivided.Count >= 8) _subdivided.Clear();
+            _subdivided[(deformed, levels)] = result;
+            return result;
+        }
+    }
+
     public IReadOnlyList<Bone> Bones => _bones;
     public IReadOnlyList<MorphTarget> Morphs => _morphs;
     public IReadOnlyList<WaveDisplacement> Displacements => _displacements;
@@ -155,18 +196,29 @@ public sealed class ObjectItem : SceneItem
     {
         if (_base != null && _baseStamp == stamp) return _base;
         var m = new Mesh();
+        HashSet<int>? sub = null;
+        void Add(int k)
+        {
+            int first = m.Polygons.Count;
+            m.Append(Instancing.WithInstances(Document!, k));
+            if (Document!.Layers[k].Mesh.SubPatch)
+                (sub ??= []).UnionWith(Enumerable.Range(first, m.Polygons.Count - first).Where(p => m.Polygons[p].Count >= 3));
+        }
         if (Document != null)
         {
             if (Layer is int i)
             {
-                if (i >= 0 && i < Document.Layers.Count) m.Append(Instancing.WithInstances(Document, i));
+                if (i >= 0 && i < Document.Layers.Count) Add(i);
             }
             else
                 for (int k = 0; k < Document.Layers.Count; k++)
-                    if (!Document.Layers[k].Mesh.IsEmpty || Instancing.Valid(Document, k)) m.Append(Instancing.WithInstances(Document, k));
+                    if (!Document.Layers[k].Mesh.IsEmpty || Instancing.Valid(Document, k)) Add(k);
         }
         _base = m;
         _baseStamp = stamp;
+        _subFaces = sub is { Count: > 0 } ? sub : null;
+        _subSharpness = _subFaces == null ? null : Geometry.SubPatches.Sharpness(m);
+        _subdivided.Clear();
         return m;
     }
 

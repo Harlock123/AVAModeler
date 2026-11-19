@@ -690,6 +690,110 @@ public sealed partial class ModelerTools(IModelerHost host)
             return result;
         }, cancel);
 
+    [McpServerTool(Name = "unwrap_uvs", Destructive = true)]
+    [Description("Unwraps faces into a UV map (made if new) along seams, for textures that follow a character, a car or anything a projection can't wrap without stretching. The faces are cut into charts along seams (the edges given, open edges, edges between surfaces unless surface_seams is false, edges whose faces meet more sharply than seam_angle degrees), each chart is flattened keeping its angles (least-squares conformal maps) at its true size, and the charts are packed into the 0-1 square margin apart. A chart that still couldn't lie flat (a closed or ring-shaped piece) is split across its longest side, so put seams where a tailor would: down the inside of a sleeve, round a cuff, along a hidden edge. Works on the selected polygons (all of the foreground's if none, or if seams are given). Makes the map the current one. One undo step. The answer gives the charts, stretch (1 is angle-perfect; under 1.1 is good) and coverage (the share of the square used), and the faces left flipped (should be 0).")]
+    public Task<string> UnwrapUVs(
+        [Description("The UV map's name, e.g. \"UV\".")] string map = "UV",
+        [Description("Seam edges as pairs of point indices in the current layer, e.g. [[0, 1], [1, 5]]. They are selected (Edges mode) and left selected so the views show them. Leave out to use the edges already selected in Edges mode, or none.")] int[][]? seams = null,
+        [Description("Cut edges whose faces meet at more than this many degrees (default 66; 0 cuts none by angle, so only seams, open edges and surfaces cut).")] double seam_angle = 66,
+        [Description("Cut where one surface meets another (default true).")] bool surface_seams = true,
+        [Description("The gap round each chart, as a share of the square (default 0.01: a few pixels at 1024).")] double margin = 0.01,
+        [Description("Turn each chart to its smallest box before packing (default true).")] bool rotate = true,
+        CancellationToken cancel = default) =>
+        Do($"unwrapped UVs into {map}", c =>
+        {
+            if (seam_angle is < 0 or > 180) throw new ArgumentException("seam_angle is in degrees, 0 to 180.");
+            if (margin is < 0 or > 0.2) throw new ArgumentException("margin is a share of the square, 0 to 0.2.");
+            if (seams != null)
+            {
+                for (int i = 0; i < seams.Length; i++)
+                    if (seams[i] is not { Length: 2 }) throw new ArgumentException($"Seam {i} needs two point indices [a, b].");
+                var mesh = c.Document.Current.Mesh;
+                Census.CheckIndices(seams.SelectMany(e => e).ToArray(), mesh.Points.Count, "point");
+                var edgeMap = mesh.EdgeMap();
+                foreach (var e in seams)
+                    if (!edgeMap.ContainsKey(Edge.Of(e[0], e[1])))
+                        throw new ArgumentException($"Points {e[0]} and {e[1]} aren't joined by an edge in the current layer, so they can't be a seam.");
+                c.SelectMode(SelectionMode.Edges);
+                c.SelectNone();
+                if (seams.Length > 0) c.SelectEdges(seams.Select(e => (e[0], e[1])));
+            }
+            var before = Census.Of(c.Document);
+            var tool = (UnwrapUVsTool)c.Run("Unwrap UVs", new Dictionary<string, object?>
+            {
+                ["MapName"] = map,
+                ["SeamAngle"] = seam_angle,
+                ["SurfaceSeams"] = surface_seams,
+                ["Margin"] = margin,
+                ["Rotate"] = rotate,
+            });
+            var result = Census.Changes(c.Document, before, "Unwrap UVs");
+            result["layers"] = new JsonArray(tool.Results.Select(r => (JsonNode)new JsonObject
+            {
+                ["layer"] = r.Layer + 1,
+                ["charts"] = r.Result.Charts,
+                ["split_to_flatten"] = r.Result.CutCharts,
+                ["stretch"] = Math.Round(r.Result.Stretch, 3),
+                ["coverage"] = Math.Round(r.Result.Coverage, 3),
+                ["flipped_faces"] = r.Result.Flipped,
+            }).ToArray());
+            result["current_uv_map"] = c.Document.ActiveUVMap;
+            return result;
+        }, cancel);
+
+    [McpServerTool(Name = "set_subpatch", Destructive = true)]
+    [Description("Makes the foreground layers SubPatch cages (LightWave 6's subdivision surfaces), plain polygons again, or bakes them. A SubPatch layer is edited as its few cage polygons, but render_view, render, Layout and every export but .lwo show it as the smooth Catmull-Clark surface through them, creased where set_creases says: model a car body or a character's head as a rough box of quads and let it round off. Keep the cage mostly quads; triangles and n-gons work but pucker. mode on, off, toggle, or freeze (bake the surface into ordinary polygons at freeze_level rounds and turn SubPatch off). One undo step. .lwo files keep it (an AVSP chunk; LightWave itself sees the cage).")]
+    public Task<string> SetSubPatch(
+        [Description("on (default), off, toggle, or freeze.")] string mode = "on",
+        [Description("freeze: rounds of subdivision to bake, 1 to 6 (default 2; each turns a quad into four).")] int freeze_level = 2,
+        CancellationToken cancel = default) =>
+        Do($"SubPatch {mode}", c =>
+        {
+            var before = Census.Of(c.Document);
+            switch (mode.Trim().ToLowerInvariant())
+            {
+                case "on" or "off" or "toggle":
+                    c.Run("SubPatch", new Dictionary<string, object?> { ["Mode"] = mode.Trim().ToLowerInvariant() switch { "on" => "On", "off" => "Off", _ => "Toggle" } });
+                    break;
+                case "freeze":
+                    if (freeze_level is < 1 or > 6) throw new ArgumentException("freeze_level is 1 to 6 rounds.");
+                    c.Run("Freeze SubPatch", new Dictionary<string, object?> { ["Level"] = freeze_level });
+                    break;
+                default: throw new ArgumentException("mode must be on, off, toggle or freeze.");
+            }
+            var result = Census.Changes(c.Document, before, "SubPatch");
+            result["subpatch_layers"] = new JsonArray(c.Document.Layers.Select((l, i) => (l, i)).Where(x => x.l.Mesh.SubPatch).Select(x => (JsonNode)(x.i + 1)).ToArray());
+            return result;
+        }, cancel);
+
+    [McpServerTool(Name = "set_creases", Destructive = true)]
+    [Description("Creases edges of a SubPatch surface: 0 smooth, 1 a hard crease (a sharp edge, as on a panel line or a lip), between it is rounded off (0.5 stays sharp two rounds, then softens). Edges are pairs of point indices in the current layer. A crease is kept on points (the \"SubPatch Crease\" weight map), so an edge is as sharp as the lesser of its two ends: crease a run of edges by giving all its points. One undo step; select_edges' edges are left selected.")]
+    public Task<string> SetCreases(
+        [Description("Edges as pairs of point indices in the current layer, e.g. [[0, 1], [1, 2]].")] int[][] edges,
+        [Description("0 (smooth) to 1 (hard, the default).")] double crease = 1,
+        CancellationToken cancel = default) =>
+        Do("set creases", c =>
+        {
+            if (crease is < 0 or > 1) throw new ArgumentException("crease is 0 (smooth) to 1 (hard).");
+            if (edges.Length == 0) throw new ArgumentException("Give at least one edge as [a, b].");
+            for (int i = 0; i < edges.Length; i++)
+                if (edges[i] is not { Length: 2 }) throw new ArgumentException($"Edge {i} needs two point indices [a, b].");
+            var mesh = c.Document.Current.Mesh;
+            Census.CheckIndices(edges.SelectMany(e => e).ToArray(), mesh.Points.Count, "point");
+            var map = mesh.EdgeMap();
+            foreach (var e in edges)
+                if (!map.ContainsKey(Edge.Of(e[0], e[1]))) throw new ArgumentException($"Points {e[0]} and {e[1]} aren't joined by an edge in the current layer.");
+            c.SelectMode(SelectionMode.Edges);
+            c.SelectNone();
+            c.SelectEdges(edges.Select(e => (e[0], e[1])));
+            var before = Census.Of(c.Document);
+            c.Run("Set Crease", new Dictionary<string, object?> { ["Crease"] = crease });
+            var result = Census.Changes(c.Document, before, "Set Crease");
+            result["creased_points"] = c.Document.Current.Mesh.FindPointMap(AVAModeler.Geometry.SubPatches.CreaseMap)?.Values.Count ?? 0;
+            if (!c.Document.Current.Mesh.SubPatch) result["note"] = "The current layer isn't a SubPatch yet: creases show once set_subpatch turns it on.";
+            return result;
+        }, cancel);
+
     [McpServerTool(Name = "set_uv_map", Idempotent = true)]
     [Description("Chooses the UV map to work on (the app's UV view shows it, and set_texture's uv projection uses it by default). Not an undo step.")]
     public Task<string> SetUVMap(

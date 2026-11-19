@@ -107,7 +107,7 @@ public static partial class RayTracer
         var toWorld = camera.CameraToWorld(frame);
         var eye = toWorld.TransformPoint(Vec3.Zero);
         var forward = toWorld.TransformVector(Vec3.UnitZ).Normalized();
-        var tracer = new Tracer(scene, scene.Evaluate(frame), frame, settings, 2 * tanV / height, EnvironmentOf(scene));
+        var tracer = new Tracer(scene, scene.Evaluate(frame, render: true), frame, settings, 2 * tanV / height, EnvironmentOf(scene));
         int n = width * height;
         var r = new PassImages
         {

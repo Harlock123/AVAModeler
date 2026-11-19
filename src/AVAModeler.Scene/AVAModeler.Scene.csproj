@@ -9,5 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AVAModeler.Core\AVAModeler.Core.csproj" />
+    <!-- SubPatch objects are subdivided with the Modeler's Catmull–Clark (Geometry.SubPatches). -->
+    <ProjectReference Include="..\AVAModeler.Geometry\AVAModeler.Geometry.csproj" />
   </ItemGroup>
 </Project>

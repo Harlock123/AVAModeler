@@ -314,7 +314,7 @@ public sealed partial class ModelerTools
     // ───────────────────────────── arranging items ─────────────────────────────
 
     [McpServerTool(Name = "set_item", Destructive = true)]
-    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position), visibility and locked (a lock against the mouse in the app's views: it isn't picked or dragged there; numbers and agents still change it). A light's type (distant, point, spot or area), colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none), shadows, area_size (area, metres), radius (point and spot, metres: soft shadows) and shadow_samples. A camera's zoom or fov (vertical, degrees), width and height (pixels), make_current, depth of field (depth_of_field on/off, focal_distance in metres along its view or focus_on an item to put it in focus, and f_stop as LightWave's lens: the focal length is zoom × 7.5 mm and the opening that over the f-stop, so 4 is barely any blur at scene scale and 0.1 to 0.5 a strong, miniature-like one; or aperture, the opening's radius in metres, instead of f_stop; dof_samples rays a pixel) and motion blur (motion_blur on/off, shutter as a fraction of a frame centred on it, 0.5 by default; blur_samples rays a pixel). Depth of field and motion blur raise the rays a pixel to their samples. An object's cast_shadows and receive_shadows. A bone's rest pose (rest_position, rest_rotation, rest_length: where it binds to the object; changing it leaves the bone's pose, its channels, where it was, so the object bends by the difference, unless reset_pose is true), rest_at_frame (Layout's Rest Here: makes its pose at that frame its rest pose), reset_pose (puts its channels back at its rest pose, unanimated), strength, active, and the weight_map it follows (weight_map_only). Intensity and zoom set the value throughout; when they're animated, use set_key.")]
+    [Description("Changes an item's settings, leaving out what you don't give: its name, parent (the item it moves with; \"\" for none), pivot (the point in its own coordinates it turns and scales about, placed at its position), visibility and locked (a lock against the mouse in the app's views: it isn't picked or dragged there; numbers and agents still change it). A light's type (distant, point, spot or area), colour (0 to 255), intensity (1 is 100%), cone_angle and edge_angle (spot, degrees), range (metres; 0 none), shadows, area_size (area, metres), radius (point and spot, metres: soft shadows) and shadow_samples. A camera's zoom or fov (vertical, degrees), width and height (pixels), make_current, depth of field (depth_of_field on/off, focal_distance in metres along its view or focus_on an item to put it in focus, and f_stop as LightWave's lens: the focal length is zoom × 7.5 mm and the opening that over the f-stop, so 4 is barely any blur at scene scale and 0.1 to 0.5 a strong, miniature-like one; or aperture, the opening's radius in metres, instead of f_stop; dof_samples rays a pixel) and motion blur (motion_blur on/off, shutter as a fraction of a frame centred on it, 0.5 by default; blur_samples rays a pixel). Depth of field and motion blur raise the rays a pixel to their samples. An object's cast_shadows and receive_shadows, and for one with SubPatch layers its subpatch_level (views) and subpatch_render_level (renders). A bone's rest pose (rest_position, rest_rotation, rest_length: where it binds to the object; changing it leaves the bone's pose, its channels, where it was, so the object bends by the difference, unless reset_pose is true), rest_at_frame (Layout's Rest Here: makes its pose at that frame its rest pose), reset_pose (puts its channels back at its rest pose, unanimated), strength, active, and the weight_map it follows (weight_map_only). Intensity and zoom set the value throughout; when they're animated, use set_key.")]
     public Task<string> SetItem(
         [Description("The item's name, or #index from get_scene.")] string item,
         [Description("A new name.")] string? name = null,
@@ -348,6 +348,8 @@ public sealed partial class ModelerTools
         [Description("Camera: motion blur rays a pixel, 1 to 256 (default 16).")] int? blur_samples = null,
         [Description("Object: cast shadows on other things.")] bool? cast_shadows = null,
         [Description("Object: show shadows cast on it.")] bool? receive_shadows = null,
+        [Description("Object with SubPatch layers: rounds of subdivision in the views, 0 to 6 (default 2; each round turns a quad into four).")] int? subpatch_level = null,
+        [Description("Object with SubPatch layers: rounds of subdivision when rendered, 0 to 6 (default 3).")] int? subpatch_render_level = null,
         [Description("Bone: where it starts at rest [x, y, z], metres, in the object's coordinates (or its parent bone's: measured from the parent's start along its axes).")] double[]? rest_position = null,
         [Description("Bone: its direction at rest [heading, pitch, bank], degrees (0, 0, 0 points along +Z; pitch -90 points up +Y), in the object's axes (or its parent bone's).")] double[]? rest_rotation = null,
         [Description("Bone: its length at rest, metres.")] double? rest_length = null,
@@ -377,6 +379,8 @@ public sealed partial class ModelerTools
             Only<CameraItem>(motion_blur, "motion_blur"); Only<CameraItem>(shutter, "shutter"); Only<CameraItem>(blur_samples, "blur_samples");
             Only<CameraItem>(zoom, "zoom"); Only<CameraItem>(fov, "fov"); Only<CameraItem>(width, "width"); Only<CameraItem>(height, "height"); Only<CameraItem>(make_current, "make_current");
             Only<ObjectItem>(cast_shadows, "cast_shadows"); Only<ObjectItem>(receive_shadows, "receive_shadows");
+            Only<ObjectItem>(subpatch_level, "subpatch_level"); Only<ObjectItem>(subpatch_render_level, "subpatch_render_level");
+            if (subpatch_level is < 0 or > 6 || subpatch_render_level is < 0 or > 6) throw new ArgumentException("SubPatch levels are 0 to 6 rounds.");
             Only<LightItem>(light_link, "light_link"); Only<LightItem>(light_objects, "light_objects");
             if (it is LightItem linked && (light_link != null || light_objects != null))
             {
@@ -441,6 +445,8 @@ public sealed partial class ModelerTools
                 case ObjectItem obj:
                     if (cast_shadows is { } cs) obj.CastShadows = cs;
                     if (receive_shadows is { } rs) obj.ReceiveShadows = rs;
+                    if (subpatch_level is { } spl) obj.SubPatchLevel = spl;
+                    if (subpatch_render_level is { } spr) obj.SubPatchRenderLevel = spr;
                     break;
                 case Bone bone:
                     if (rest_at_frame is { } raf)

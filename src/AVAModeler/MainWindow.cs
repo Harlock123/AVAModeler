@@ -63,7 +63,7 @@ public sealed class MainWindow : Window
     /// <summary>For tests: preferences of its own, and no plugins from the user's folder.</summary>
     public MainWindow(string[] args, Preferences prefs, bool loadPlugins)
     {
-        ModelerSession.Subdivide = (mesh, levels) => Subdivision.CatmullClark(mesh, levels);
+        ModelerSession.Subdivide = (mesh, levels) => Subdivision.CatmullClark(mesh, levels, null, SubPatches.Sharpness(mesh));
         var registry = ToolRegistry.Create();
         var problems = loadPlugins ? registry.LoadPlugins(Preferences.PluginsFolder) : [];
         Session = new ModelerSession(prefs, registry);

@@ -1,4 +1,5 @@
 using AVAModeler.Core;
+using AVAModeler.Geometry;
 
 namespace AVAModeler.Tools;
 
@@ -133,6 +134,54 @@ public sealed class MakeUVsTool : Tool
             for (int i = 0; i < world[k].Length; i++)
                 uvs[k][i] = origin + (world[k][i] - min[c]) * (cell / span);
         }
+    }
+}
+
+/// <summary>
+/// Unwrap UVs: flattens the selected polygons (or all) into a UV map by cutting them along seams and laying each piece
+/// out with least-squares conformal maps (see <see cref="Unwrap"/>). The seams are the selected edges (in Edges mode),
+/// open edges, edges between surfaces (with Surface seams on) and edges sharper than Seam angle; pieces that still
+/// aren't flat-able discs are split further. The charts are packed into the 0-1 square a margin apart, each at its true
+/// size relative to the others, so a texture's texels are even across the model.
+/// </summary>
+public sealed class UnwrapUVsTool : Tool
+{
+    public override string Name => "Unwrap UVs";
+    public override string Tab => "Polygon";
+    public override string Summary => "Unwraps the selected polygons (or all) into a UV map (made if new): cuts them into charts along seams (the selected edges in Edges mode, open edges, edges between surfaces, edges sharper than Seam angle), flattens each chart keeping its angles (least-squares conformal maps) at its true size, and packs the charts into the 0-1 square a margin apart. Makes that map the current one.";
+    public override ToolKind Kind => ToolKind.Requester;
+    public override string Help => "Unwraps the selection into a UV map along seams: select edges first (Edges mode) to say where to cut. The UV view shows the result.";
+
+    [Param("UV map", Description = "The map's name (made if new).")] public string MapName { get; set; } = "UV";
+    [Param("Seam angle", Angle = true, Min = 0, Max = 180, Step = 5, Description = "Edges whose faces meet at more than this many degrees are cut; 0 cuts none by angle.")] public double SeamAngle { get; set; } = 66;
+    [Param("Surface seams", Description = "Cut where one surface meets another.")] public bool SurfaceSeams { get; set; } = true;
+    [Param("Margin", Min = 0, Max = 0.2, Step = 0.005, Description = "The gap round each chart, as a share of the square.")] public double Margin { get; set; } = 0.01;
+    [Param("Rotate charts", Description = "Turn each chart to its smallest box before packing.")] public bool Rotate { get; set; } = true;
+
+    /// <summary>What the last run made, per foreground layer (for agents' answers).</summary>
+    public IReadOnlyList<(int Layer, UnwrapResult Result)> Results { get; private set; } = [];
+
+    protected override void Apply()
+    {
+        if (string.IsNullOrWhiteSpace(MapName)) throw new ArgumentException("Unwrap UVs needs a UV map name.");
+        var sel = Doc.Selection;
+        var results = new List<(int, UnwrapResult)>();
+        var options = new UnwrapOptions { SeamAngle = SeamAngle, SurfaceSeams = SurfaceSeams, Margin = Margin, Rotate = Rotate };
+        foreach (int layer in Layers)
+        {
+            var mesh = Doc.Layers[layer].Mesh;
+            bool edges = sel.Mode == SelectionMode.Edges;
+            IEnumerable<int> chosen = edges || !sel.Any ? Enumerable.Range(0, mesh.Polygons.Count) : sel.ActivePolygons(layer, mesh);
+            var faces = chosen.Where(i => mesh.Polygons[i].Count >= 3).OrderBy(i => i).ToList();
+            if (faces.Count == 0) continue;
+            var seams = edges && sel.Any ? sel.ActiveEdges(layer, mesh) : [];
+            var result = Unwrap.Run(mesh, faces, seams, options);
+            UVEdits.Replace(mesh, MapName, faces, result.UVs);
+            results.Add((layer, result));
+        }
+        if (results.Count == 0) throw new InvalidOperationException("Unwrap UVs needs faces (polygons of three or more points) in the foreground.");
+        Results = results;
+        Doc.CurrentUVMap = MapName;
     }
 }
 

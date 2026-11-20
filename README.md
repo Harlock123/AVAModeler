@@ -452,8 +452,9 @@ phases 0 to 7 and Layout phases L1 to L6.
 
 - **AI Chat inside the app** (F4, or Macros › AI Chat): a panel on the right where you ask Claude for something
   ("make a chess pawn", "put it in a scene with a spotlight and render it") and watch it build with the same tools,
-  with no outside client. It can also run on a local or self-hosted model (Ollama, LM Studio, vLLM, llama.cpp, or a
-  company gateway) through an OpenAI-compatible API, so nothing need leave the machine. See
+  with no outside client. It can also use any model with an OpenAI-compatible API: one on this computer or your network
+  (Ollama, LM Studio, vLLM, llama.cpp), so nothing need leave the machine, or OpenAI and other cloud services, or a
+  company gateway. See
   [The AI Chat panel](#the-ai-chat-panel).
 
 ![A table an AI agent built through MCP, live in the open window](Images/AVAModeler-mcp.png)
@@ -874,19 +875,20 @@ nothing listens anywhere and Macros › Allow AI Agents needn't be on).
   dollars a million tokens for input, output, cache writes and cache reads, each model's changeable, kept in
   Preferences), the totals with **Reset totals**, and **Stop a chat at about $**: past that, the chat stops between
   requests and says so, and sending another message lets it carry on for as much again. Saved chats keep their use;
-  the totals are kept in `chat-usage.json` beside the preferences (counts and dollars only). A local or
-  self-hosted model's tokens are counted when its server reports them, with no price.
+  the totals are kept in `chat-usage.json` beside the preferences (counts and dollars only). An
+  OpenAI-compatible server's tokens are counted when it reports them, with no price.
 - **Which model**: the line under the panel's title says what it's using ("Using Claude Opus 5.5 (Anthropic API)", or
   "Using qwen3 on localhost:11434 (OpenAI-compatible, core tools)"). **Setup…** chooses the provider: Claude, or a
-  local or self-hosted model (below). The choice is kept in Preferences (Edit › Preferences has it too); changing
+  model on an OpenAI-compatible server: local, on your network, or OpenAI and other cloud services (below). The choice is kept in Preferences (Edit › Preferences has it too); changing
   provider starts a new chat, since a conversation can't move between them.
 
-### A local or self-hosted model
+### A local, network or cloud model (OpenAI-compatible)
 
 ![A local model (qwen3 on Ollama) building a table from the chat](Images/AVAModeler-chat-local.png)
 
 The chat can also talk to any server that speaks the OpenAI Chat Completions API: [Ollama](https://ollama.com)
-(its `/v1`), LM Studio, vLLM, llama.cpp's `llama-server`, or a company's own gateway. The model gets the same MCP
+(its `/v1`), LM Studio, vLLM, llama.cpp's `llama-server`, on this computer or another on your network; OpenAI itself
+and the cloud services with OpenAI-compatible endpoints; or a company's own gateway. The model gets the same MCP
 tools and the same system prompt, and builds in the open window the same way: the same model-agnostic tools, with the
 model running where the data lives. With a server on your own computer nothing leaves the machine, there's no API bill,
 and it works offline.
@@ -905,10 +907,19 @@ and it works offline.
 - **LM Studio**: start its server (Developer › Start Server), load a model, and use `http://localhost:1234/v1`.
   llama.cpp's `llama-server --jinja` is at `http://localhost:8080/v1`; vLLM (started with tool calling on) at
   `http://localhost:8000/v1`.
+- **Another machine on your network**: run the server there so it listens beyond itself (Ollama:
+  `OLLAMA_HOST=0.0.0.0 ollama serve`; LM Studio: *Serve on Local Network*) and use its address, such as
+  `http://192.168.1.20:11434/v1`. It usually needs no key.
+- **OpenAI or another cloud service**: use `https://api.openai.com/v1` with a model such as `gpt-4.1`, or any service
+  with an OpenAI-compatible endpoint (OpenRouter's `https://openrouter.ai/api/v1`, Groq, Together, Mistral, or
+  Google's Gemini at `https://generativelanguage.googleapis.com/v1beta/openai`), and press **Key…** to enter that
+  service's API key. Your account with that service is billed for what the chat uses; the chat counts the tokens but
+  doesn't know its prices. Untick **Core tools only** and tick **Model sees pictures** for a large model that reads
+  images.
 - **A gateway**: put its base URL in and press **Key…** to enter its API key, if it asks for one. The key is kept like
   the Anthropic key, in a file of its own (`openai-compatible-api-key` beside `preferences.json`, readable only by you
   on Linux and macOS), sent only in the Authorization header to that server, and only ever shown masked. A server on
-  `localhost` needs no key.
+  `localhost` or your own network usually needs no key.
 - **Core tools only** (on unless you untick it): small models choose much better among fewer tools, so the chat
   offers them 23 of the 133 instead of all of them: `run_tool` (any Modeler tool by name, with `list_tools` and
   `describe_tool`), `add_points` and `add_polygons`, a few selection commands, layers, undo, new and save, surfaces,

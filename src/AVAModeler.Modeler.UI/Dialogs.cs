@@ -334,7 +334,7 @@ public sealed class PreferencesWindow : Window
         var liveSync = new CheckBox { Content = "Live sync with AVALightWave (send a linked object's changes as you model)", IsChecked = p.HubLiveSync, Foreground = Look.Text };
         ToolTip.SetTip(liveSync, "While the object is linked to one in AVALightWave's scene (Edit in Modeler, or Send to AVALightWave), its changes show there a moment after you stop, without saving.");
         var lightWave = new TextBox { Text = p.LightWavePath ?? "", PlaceholderText = "AVALightWave's program (found beside AVA Modeler or on the PATH if empty)" };
-        // The AI Chat's model: Claude, or a local or self-hosted server that speaks the OpenAI Chat Completions API.
+        // The AI Chat's model: Claude, or any server that speaks the OpenAI Chat Completions API (local, on the network, or a cloud service such as OpenAI's).
         var chatProvider = new ComboBox { ItemsSource = ChatProviders.Select(c => c.Label).ToList(), SelectedIndex = Math.Max(0, ChatProviders.FindIndex(c => c.Id == p.ChatProvider)) };
         var chatUrl = new TextBox { Text = p.ChatServerUrl, PlaceholderText = "http://localhost:11434/v1" };
         var chatModel = new TextBox { Text = p.ChatServerModel, PlaceholderText = "qwen3" };
@@ -428,7 +428,7 @@ public sealed class PreferencesWindow : Window
     public static readonly List<(string Id, string Label)> ChatProviders =
     [
         ("Anthropic", "Claude (Anthropic API)"),
-        ("OpenAICompatible", "OpenAI-compatible server (local or self-hosted)"),
+        ("OpenAICompatible", "OpenAI-compatible server (local, on your network, or a cloud service)"),
     ];
 
     private static Control Dock(Control c, Avalonia.Controls.Dock d)

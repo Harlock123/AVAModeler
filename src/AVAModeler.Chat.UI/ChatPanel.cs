@@ -19,7 +19,7 @@ namespace AVAModeler.Chat.UI;
 /// call as a compact line that opens to its input and result, small pictures of what the model rendered, and below them
 /// the input box (Enter sends, Shift+Enter starts a new line), Send (Stop while the model works) and the Claude model.
 /// A line under the title says which provider and model it's using; Setup… chooses between Claude (the Anthropic API)
-/// and an OpenAI-compatible server (a local model through Ollama, LM Studio, vLLM or llama.cpp, or a gateway), kept in
+/// and an OpenAI-compatible server (a local model through Ollama, LM Studio, vLLM or llama.cpp, one on the network, OpenAI or another cloud service, or a gateway), kept in
 /// Preferences. History shows the saved chats (kept only with Keep chat history ticked): open, export as Markdown, delete,
 /// clear. The conversation itself is <see cref="ChatSession"/>'s, and saving it <see cref="ChatHistory"/>'s; this is only
 /// their controls.
@@ -209,9 +209,11 @@ public sealed class ChatPanel : DockPanel
         buttons.Children.Add(Look.MakeButton("New Chat", NewChat, "Start a new conversation (a kept one stays in History)"));
         buttons.Children.Add(Look.MakeButton("History", ToggleHistory, "Saved chats: reopen, export as Markdown or delete them, and whether to keep them"));
         buttons.Children.Add(Look.MakeButton("Timeline", ToggleTimeline, "Each reply that changed the object or the scene: what it changed, how it was before, and going back to before it"));
-        buttons.Children.Add(Look.MakeButton("Setup…", () => SetupOpen = !SetupOpen, "Choose the model: Claude, or a local or self-hosted server"));
-        buttons.Children.Add(Look.MakeButton("Key…", () => _ = EditKey(), "Your Anthropic API key, or an OpenAI-compatible gateway's"));
+        buttons.Children.Add(Look.MakeButton("Setup…", () => SetupOpen = !SetupOpen, "Choose the model: Claude, or an OpenAI-compatible server: on this computer, on your network, or OpenAI and other cloud services"));
+        buttons.Children.Add(Look.MakeButton("Key…", () => _ = EditKey(), "Your Anthropic API key, or the OpenAI-compatible server's (OpenAI, another cloud service or a gateway; a local server needs none)"));
         buttons.Children.Add(Look.MakeButton("×", () => CloseRequested?.Invoke(), "Hide the chat (F4)"));
+        // Tighter than other buttons, so the title still fits beside them in a narrow panel.
+        foreach (var b in buttons.Children.OfType<Button>()) b.Padding = new Thickness(4, 2);
         var header = new DockPanel { Background = Look.PanelDark, Height = 30 };
         SetDock(buttons, Dock.Right);
         header.Children.Add(buttons);
@@ -229,7 +231,7 @@ public sealed class ChatPanel : DockPanel
         SetDock(_refresh, Dock.Right);
         modelRow.Children.Add(_refresh);
         modelRow.Children.Add(ServerModel);
-        ToolTip.SetTip(BaseUrl, "The server's OpenAI-compatible API: Ollama http://localhost:11434/v1, LM Studio http://localhost:1234/v1, llama.cpp http://localhost:8080/v1, or a gateway's URL. Only this address is ever contacted.");
+        ToolTip.SetTip(BaseUrl, "The server's OpenAI-compatible API: Ollama http://localhost:11434/v1, LM Studio http://localhost:1234/v1, llama.cpp http://localhost:8080/v1, another machine on your network (http://192.168.1.20:11434/v1), OpenAI https://api.openai.com/v1, OpenRouter https://openrouter.ai/api/v1, or a gateway's URL. Only this address is ever contacted.");
         ToolTip.SetTip(CoreTools, $"Offer the model {ChatTools.Core.Count} core tools instead of all of them: small local models choose better among fewer. Untick for a large model.");
         ToolTip.SetTip(SeesPictures, "Send the model the pictures it renders. Tick only for a vision model (qwen2.5vl, gemma3, llama3.2-vision…); otherwise it's told a picture was made.");
         _serverSettings.Children.Add(SettingLabel("Base URL"));
@@ -321,6 +323,7 @@ public sealed class ChatPanel : DockPanel
             _status(Session.Working ? $"{Session.Who} is working…" : $"{Session.Who} has finished.");
             // Each finished request is saved, so a crash loses at most the one under way.
             if (!Session.Working) SaveHistory();
+            ShowUsage(); // "this turn" shows only while it's working
         };
         AutoContinue.IsCheckedChanged += (_, _) =>
         {
@@ -562,11 +565,11 @@ public sealed class ChatPanel : DockPanel
             var server = OpenAICompatibleClient.Describe(_prefs.ChatServerUrl);
             var local = OpenAICompatibleClient.IsLocalUrl(_prefs.ChatServerUrl);
             _intro.Text = _prefs.ChatServerModel.Length == 0
-                ? $"Chat with a model on your own server ({server}) to build in the open window.\n\n" +
-                  "No model is chosen yet: press Setup… above, check the base URL (Ollama's is http://localhost:11434/v1), and enter a model name or press Refresh to list the server's models. The model must support tool calls (qwen3, llama3.1, mistral-small…)."
+                ? $"Chat with a model on {server} to build in the open window.\n\n" +
+                  "No model is chosen yet: press Setup… above, check the base URL (Ollama's on this computer is http://localhost:11434/v1; OpenAI's is https://api.openai.com/v1, with its key under Key…), and enter a model name or press Refresh to list the server's models. The model must support tool calls (qwen3, llama3.1, mistral-small…)."
                 : $"Chat with {_prefs.ChatServerModel} on {server} to build in the open window: {Wording.ServerExamples}. " +
                   $"You watch it work; {Wording.Undo} " +
-                  (local ? "It runs on this computer: nothing leaves it, and there's no bill." : "Requests go only to that server.") +
+                  (local ? "It runs on this computer: nothing leaves it, and there's no bill." : "Requests go only to that server (a cloud service bills its own account for them).") +
                   " Small local models handle simple jobs best.";
             return;
         }
@@ -1080,7 +1083,7 @@ public sealed class ChatPanel : DockPanel
         if (TopLevel.GetTopLevel(this) is not Window owner) return;
         bool server = SelectedProvider == ChatProvider.OpenAICompatible;
         var keys = server ? _serverKeys : _keys;
-        var box = new TextBox { PasswordChar = '•', PlaceholderText = server ? "the gateway's key" : "sk-ant-…", FontSize = 13 };
+        var box = new TextBox { PasswordChar = '•', PlaceholderText = server ? "the server's key (sk-… for OpenAI)" : "sk-ant-…", FontSize = 13 };
         var name = OpenAICompatibleClient.Describe(_prefs.ChatServerUrl);
         var where = keys.Path is { } p
             ? $"It's kept in {p}, a file of its own that only your user account can read, and is sent only to {(server ? name : "the Anthropic API")}."
@@ -1095,7 +1098,7 @@ public sealed class ChatPanel : DockPanel
         {
             TextWrapping = TextWrapping.Wrap, Foreground = Look.Text,
             Text = server
-                ? $"An API key for the OpenAI-compatible server, if it asks for one (a company gateway, say). A server on this computer (Ollama, LM Studio) needs none. {where}\n\n{now}"
+                ? $"An API key for the OpenAI-compatible server, if it asks for one: OpenAI's (from platform.openai.com), another cloud service's, or a company gateway's; a cloud service bills your account for what the chat uses. A server on this computer or your own network (Ollama, LM Studio) usually needs none. {where}\n\n{now}"
                 : $"Paste your Anthropic API key (from console.anthropic.com). {where} Your own API account is billed for what the chat uses.\n\n{now}",
         };
         var save = new Button { Content = "Save", Width = 90 };

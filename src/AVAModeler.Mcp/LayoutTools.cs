@@ -991,7 +991,7 @@ public sealed partial class ModelerTools
         }, cancel);
 
     [McpServerTool(Name = "bake_lighting", Destructive = true)]
-    [Description("Bakes a scene object's lighting into a PNG light map in the working folder, through its UV map (unwrap_uvs or make_uvs in the Modeler first; every face needs its own place in it): at each pixel a face covers, the light falling there as render_scene works it out: ambient (dimmed by ambient occlusion if on), the environment's light, every light with its shadows (soft lights sampled), and bounced light when set_scene's gi is on. With with_color (the default) it's the surface's colour times that light, plus its glow; without, the light alone (to multiply over a texture). Textures aren't baked in. Use it to preview lighting fast (lay the map on as the colour with luminosity 1 and diffuse 0, so the scene needn't be lit again) or to give a game asset its lighting in glTF. Pixels past the faces' edges are filled by padding. It changes nothing in the scene.")]
+    [Description("Bakes a scene object's lighting into a PNG light map in the working folder, through its UV map (unwrap_uvs or make_uvs in the Modeler first; every face needs its own place in it): at each pixel a face covers, the light falling there as render_scene works it out: ambient (dimmed by ambient occlusion if on), the environment's light, every light with its shadows (soft lights sampled), and bounced light when set_scene's gi is on. With with_color (the default) it's the surface's colour times that light, plus its glow; without, the light alone (to multiply over a texture). Textures aren't baked in. With hook_up (the default) the map is laid on the object's surfaces through that UV map, as one undo step: the colour (or, without with_color, multiplied into the colour and its textures), with luminosity 1 and diffuse 0, so the object shows its baked light without the scene lighting it again: fast previews, and a game asset's lighting in glTF. Baking again to the same file first takes the old map off, so it never lights the new one (a surface it made glow is lit as diffuse 1 for the bake). Pixels past the faces' edges are filled by padding. Without hook_up it changes nothing in the scene.")]
     public async Task<string> BakeLighting(
         [Description("The scene object, by name or #index.")] string @object,
         [Description("The PNG to write, relative to the working folder (default: \"<object>_light.png\").")] string? file = null,
@@ -1003,12 +1003,13 @@ public sealed partial class ModelerTools
         [Description("A scale on the light before it's written, more than 0 (default 1; lower it if the answer's brightest is over 1, which clips).")] double exposure = 1,
         [Description("The frame (default: the current frame).")] double? frame = null,
         [Description("Replace the file if it already exists.")] bool overwrite = false,
+        [Description("Lay the map on the object's surfaces (default true); false only writes the PNG.")] bool hook_up = true,
         CancellationToken cancel = default)
     {
         var bake = new LightBakeSettings { Size = size, UVMap = uv_map, WithColor = with_color, Samples = samples, Padding = padding, Exposure = exposure };
         try { bake.Checked(); }
         catch (ArgumentException e) { throw new McpException(e.Message); }
-        var (copy, item, f, full, files) = await DoScene("baked lighting", (c, l) =>
+        var (copy, item, f, full, files, live) = await DoScene("baked lighting", (c, l) =>
         {
             var obj = SceneObject(l.Scene, @object);
             var files = Files(c);
@@ -1018,7 +1019,10 @@ public sealed partial class ModelerTools
             files.CheckWritable([full], overwrite);
             double fr = SceneCensus.Frame(l, frame);
             var copy = ScenePictures.Copy(l.Scene);
-            return (copy, (ObjectItem)copy.Items[IndexOf(l.Scene, obj)], fr, full, files);
+            var baked = (ObjectItem)copy.Items[IndexOf(l.Scene, obj)];
+            // A map laid on by an earlier bake to this file comes off the copy, so it doesn't light this one.
+            if (baked.Document is { } d) LightMaps.Unhook(d, full);
+            return (copy, baked, fr, full, files, ReferenceEquals(obj.Document, c.Document));
         }, cancel, changes: false).ConfigureAwait(false);
         var clock = Stopwatch.StartNew();
         var result = await Rendering(t => RayTracer.BakeLighting(copy, item, f, bake, t), RenderTimeLimit,
@@ -1036,6 +1040,38 @@ public sealed partial class ModelerTools
         };
         if (result.Brightest > 1) answer["note"] = "The brightest light is over 1, so it clipped to white there: bake again with a lower exposure to keep it.";
         if (copy.GlobalIllumination.On) answer["bounced_light"] = true;
+        if (hook_up)
+        {
+            var hooked = await DoScene<JsonObject>("hooked up a light map", (c, l) =>
+            {
+                var obj = SceneObject(l.Scene, @object);
+                var old = obj.Document ?? throw new InvalidOperationException($"{obj.Name} has no geometry to lay the map on.");
+                var surfaces = LightMaps.SurfacesOf(obj);
+                TextureImages.Put(full, new TextureImage(result.Width, result.Height, result.Rgba));
+                List<LightMaps.Hooked> done = [];
+                if (ReferenceEquals(old, c.Document))
+                    old.Edit("Hook up light map", () => done = LightMaps.HookUp(old, surfaces, full, result.UVMap, with_color));
+                else
+                {
+                    // The object gets a changed copy, so undo_scene puts the old look back.
+                    var doc = old.Copy();
+                    done = LightMaps.HookUp(doc, surfaces, full, result.UVMap, with_color);
+                    doc.Modified = true;
+                    foreach (var o in l.Scene.Objects.Where(o => ReferenceEquals(o.Document, old))) o.Document = doc;
+                    l.Scene.Notify();
+                }
+                return new JsonObject
+                {
+                    ["surfaces"] = new JsonArray([.. done.Select(h => (JsonNode)new JsonObject
+                    {
+                        ["name"] = h.Surface, ["diffuse_was"] = h.DiffuseWas, ["luminosity_was"] = h.LuminosityWas,
+                    })]),
+                };
+            }, cancel, changes: !live).ConfigureAwait(false);
+            answer["hooked_up"] = hooked["surfaces"]!.DeepClone();
+            if (live) answer["note_hook"] = "The object is the Modeler's own, so the map went on as a Modeler undo step (undo, not undo_scene).";
+            if (hooked["undo_scene"] is { } u) answer["undo_scene"] = u.DeepClone();
+        }
         return answer.ToJsonString();
     }
 

@@ -199,9 +199,10 @@ ten side edges of a tilted cylinder follow it (Remesh's grid: four in ten).
 
 ## Milestone L: light maps
 
-**Status:** done. `RayTracer.BakeLighting` (`Rendering/RayTracer.Bounce.cs`), agents' `bake_lighting`. It isn't hooked up
-on the surface by itself: in Layout the surface belongs to the object's file, so laying the map on is left to the
-Modeler (`set_texture`, `set_surface`).
+**Status:** done. `RayTracer.BakeLighting` (`Rendering/RayTracer.Bounce.cs`), agents' `bake_lighting`, which lays the
+map on the object's surfaces by itself (`LightMaps`: the colour, luminosity 1, diffuse 0; `hook_up`), as one scene undo
+step on a changed copy of the object (a Modeler undo step on the Modeler's own object), and takes it off a copy before
+baking to the same file again.
 
 1. **Bake Lighting** in Layout: an object's lighting (direct light with shadows, ambient, occlusion, and bounced light
    when it's on) baked through its UV map into a picture, optionally times its colour, for a fast preview or a game

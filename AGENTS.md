@@ -304,6 +304,10 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     through `Tracer.BakeIrradiance` (ambient with `OcclusionWith`, `EnvironmentLightWith`, `DirectDiffuse` with soft
     lights sampled through `SoftLight`, and `Indirect`), and bleeds. `bake_lighting` in LayoutTools.cs bakes a
     `ScenePictures.Copy` off the host's thread, as render_scene renders, and writes only inside the working folder.
+    `LightMaps.cs` (Scene) lays the map on (`HookUp`: a UV colour layer, normal or multiplied, luminosity 1, diffuse 0,
+    replacing the same file's layer) and takes it off (`Unhook`, on the bake's copy, so an old map never lights a new
+    bake). `bake_lighting` hooks up in a second `DoScene`: a scene object gets a changed `Document.Copy` (undo_scene
+    puts the old one back); the Modeler's own document is changed in place as a Modeler step (`changes: false`).
   - `Rendering/RenderPasses.cs`: `RayTracer.Passes` (one ray through each pixel's centre: depth along the view, the
     shading normal, the object's index, albedo, emission, the share of direct light in shadow, the reflected colour;
     `Tracer.Probe`) as `PassImages` (`ToImage`, `Names`), and `RayTracer.Denoise`, an edge-stopping à-trous filter on

@@ -51,6 +51,14 @@ public class BounceAndBakeTests
         var (back, _) = SceneJson.Read(SceneJson.Write(scene));
         Assert.Equal(scene.GlobalIllumination, back.GlobalIllumination);
         Assert.DoesNotContain("GlobalIllumination", SceneJson.Write(new Scene()));
+        // In a LightWave scene: AVA's own master plugin section, written only when it isn't the default.
+        var lws = LwsWriter.Write(scene);
+        Assert.Contains("Plugin MasterHandler 1 AVA_GlobalIllumination", lws);
+        Assert.Equal(scene.GlobalIllumination, LwsReader.Read(lws, _ => null).Scene.GlobalIllumination);
+        Assert.DoesNotContain("AVA_GlobalIllumination", LwsWriter.Write(new Scene()));
+        var bad = LwsReader.Read(lws.Replace("\"bounces\":2", "\"bounces\":9"), _ => null);
+        Assert.False(bad.Scene.GlobalIllumination.On);
+        Assert.Contains(bad.Warnings, w => w.Contains("global illumination"));
         var snap = scene.Snapshot();
         scene.GlobalIllumination = new GlobalIllumination();
         snap.Restore();

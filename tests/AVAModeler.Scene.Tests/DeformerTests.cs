@@ -101,6 +101,24 @@ public class DeformerTests
         Assert.Equal((DeformerKind.Bend, 90.0), (d.Kind, d.Amount.Evaluate(30)));
         Assert.DoesNotContain("Deformers", SceneJson.Write(new Scene()));
 
+        // In a LightWave scene: AVA's own plugin section, which other readers skip; a lattice's offsets come too.
+        var lattice = o.AddDeformer(new Deformer(DeformerKind.Lattice) { Divisions = (2, 3, 2), Offsets = [Vec3.UnitX, new Vec3(0, 0.5, 0)] });
+        lattice.Amount.SetConstant(0.75);
+        var lws = LwsWriter.Write(scene);
+        Assert.Contains("Plugin CustomObjHandler 1 AVA_Deformers", lws);
+        var fromLws = ((ObjectItem)LwsReader.Read(lws, _ => TestData.Doc(mesh)).Scene.Find("Reed")!).Deformers;
+        Assert.Equal([DeformerKind.Bend, DeformerKind.Lattice], fromLws.Select(x => x.Kind));
+        Assert.Equal(bend.Amount.Evaluate(15.5), fromLws[0].Amount.Evaluate(15.5), 9);
+        Assert.Equal((2, 3, 2), fromLws[1].Divisions);
+        Assert.Equal(new Vec3(0, 0.5, 0), fromLws[1].Offsets[1]);
+        Assert.Equal(0.75, fromLws[1].Amount.Evaluate(1));
+        Assert.DoesNotContain("AVA_Deformers", LwsWriter.Write(new Scene()));
+        // A bad section is said and left out, the rest of the scene read.
+        var bad = LwsReader.Read(lws.Replace("\"kind\":\"Bend\"", "\"kind\":\"Wobble\""), _ => TestData.Doc(mesh));
+        Assert.Empty(((ObjectItem)bad.Scene.Find("Reed")!).Deformers);
+        Assert.Contains(bad.Warnings, w => w.Contains("AVA_Deformers"));
+        o.RemoveDeformer(lattice);
+
         var snap = scene.Snapshot();
         o.RemoveDeformer(bend);
         bend.Axis = Axis.Z;

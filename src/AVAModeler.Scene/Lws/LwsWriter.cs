@@ -23,7 +23,9 @@ namespace AVAModeler.Scene;
 /// flare's sizes and streak count and volumetric lights have no place in the format (a warning says so).
 /// An object's particles, hair and soft body are each a plugin section of LightWave 6's kind, <c>Plugin
 /// CustomObjHandler 1 AVA_Particles</c> (or <c>AVA_Hair</c>, <c>AVA_SoftBody</c>), one line of the .avascene's JSON for
-/// the settings, and <c>EndPlugin</c>: LightWave and other readers skip a plugin they don't have.
+/// the settings, and <c>EndPlugin</c>: LightWave and other readers skip a plugin they don't have. Its deformers are
+/// <c>AVA_Deformers</c> the same way (their amount envelopes inside), and the scene's global illumination, when it
+/// isn't the default, is <c>Plugin MasterHandler 1 AVA_GlobalIllumination</c>.
 /// </summary>
 public static class LwsWriter
 {
@@ -141,6 +143,12 @@ public static class LwsWriter
             L($"FogMaxDistance {N(scene.FogMaxDistance)}");
             L($"FogColor {V(scene.FogColor)}");
             WriteCompositing();
+            if (scene.GlobalIllumination != new GlobalIllumination())
+            {
+                L($"Plugin MasterHandler 1 {LwsEffects.GlobalIllumination}");
+                L(SceneJson.OneLineOf(scene.GlobalIllumination));
+                L("EndPlugin");
+            }
         }
 
         /// <summary>The object's particles, hair and soft body, as plugin sections only AVA reads (written only when set).</summary>
@@ -157,6 +165,7 @@ public static class LwsWriter
             if (o.SoftBody is { } b) Section(LwsEffects.SoftBody, SceneJson.OneLineOf(b));
             if (o.RigidBody is { } r) Section(LwsEffects.RigidBody, SceneJson.OneLineOf(r));
             if (o.Scatter is { } sc) Section(LwsEffects.Scatter, SceneJson.OneLineOf(sc));
+            if (o.Deformers.Count > 0) Section(LwsEffects.Deformers, SceneJson.DeformersLine(o.Deformers));
         }
 
         /// <summary>
@@ -316,5 +325,6 @@ public static class LwsWriter
 /// <summary>The names of the plugin sections a .lws keeps an object's particles, hair and soft body in.</summary>
 internal static class LwsEffects
 {
-    public const string Particles = "AVA_Particles", Hair = "AVA_Hair", SoftBody = "AVA_SoftBody", RigidBody = "AVA_RigidBody", Scatter = "AVA_Scatter";
+    public const string Particles = "AVA_Particles", Hair = "AVA_Hair", SoftBody = "AVA_SoftBody", RigidBody = "AVA_RigidBody", Scatter = "AVA_Scatter",
+        Deformers = "AVA_Deformers", GlobalIllumination = "AVA_GlobalIllumination";
 }

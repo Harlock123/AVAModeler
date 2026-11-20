@@ -389,7 +389,10 @@ public static class LwsReader
                     break;
                 }
 
-                case "Plugin" when _current is ObjectItem effects && Tokens(rest).LastOrDefault() is LwsEffects.Particles or LwsEffects.Hair or LwsEffects.SoftBody or LwsEffects.RigidBody or LwsEffects.Scatter:
+                case "Plugin" when Tokens(rest) is ["MasterHandler", .., LwsEffects.GlobalIllumination]:
+                    ReadGlobalIllumination();
+                    break;
+                case "Plugin" when _current is ObjectItem effects && Tokens(rest).LastOrDefault() is LwsEffects.Particles or LwsEffects.Hair or LwsEffects.SoftBody or LwsEffects.RigidBody or LwsEffects.Scatter or LwsEffects.Deformers:
                     ReadEffect(effects, Tokens(rest)[^1]);
                     break;
                 case "Plugin":
@@ -478,12 +481,31 @@ public static class LwsReader
                     case LwsEffects.Hair: o.Hair = SceneJson.FromOneLine<HairSettings>(json)?.Checked(); break;
                     case LwsEffects.RigidBody: o.RigidBody = SceneJson.FromOneLine<RigidBodySettings>(json)?.Checked(); break;
                     case LwsEffects.Scatter: o.Scatter = SceneJson.FromOneLine<ScatterSettings>(json)?.Checked(); break;
+                    case LwsEffects.Deformers:
+                        foreach (var d in SceneJson.DeformersFromLine(json)) o.AddDeformer(d);
+                        break;
                     default: o.SoftBody = SceneJson.FromOneLine<SoftBodySettings>(json)?.Checked(); break;
                 }
             }
             catch (Exception e) when (e is System.Text.Json.JsonException or ArgumentException or NotSupportedException)
             {
                 Warn($"Line {at}: {o.Name}'s {name} settings couldn't be read ({e.Message}); they are left out.");
+            }
+        }
+
+        /// <summary>The scene's global illumination: AVA's own master plugin section, its settings one line of JSON.</summary>
+        private void ReadGlobalIllumination()
+        {
+            int at = _pos;
+            var text = new System.Text.StringBuilder();
+            for (var l = Next(); l != null && l.Trim() != "EndPlugin"; l = Next()) text.Append(l);
+            try
+            {
+                if (SceneJson.FromOneLine<GlobalIllumination>(text.ToString()) is { } gi) Scene.GlobalIllumination = gi.Checked();
+            }
+            catch (Exception e) when (e is System.Text.Json.JsonException or ArgumentException or NotSupportedException)
+            {
+                Warn($"Line {at}: the global illumination settings couldn't be read ({e.Message}); it is left off.");
             }
         }
 

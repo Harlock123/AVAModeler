@@ -296,7 +296,7 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     `Tracer`, built in `PrepareLightEffects`; count expensive work through `RenderCounters` so tests assert work, not time.
     `Lws/LwsLightBits.cs` holds the flare bits for .lws.
   - `Rendering/RayTracer.Bounce.cs`: global illumination (`Scene.GlobalIllumination`, the `GlobalIllumination`
-    record in RenderEffects.cs; in `Scene.Copy`, snapshots and SceneJson when not the default; not in .lws) as the
+    record in RenderEffects.cs; in `Scene.Copy`, snapshots and SceneJson when not the default; in .lws as `Plugin MasterHandler 1 AVA_GlobalIllumination`) as the
     `Tracer`'s `_gi` branch in `Shade` (`Indirect`: cosine-weighted rays, the camera ray's share of the samples at
     the first bounce and one after; `Radiance`: the hit's ambient, lights through `DirectDiffuse`, glow and deeper
     bounces, or the backdrop), and light maps: `RayTracer.BakeLighting` (`LightBakeSettings`, `LightBakeResult`)
@@ -369,7 +369,8 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     squash; `Problem`, `Clone`, `Apply`) on `ObjectItem.Deformers` (`AddDeformer`, `RemoveDeformer`), applied last in
     `ObjectItem.Deform` (an object with none takes the old path). SceneJson's `DeformerDto` (written only when there
     are some), `SceneSnapshot.DeformerState`, `Scene.Copy` (cloned), `SceneChannels`' `deformer.<n>.amount`, the
-    census's `DeformerJson`, and `add_deformer`/`set_deformer`/`remove_deformer` in `DeformTools.cs`. Not in .lws.
+    census's `DeformerJson`, and `add_deformer`/`set_deformer`/`remove_deformer` in `DeformTools.cs`. In .lws as an
+    `AVA_Deformers` plugin section (`SceneJson.DeformersLine`/`DeformersFromLine`, the DTOs on one line).
   - `Scatter.cs`: `ObjectItem.Scatter` (`ScatterSettings`: the object copied by name, count, seed, scale range, a random
     turn, along the surface or upright, one surface only, a density picture laid from above, sink) and `Scattering`
     (`Spots`: hashed spots by area; `Add`: the copies into the frame's mesh, the copy's surfaces after the object's,

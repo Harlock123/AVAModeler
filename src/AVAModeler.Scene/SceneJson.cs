@@ -32,6 +32,23 @@ public static class SceneJson
     /// <summary>A setting read back from <see cref="OneLineOf"/>'s line.</summary>
     internal static T? FromOneLine<T>(string json) => JsonSerializer.Deserialize<T>(json, OneLine);
 
+    /// <summary>An object's deformers (with their amount envelopes) as one line of the scene file's JSON, for a .lws plugin section.</summary>
+    internal static string DeformersLine(IEnumerable<Deformer> deformers) => OneLineOf(deformers.Select(DeformerDto.Of).ToList());
+
+    /// <summary>Deformers read back from <see cref="DeformersLine"/>'s line; each one's settings checked.</summary>
+    internal static List<Deformer> DeformersFromLine(string json)
+    {
+        var list = new List<Deformer>();
+        foreach (var x in FromOneLine<List<DeformerDto>>(json) ?? [])
+        {
+            var d = x.ToDeformer();
+            SetEnv(d.Amount, x.Amount);
+            if (d.Problem() is { } problem) throw new ArgumentException(problem);
+            list.Add(d);
+        }
+        return list;
+    }
+
     /// <summary>
     /// Writes a scene. Object files in <paramref name="baseDirectory"/> or below it are written relative to it, so a
     /// scene and its objects can be moved or shared together; others keep their full paths.

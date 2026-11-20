@@ -310,7 +310,8 @@ public sealed class LayoutWorkspace : DockPanel
             ItemsSource = new[]
             {
                 Group("_Scene", Item("_New Scene", NewScene), Item("_Load Scene…", () => _ = LoadScene()), Item("_Save Scene…", () => _ = SaveScene(".avascene")),
-                    Item("Save as _LWS…", () => _ = SaveScene(".lws")), Item("Export _glTF…", () => _ = ExportGltf()), Item("Scene _Settings…", () => _ = SceneSettings()),
+                    Item("Save as _LWS…", () => _ = SaveScene(".lws")), Item("Export _glTF…", () => _ = ExportGltf()),
+                    Item("Load _Motion Capture…", () => { if (MotionCaptureTarget() is { } o) _ = LoadMotionCaptureDialog(o); else Session.SetStatus("Choose an object with bones (or one of its bones) to load a motion capture onto."); }), Item("Scene _Settings…", () => _ = SceneSettings()),
                     Item("_Quit", () => Owner?.Close())),
                 Group("_Edit", _undo, _redo),
                 Group("_View", Item("_Graph Editor", () => DopeSheetShown = false), Item("_Dope Sheet  (D)", ToggleDopeSheet)),
@@ -342,7 +343,8 @@ public sealed class LayoutWorkspace : DockPanel
         A bone's settings have inverse kinematics: choose a Goal (a null, say) for the bone at the end of a chain and, with
         Full-time IK, the chain turns at every frame so its tip reaches the goal. Limits and locks keep each bone's heading,
         pitch and bank in bounds; an Anchor stops chains below it. Key IK here keys the pose at this frame; Bake IK keys every
-        frame and turns full-time IK off.
+        frame and turns full-time IK off. Scene › Load Motion Capture puts a .bvh capture (Mixamo, CMU…) on the chosen
+        object's bones, matched by name, as one undo step.
 
         Any item can follow a path: in its settings, choose the items the path runs through (nulls you've placed, in the item
         list's order) and tick Follow a path. Its position along the path (0 to 1) is a channel you key like any other, or
@@ -418,6 +420,37 @@ public sealed class LayoutWorkspace : DockPanel
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             await Dialogs.Message(Owner, "Can't export", e.Message);
+        }
+    }
+
+    /// <summary>The object a motion capture goes onto: the chosen object, or the chosen bone's owner.</summary>
+    public ObjectItem? MotionCaptureTarget() => Session.Selected as ObjectItem ?? (Session.Selected as Bone)?.Owner;
+
+    private async Task LoadMotionCaptureDialog(ObjectItem item)
+    {
+        if (TopLevel.GetTopLevel(this) is not { } top) return;
+        var path = await Dialogs.Open(top, $"Load a motion capture onto {item.Name}'s bones", new FilePickerFileType("Motion capture (BVH)") { Patterns = ["*.bvh"] });
+        if (path != null) LoadMotionCapture(item, path);
+    }
+
+    /// <summary>
+    /// Scene › Load Motion Capture: a .bvh on an object's bones, matched by name and keyed from the scene's first frame, as
+    /// one undo step; the status line says how many bones matched. False (changing nothing) for a file that isn't a BVH,
+    /// or a rig nothing in it matches.
+    /// </summary>
+    public bool LoadMotionCapture(ObjectItem item, string path)
+    {
+        try
+        {
+            var r = Session.LoadMotionCapture(item, path, new RetargetOptions { StartFrame = Session.Scene.FirstFrame });
+            var unmatched = r.Unmatched.Count > 0 ? $" Not in the capture: {string.Join(", ", r.Unmatched)}." : "";
+            Session.SetStatus($"Loaded {Path.GetFileName(path)} onto {item.Name}: {r.Matched.Count} bone(s) keyed, frames {r.FirstFrame:0.##} to {r.LastFrame:0.##}.{unmatched}");
+            return true;
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException or ArgumentException)
+        {
+            Session.SetStatus($"Can't load {Path.GetFileName(path)}: {e.Message}");
+            return false;
         }
     }
 

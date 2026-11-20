@@ -21,11 +21,12 @@ public sealed record QuadRemeshOptions
 public sealed record QuadRemeshResult(int Quads, int Points, double Aligned, int PairedShare);
 
 /// <summary>
-/// Quad remeshing that follows the shape. The faces are triangulated and remeshed to even triangles twice the target
+/// Quad remeshing that follows the shape. The faces are triangulated and remeshed to even triangles a little under twice the target
 /// length (Botsch and Kobbelt's isotropic remesh: split long edges, collapse short ones, flip toward valence six,
 /// relax along the surface, pull back onto the original), with sharp edges, open edges and the selection's border
 /// kept. A cross field (four directions at right angles at each point) is laid along the sharp edges and the
-/// directions of greatest curvature and smoothed; triangles are paired into quads whose sides follow it best; then
+/// directions of greatest curvature and smoothed; a square lattice is laid along it (a position field, flooded over the
+/// surface) and the points merged onto its points; triangles are paired into quads whose sides follow it best; then
 /// one split (every face into quads round its centre) makes it all quads at the target length, pulled back onto the
 /// surface and evened out. Closed stays closed; faces keep their surfaces and winding. UVs aren't kept.
 /// </summary>
@@ -122,22 +123,35 @@ public static class QuadRemesh
         var box = Box3.Of(tri.P);
         double size = Vec3.Distance(box.Max, box.Min);
         if (target > size) target = size / 2;
+        // The triangles a little finer than the lattice, so every lattice point has a point to become.
+        double fine = target * 0.8;
         for (int it = 0; it < Math.Max(1, options.Iterations); it++)
         {
-            Split(tri, target * 4 / 3);
-            Collapse(tri, target * 4 / 5, target * 4 / 3);
+            Split(tri, fine * 4 / 3);
+            Collapse(tri, fine * 4 / 5, fine * 4 / 3);
             Flip(tri);
             Relax(tri, Project, tri.Fixed.Union(Enumerable.Range(0, tri.P.Count).Where(tri.IsFeatureVertex)).ToHashSet());
         }
 
         var field = Field(tri, options.FieldPasses);
-        // Points onto a grid along the field (the remesh's even triangles have twice the grid's density along
-        // edges, so the grid is a little wider), then flips toward Delaunay: each grid cell becomes two triangles
-        // split by its diagonal, which the pairing finds.
+        // A lattice along the field (Instant Meshes' position field): points on the same lattice point become one and
+        // each goes onto its lattice point, then flips toward Delaunay, so each lattice cell is two triangles split by
+        // its diagonal, which the pairing finds. The final split halves the lattice's sides, a little short of target.
         var still = tri.Fixed.Union(Enumerable.Range(0, tri.P.Count).Where(tri.IsFeatureVertex)).ToHashSet();
-        for (int round = 0; round < 3; round++)
+        double h = target * 0.9;
+        for (int round = 0; round < 2; round++)
         {
-            Snap(tri, field, target * 1.07, Project, still, 12);
+            var lattice = PositionField(tri, field, h, still);
+            Collapse(tri, 0, target * 3, e =>
+            {
+                var n = tri.PointNormal(e.A);
+                var o = Tangent(field[e.A], n);
+                if (o.LengthSquared == 0) return false;
+                var b = Vec3.Cross(n, o);
+                var d = lattice[e.B] - lattice[e.A];
+                return Math.Abs(Vec3.Dot(d, o)) < h / 2 && Math.Abs(Vec3.Dot(d, b)) < h / 2;
+            });
+            MoveTo(tri, lattice, Project, still);
             DelaunayFlips(tri);
         }
         var (quads, triangles) = Pair(tri, field);
@@ -206,9 +220,13 @@ public static class QuadRemesh
         }
     }
 
-    private static void Collapse(Tri tri, double shorter, double longer)
+    /// <summary>
+    /// Collapses edges shorter than <paramref name="shorter"/> (or those <paramref name="which"/> picks), shortest first,
+    /// never making one longer than <paramref name="longer"/>, turning a triangle over or breaking the mesh.
+    /// </summary>
+    private static void Collapse(Tri tri, double shorter, double longer, Func<Edge, bool>? which = null)
     {
-        var edges = tri.Edges().Where(e => !tri.Border.Contains(e)).Select(e => (e, L: Vec3.Distance(tri.P[e.A], tri.P[e.B]))).Where(x => x.L < shorter).OrderBy(x => x.L).ToList();
+        var edges = tri.Edges().Where(e => !tri.Border.Contains(e)).Select(e => (e, L: Vec3.Distance(tri.P[e.A], tri.P[e.B]))).Where(x => which?.Invoke(x.e) ?? x.L < shorter).OrderBy(x => x.L).ToList();
         foreach (var (e0, _) in edges)
         {
             int a = e0.A, b = e0.B;
@@ -302,49 +320,74 @@ public static class QuadRemesh
 
     private static int Sq(int x) => x * x;
 
-    /// <summary>
-    /// Moves points so their edges lie along the field at a grid's spacing: each neighbour says where the point would
-    /// be one grid step (along, across or diagonally) from it, and the point goes halfway toward their average.
-    /// </summary>
-    private static void Snap(Tri tri, Vec3[] field, double h, Func<Vec3, Vec3> project, HashSet<int> still, int passes)
+    /// <summary>The point of the lattice through <paramref name="p"/> (sides <paramref name="h"/> along o and b) nearest <paramref name="near"/>.</summary>
+    private static Vec3 Lattice(Vec3 p, Vec3 o, Vec3 b, double h, Vec3 near)
     {
-        for (int pass = 0; pass < passes; pass++)
+        var d = near - p;
+        return p + o * (h * Math.Round(Vec3.Dot(d, o) / h)) + b * (h * Math.Round(Vec3.Dot(d, b) / h));
+    }
+
+    /// <summary>
+    /// A position field (after Jakob et al.'s Instant Meshes): at each point, the point nearest it of a square lattice
+    /// h apart along the cross field. It's flooded out from a point, each point taking the lattice of the one it was
+    /// reached from, so neighbours' lattices agree everywhere but where the flood's fronts meet. (Smoothing it as
+    /// Instant Meshes does, without its hierarchy, only scrambled it here.) A point on a crease keeps a lattice line
+    /// along the crease through it.
+    /// </summary>
+    private static Vec3[] PositionField(Tri tri, Vec3[] field, double h, HashSet<int> still)
+    {
+        int n = tri.P.Count;
+        var p = tri.P.ToArray();
+        var normal = new Vec3[n];
+        var o = new Vec3[n];
+        for (int v = 0; v < n; v++)
         {
-            var moved = tri.P.ToArray();
-            for (int v = 0; v < tri.P.Count; v++)
+            if (tri.VT[v].Count == 0) continue;
+            normal[v] = tri.PointNormal(v);
+            o[v] = Tangent(field[v], normal[v]);
+        }
+        var reached = new bool[n];
+        var queue = new Queue<int>();
+        for (int seed = 0; seed < n; seed++)
+        {
+            if (reached[seed] || tri.VT[seed].Count == 0 || o[seed].LengthSquared == 0) continue;
+            reached[seed] = true;
+            queue.Enqueue(seed);
+            while (queue.Count > 0)
             {
-                if (still.Contains(v) || tri.VT[v].Count == 0) continue;
-                var n = tri.PointNormal(v);
-                var o = Tangent(field[v], n);
-                if (o.LengthSquared == 0) continue;
-                var b = Vec3.Cross(n, o);
-                var sum = Vec3.Zero;
-                int count = 0;
-                foreach (int w in tri.Neighbours(v))
+                int u = queue.Dequeue();
+                foreach (int v in tri.Neighbours(u))
                 {
-                    var e = tri.P[v] - tri.P[w];
-                    double u = Vec3.Dot(e, o) / h, t = Vec3.Dot(e, b) / h;
-                    int su = Math.Clamp((int)Math.Round(u), -1, 1), st = Math.Clamp((int)Math.Round(t), -1, 1);
-                    if (su == 0 && st == 0) { if (Math.Abs(u) >= Math.Abs(t)) su = u >= 0 ? 1 : -1; else st = t >= 0 ? 1 : -1; }
-                    sum += tri.P[w] + (o * su + b * st) * h;
-                    count++;
+                    if (reached[v] || o[v].LengthSquared == 0) continue;
+                    reached[v] = true;
+                    var from = p[u] - normal[v] * Vec3.Dot(normal[v], p[u] - tri.P[v]);
+                    var at = Lattice(from, o[v], Vec3.Cross(normal[v], o[v]), h, tri.P[v]);
+                    // On a crease the lattice line runs along it, through the point.
+                    p[v] = still.Contains(v) ? tri.P[v] + o[v] * Vec3.Dot(at - tri.P[v], o[v]) : at;
+                    queue.Enqueue(v);
                 }
-                if (count == 0) continue;
-                var p = tri.P[v] + (sum / count - tri.P[v]) * 0.5;
-                var q = project(p);
-                // Never turn a triangle over.
-                bool ok = true;
-                foreach (int t in tri.VT[v])
-                {
-                    var x = tri.T[t]!;
-                    var before = tri.Normal(t);
-                    var pts = x.Select(k => k == v ? q : tri.P[k]).ToArray();
-                    var after = Vec3.Cross(pts[1] - pts[0], pts[2] - pts[0]);
-                    if (Vec3.Dot(before, after) <= 0 || after.LengthSquared < 1e-24) { ok = false; break; }
-                }
-                if (ok) moved[v] = q;
             }
-            for (int v = 0; v < tri.P.Count; v++) tri.P[v] = moved[v];
+        }
+        return p;
+    }
+
+    /// <summary>Moves each point (but those kept still) onto its lattice point on the surface, unless that turns a triangle over.</summary>
+    private static void MoveTo(Tri tri, Vec3[] lattice, Func<Vec3, Vec3> project, HashSet<int> still)
+    {
+        for (int v = 0; v < tri.P.Count; v++)
+        {
+            if (still.Contains(v) || tri.VT[v].Count == 0) continue;
+            var to = project(lattice[v]);
+            bool ok = true;
+            foreach (int t in tri.VT[v])
+            {
+                var x = tri.T[t]!;
+                var before = tri.Normal(t);
+                var pts = x.Select(k => k == v ? to : tri.P[k]).ToArray();
+                var after = Vec3.Cross(pts[1] - pts[0], pts[2] - pts[0]);
+                if (Vec3.Dot(before, after) <= 0 || after.LengthSquared < 1e-24) { ok = false; break; }
+            }
+            if (ok) tri.P[v] = to;
         }
     }
 

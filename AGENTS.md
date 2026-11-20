@@ -94,6 +94,11 @@ AVAMODELER_REGOLD=1 dotnet test tests/AVAModeler.Slicing.Tests   # rewrite the r
     held, curvature tensors as a soft pull, neighbours' directions matched by quarter turns), `Snap` (points drawn onto
     a grid along the field) with `DelaunayFlips`, greedy pairing of triangles into quads whose sides follow the field
     (well-aligned first), one split into quads round each face's centre, and the quads drawn along the field again.
+    Between the field and the pairing, `PositionField` lays a square lattice along the field (Instant Meshes'
+    position field, flooded from a seed so each point takes its parent's lattice; smoothing it without a hierarchy
+    scrambled it on curved surfaces, so don't add that back), the edges whose ends share a lattice point collapse
+    (`Collapse` with a filter, so the link condition and creases hold), `MoveTo` puts points on their lattice points and
+    `DelaunayFlips` makes each cell two triangles: twice, with the triangles remeshed at 0.8 of the lattice first.
     Border edges keep their points; their new middles go into the faces left out, so the mesh stays stitched.
     `QuadRemeshTool` (ProcessTools.cs).
   - SubPatches (`Subdivision.cs`): `Mesh.SubPatch` (a mesh setting, so undo and `Clone` keep it; LWOB's `AVSP` chunk,

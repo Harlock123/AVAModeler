@@ -40,11 +40,12 @@ public class QuadRemeshTests
     }
 
     /// <summary>
-    /// The share of a tilted cylinder's side edges that run up it or round it (within 20°), measured in its own
-    /// axes: what following the shape means here.
+    /// The share of a tilted cylinder's side edges that run up it or round it (within <paramref name="degrees"/>),
+    /// measured in its own axes: what following the shape means here.
     /// </summary>
-    private static double Following(Mesh m, Mat4 untilt)
+    private static double Following(Mesh m, Mat4 untilt, double degrees = 20)
     {
+        double up = Math.Cos(degrees * Math.PI / 180), round = Math.Sin(degrees * Math.PI / 180);
         int straight = 0, total = 0;
         foreach (var e in m.EdgeMap().Keys)
         {
@@ -53,7 +54,7 @@ public class QuadRemeshTests
             if (a.Y < 0.1 || a.Y > 2.9 || b.Y < 0.1 || b.Y > 2.9) continue;
             var d = (b - a).Normalized();
             total++;
-            if (Math.Abs(d.Y) > 0.94 || Math.Abs(d.Y) < 0.34) straight++;
+            if (Math.Abs(d.Y) > up || Math.Abs(d.Y) < round) straight++;
         }
         return (double)straight / total;
     }
@@ -77,9 +78,54 @@ public class QuadRemeshTests
         var voxel = Tilted();
         Remesh.Apply(voxel, Enumerable.Range(0, voxel.Polygons.Count).ToList(), 0.2, 2);
         double grid = Following(voxel, untilt);
-        Assert.True(ours > 0.62, $"{ours:P0} of the side edges follow the cylinder");
-        Assert.True(ours > grid + 0.1, $"quad remesh {ours:P0}, voxel remesh {grid:P0}");
-        Assert.True(r.PairedShare > 75, $"paired {r.PairedShare}%");
+        Assert.True(ours > 0.93, $"{ours:P0} of the side edges follow the cylinder");
+        double strict = Following(m, untilt, 10);
+        Assert.True(strict > 0.85, $"{strict:P0} of the side edges follow the cylinder within 10°");
+        Assert.True(ours > grid + 0.3, $"quad remesh {ours:P0}, voxel remesh {grid:P0}");
+        Assert.True(r.PairedShare > 85, $"paired {r.PairedShare}%");
+        Assert.InRange(MeanEdge(m), 0.2 * 0.85, 0.2 * 1.15);
+        // Few points where other than four quads meet (a cylinder's side needs none).
+        var valence = new int[m.Points.Count];
+        foreach (var e in m.EdgeMap().Keys) { valence[e.A]++; valence[e.B]++; }
+        int irregular = Enumerable.Range(0, m.Points.Count).Count(v => valence[v] != 4 && untilt.TransformPoint(m.Points[v]).Y is > 0.1 and < 2.9);
+        Assert.True(irregular < 40, $"{irregular} irregular points on the side");
+    }
+
+    [Fact]
+    public void A_torus_with_no_creases_gets_quads_along_its_tube_and_round_its_ring()
+    {
+        const double R = 1, r = 0.35;
+        var m = new Mesh();
+        const int n = 48, k = 16;
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < k; j++)
+            {
+                double u = 2 * Math.PI * i / n, v = 2 * Math.PI * j / k;
+                m.Points.Add(new Vec3((R + r * Math.Cos(v)) * Math.Cos(u), r * Math.Sin(v), (R + r * Math.Cos(v)) * Math.Sin(u)));
+            }
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < k; j++)
+                m.Polygons.Add(new Polygon([i * k + j, (i + 1) % n * k + j, (i + 1) % n * k + (j + 1) % k, i * k + (j + 1) % k]));
+        m.Touch();
+        if (MeshCheck.Mesh(m).Volume < 0) foreach (var p in m.Polygons) p.Points.Reverse();
+        m.Touch();
+        double before = MeshCheck.Mesh(m).Volume!.Value;
+        QuadRemesh.Apply(m, null, new QuadRemeshOptions { EdgeLength = 0.12 });
+        TestShapes.AssertSolid(m);
+        Assert.All(m.Polygons, p => Assert.Equal(4, p.Count));
+        Assert.InRange(MeshCheck.Mesh(m).Volume!.Value, before * 0.95, before * 1.01);
+        // Edges run round the ring or round the tube (within 20°).
+        int along = 0, total = 0;
+        foreach (var e in m.EdgeMap().Keys)
+        {
+            var a = m.Points[e.A];
+            var b = m.Points[e.B];
+            var mid = (a + b) / 2;
+            double c = Math.Abs(Vec3.Dot((b - a).Normalized(), new Vec3(-mid.Z, 0, mid.X).Normalized()));
+            total++;
+            if (c > Math.Cos(20 * Math.PI / 180) || c < Math.Sin(20 * Math.PI / 180)) along++;
+        }
+        Assert.True(along > 0.85 * total, $"{(double)along / total:P0} of the edges follow the torus");
     }
 
     [Fact]

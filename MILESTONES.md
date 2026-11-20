@@ -188,9 +188,10 @@ every tool keeps it; creases are on points, so they follow every edit.
 
 ## Milestone K: quad remeshing along the shape
 
-**Status:** done. `Geometry/QuadRemesh.cs`, `QuadRemeshTool` (Polygon tab). Besides pairing, the points are drawn onto a
-grid along the field (before pairing, and again on the quads), which is what makes them follow it; about seven in
-ten side edges of a tilted cylinder follow it (Remesh's grid: four in ten).
+**Status:** done. `Geometry/QuadRemesh.cs`, `QuadRemeshTool` (Polygon tab). Besides pairing, the points are merged onto a
+lattice along the field (a position field after Instant Meshes, flooded over the surface rather than smoothed through
+a hierarchy) before pairing, and the quads drawn along the field after; on a tilted cylinder at 0.2 m, 98% of the side
+edges follow it within 20° and 91% within 10°, with about 20 irregular points (Remesh's grid: 46% within 20°).
 
 1. **Quad Remesh** (Construct tab): an isotropic triangle remesh at a target edge length projected onto the original,
    a smoothed cross field aligned with curvature and sharp edges, triangles paired into quads along the field, and one
